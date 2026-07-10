@@ -1,0 +1,5 @@
+## IDF Component Manager Manifest
+## bDog 主组件 — 遵循 micropython-helper 官方文档
+dependencies:
+  idf: ">=5.0"
+  mr9you/micropython-helper: "~1.22.1"

@@ -1,0 +1,8 @@
+# bPuppy ESP32-S3 16MB Flash 分区表
+# 格式: Name,   Type, SubType, Offset,  Size
+# 16MB - 2MB factory - 64KB overhead ≈ 14MB VFS
+
+nvs,      data, nvs,     0x9000,  0x6000
+phy_init, data, phy,     0xF000,  0x1000
+factory,  app,  factory, 0x10000, 0x1F0000
+vfs,      data, fat,     0x200000, 0xE00000

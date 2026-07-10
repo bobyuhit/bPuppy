@@ -1,0 +1,14 @@
+build/
+managed_components/
+*.bin
+*.elf
+*.map
+*.o
+*.d
+__pycache__/
+*.pyc
+.cache/
+.vscode/
+dependencies.lock
+sdkconfig
+sdkconfig.old

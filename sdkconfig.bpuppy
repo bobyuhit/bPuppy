@@ -1,0 +1,17 @@
+# =============================================================
+# bPuppy ESP32-S3 — 覆盖板级默认值
+# 针对 ESP32-S3 WROOM-1 N16R8 (16MB Flash, 8MB Octal PSRAM)
+#
+# 板级 ESP32_GENERIC_S3/sdkconfig.board 默认 8MB QIO 80MHz，
+# 此文件在其之后加载，覆盖为 16MB + 16MB 分区表
+# =============================================================
+
+# Flash 16MB QIO 80MHz (WROOM-1 N16R8)
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# 16MB 分区表
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

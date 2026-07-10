@@ -1,0 +1,20 @@
+# =============================================================
+# bPuppy ESP32-S3 通用配置
+# 针对 ESP32-S3 WROOM-1 N16R8 (16MB Flash, 8MB Octal PSRAM)
+#
+# Flash/PSRAM 具体配置由:
+#   1. ESP32_GENERIC_S3 板级 sdkconfig (QIO, 8MB, spiram_sx)
+#   2. SPIRAM_OCT variant (spiram_oct + 240MHz)
+#   3. sdkconfig.bpuppy (覆盖为 16MB Flash + 16MB 分区表)
+# 三层叠加完成，这里只放项目级通用配置
+# =============================================================
+
+# 自定义分区表 (16MB 布局由 sdkconfig.bpuppy 指定)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 优化选项
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# 日志级别: INFO (显示 ESP_LOGI/W/E)
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
