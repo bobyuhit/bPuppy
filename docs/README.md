@@ -19,7 +19,7 @@ bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v
 | 参数 | 值 | 来源 |
 |------|-----|------|
 | 大腿 L1 | 40mm | `ik.h: IK_L1_DEFAULT` |
-| 小腿 L2 | 40mm | `ik.h: IK_L1_DEFAULT` |
+| 小腿 L2 | 40mm | `ik.h: IK_L2_DEFAULT` |
 | 前后髋距 | 120mm | `motion_task.cpp: BODY_HALF_L=60` |
 | 左右髋距 | 118mm | `motion_task.cpp: BODY_HALF_W=59` |
 | 膝角范围 | 10°~170° | `ik.h: IK_KNEE_MIN/MAX` |
@@ -223,8 +223,6 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 `servo_init_all()` 中的 GPIO (1,2,47,21,42,41,45,48) 和 README 文档中的 (4-7,15-18) **不一致**, 均为占位值, 待 PCB 确定后统一。
 
 ---
-
-## 版本
 
 ## 首次编译问题排查
 
