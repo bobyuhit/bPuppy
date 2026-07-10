@@ -226,6 +226,74 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 ## 版本
 
+## 首次编译问题排查
+
+### `idf.py: command not found`
+未激活 ESP-IDF 环境。容器内 `source /opt/esp/idf/export.sh`。
+
+### `mpy.cmake not found` / `micropython-helper not found`
+组件未下载。需先 `idf.py set-target esp32s3` → `idf.py reconfigure`，等待组件管理器拉取。
+
+### `sdkconfig` 冲突 / Flash 大小不对
+旧 build 缓存: `rm -rf build && idf.py set-target esp32s3 && idf.py build`
+
+### 构建产物名不对
+确认 `CMakeLists.txt` 中 `project(micropython_bpuppy)`，产物为 `build/micropython_bpuppy.bin`。
+
+---
+
+## sdkconfig 三层覆盖机制
+
+```
+第 1 层: ESP32_GENERIC_S3 板级默认 (8MB Flash, 自动 PSRAM)
+第 2 层: SPIRAM_OCT variant (240MHz, Octal PSRAM)
+第 3 层: sdkconfig.defaults + sdkconfig.bpuppy (16MB Flash, 16MB 分区表)
+```
+
+后加载的覆盖先加载的。查看生效配置: `grep CONFIG_ESPTOOLPY build/sdkconfig`
+
+---
+
+## 修改代码指引
+
+| 需求 | 改哪个文件 |
+|------|-----------|
+| 修改舵机 GPIO 引脚 | `drivers/servo_driver.c` → `servo_init_all()` |
+| 修改步态参数 | `drivers/motion_task.cpp` |
+| 修改 IK 腿长 | `drivers/ik.h` + `motion_task.cpp` 默认值 |
+| 添加 MicroPython C 函数 | 对应 `drivers/*.c` + 注册到模块表 |
+| 修改 Python 启动逻辑 | `frozen/main.py` |
+| 修改 BLE 协议 | `frozen/ble_hiwonder.py` |
+| 修改构建参数 | `CMakeLists.txt` + `sdkconfig.defaults` |
+| 更新版本号 | `drivers/bpuppy_version.c` → `BP_VERSION` |
+| 修改分区表 | `partitions.csv` |
+
+---
+
+## ESP-IDF 常用命令
+
+```bash
+idf.py clean              # 清理编译产物
+idf.py fullclean           # 清理所有 (含 cmake 缓存)
+idf.py menuconfig          # 图形化配置
+idf.py size                # 固件各组件大小
+idf.py flash monitor       # 烧录并监控
+```
+
+---
+
+## 验证清单
+
+- [ ] `idf.py build` 编译成功
+- [ ] `build/micropython_bpuppy.bin` 存在
+- [ ] 烧录后 USB CDC 串口可连接 (COM10, 115200)
+- [ ] 启动 banner 显示 "bPuppy Robot Dog - ESP32-S3"
+- [ ] 上电自动站立，无跳动
+- [ ] `import bpuppy; bpuppy.version()` 返回版本号
+- [ ] BLE 遥控正常 (Wonderbot App 可连接)
+
+---
+
 | 组件 | 版本 |
 |------|------|
 | MicroPython | v1.22.1 |
