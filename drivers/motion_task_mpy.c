@@ -24,12 +24,6 @@ STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
     else if (strcmp(s, "trot") == 0)        g = GAIT_TROT;
     else if (strcmp(s, "trotfwd") == 0)     g = GAIT_TROT;
     else if (strcmp(s, "trotbck") == 0)     g = GAIT_TROT;
-    else if (strcmp(s, "crawl") == 0)       g = GAIT_CRAWL;
-    else if (strcmp(s, "bound") == 0)       g = GAIT_BOUND;
-    else if (strcmp(s, "walkturn_l") == 0)  g = GAIT_WALKTURN_L;
-    else if (strcmp(s, "walkturn_r") == 0)  g = GAIT_WALKTURN_R;
-    else if (strcmp(s, "trotturn_l") == 0)  g = GAIT_TROTTURN_L;
-    else if (strcmp(s, "trotturn_r") == 0)  g = GAIT_TROTTURN_R;
     else if (strcmp(s, "sit") == 0)         g = GAIT_SIT;
     motion_set_gait(g);
     return mp_const_none;
@@ -60,6 +54,12 @@ STATIC mp_obj_t mp_motion_set_omega(mp_obj_t omega_obj) {
     return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_omega_obj, mp_motion_set_omega);
+
+STATIC mp_obj_t mp_motion_set_lift(mp_obj_t lift_obj) {
+    motion_set_lift(mp_obj_get_float(lift_obj));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_lift_obj, mp_motion_set_lift);
 
 STATIC mp_obj_t mp_motion_set_body_pose(mp_obj_t roll_obj, mp_obj_t pitch_obj,
                                          mp_obj_t yaw_obj) {
@@ -94,6 +94,18 @@ STATIC mp_obj_t mp_motion_set_turn(mp_obj_t turn_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_turn_obj, mp_motion_set_turn);
 
+STATIC mp_obj_t mp_motion_jump(void) {
+    motion_jump();
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_jump_obj, mp_motion_jump);
+
+STATIC mp_obj_t mp_motion_set_center(mp_obj_t obj) {
+    motion_set_center(mp_obj_get_float(obj));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_center_obj, mp_motion_set_center);
+
 STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),       MP_ROM_QSTR(MP_QSTR_bpuppy_motion) },
     { MP_ROM_QSTR(MP_QSTR_start),          MP_ROM_PTR(&mp_motion_start_obj) },
@@ -101,11 +113,14 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_set_params),     MP_ROM_PTR(&mp_motion_set_params_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal_ik),         MP_ROM_PTR(&mp_motion_cal_ik_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_omega),      MP_ROM_PTR(&mp_motion_set_omega_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_lift),      MP_ROM_PTR(&mp_motion_set_lift_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_body_pose),  MP_ROM_PTR(&mp_motion_set_body_pose_obj) },
     { MP_ROM_QSTR(MP_QSTR_emergency_stop), MP_ROM_PTR(&mp_motion_estop_obj) },
     { MP_ROM_QSTR(MP_QSTR_resume),         MP_ROM_PTR(&mp_motion_resume_obj) },
     { MP_ROM_QSTR(MP_QSTR_stand_up),      MP_ROM_PTR(&mp_motion_stand_up_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_turn),     MP_ROM_PTR(&mp_motion_set_turn_obj) },
+    { MP_ROM_QSTR(MP_QSTR_jump),         MP_ROM_PTR(&mp_motion_jump_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_center),  MP_ROM_PTR(&mp_motion_set_center_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(bpuppy_motion_globals, bpuppy_motion_globals_table);
 

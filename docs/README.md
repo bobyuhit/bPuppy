@@ -19,13 +19,15 @@ bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v
 | 参数 | 值 | 来源 |
 |------|-----|------|
 | 大腿 L1 | 40mm | `ik.h: IK_L1_DEFAULT` |
-| 小腿 L2 | 40mm | `ik.h: IK_L2_DEFAULT` |
+| 小腿 L2 | 45mm | `ik.h: IK_L2_DEFAULT` |
 | 前后髋距 | 120mm | `motion_task.cpp: BODY_HALF_L=60` |
-| 左右髋距 | 118mm | `motion_task.cpp: BODY_HALF_W=59` |
+| 左右髋宽 | 118mm | `motion_task.cpp: BODY_HALF_W=59` |
 | 膝角范围 | 10°~170° | `ik.h: IK_KNEE_MIN/MAX` |
-| 速度范围 | 0~12 | `motion_set_params()` |
-| Walk 最优 | speed=2.5, stride=70, height=60 | 实测 |
-| Trot 最优 | speed=8, stride=50, height=70 | 实测 |
+| 速度范围 | 0~10 | `motion_set_params()` |
+| 抬腿默认 | 30mm | `set_lift()` 可调 |
+| 脚中位偏移 | 0mm | `set_center()` 可调 |
+| Walk 最优 | speed=2.5, stride=70, height=70 | 实测 |
+| Trot 最优 | speed=8.5, stride=70, height=60 | 实测 |
 
 ---
 
@@ -113,7 +115,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | 文件 | 说明 |
 |------|------|
 | `drivers/motion_task.cpp` | **核心** — 步态算法、相位框架、足端轨迹、IK、GO自适应 |
-| `drivers/ik.c` | 2-DOF 逆运动学, L1=L2=40mm |
+| `drivers/ik.c` | 2-DOF 逆运动学, L1=40 L2=45, 膝 10°~170° |
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 |
 | `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up → 启动 BLE |
@@ -127,13 +129,13 @@ FreeRTOS:          ESP-IDF v5.1.2
 
 ### GO 自适应
 
-| speed | duty | gap | stride | height | 实际 |
-|-------|------|-----|--------|--------|------|
-| ≤4 | 0.20 | 0.04 | 70 | 60 | walk |
-| 4~6 | 插值 | 插值 | 70→50 | 60→70 | 混合 |
-| ≥6 | 0.40 | 0.10 | 50 | 70 | trot |
+| speed | duty | gap | stride | height | pitch | 实际 |
+|-------|------|-----|--------|--------|-------|------|
+| ≤4 | 0.20 | 0.04 | 70 | 70 | -5° | walk |
+| 4~6 | 插值 | 插值 | 70→50 | 70 | -5°→-3° | 混合 |
+| ≥6 | 0.40 | 0.10 | 50 | 70 | -3° | trot |
 
-所有参数基于**实际 speed**(经半周期平滑跟随), 非 target_speed。
+lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平滑跟随 `target_speed`。
 
 ### 姿态过渡
 
@@ -152,9 +154,9 @@ FreeRTOS:          ESP-IDF v5.1.2
 
 ## 上电行为
 
-1. `servo_init_all()` — 初始化 8 路 LEDC
+1. `servo_init_all()` — 初始化 8 路 LEDC（duty=0，舵机松）
 2. `load_cal()` — 从 NVS 加载校准值
-3. `set_angle × 8` — 预设蹲姿舵机角
+3. 等待 REPL 手动控制（motion 未启动，需手动 `start()`）
 4. `motion.start()` — 创建 50Hz FreeRTOS 任务
 5. `motion.stand_up()` — 蹲姿 0.3s → 3s smoothstep 站立
 6. BLE 后台线程启动
@@ -218,9 +220,16 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 停止时只设 `speed=0`, stride/height 不更新。d=0 调 `set_params(0, 0, 0)` + `set_gait("stand")`。
 
-### 9. GPIO 引脚为占位值
+### 9. GPIO 引脚映射 (已确定)
 
-`servo_init_all()` 中的 GPIO (1,2,47,21,42,41,45,48) 和 README 文档中的 (4-7,15-18) **不一致**, 均为占位值, 待 PCB 确定后统一。
+| 舵机 | GPIO | 舵机 | GPIO |
+|------|------|------|------|
+| LF_HIP 左前大腿 | 1 | RF_HIP 右前大腿 | 42 |
+| LF_KNEE 左前小腿 | 2 | RF_KNEE 右前小腿 | 41 |
+| LH_HIP 左后大腿 | 47 | RH_HIP 右后大腿 | 45 |
+| LH_KNEE 左后小腿 | 21 | RH_KNEE 右后小腿 | 48 |
+
+IMU 已暂时屏蔽。USB D+/D- (GPIO19/20) 已恢复，UART0 (GPIO43/44) 可用作备用串口。
 
 ---
 

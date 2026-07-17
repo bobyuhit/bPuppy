@@ -59,6 +59,7 @@ __attribute__((weak)) motion_state_t g_motion = {
     .gait_gap       = 0.04f,
     .turn_rate      = 0.0f,
     .turn           = 0.0f,
+    .center_offset  = 0.0f,
     .emergency_stop = false,
     .enabled        = false,
     .stand_up_elapsed = 0.0f,
@@ -141,10 +142,6 @@ static void motion_apply_gait_params(gait_type_t gait)
     case GAIT_GO:          g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f; g_motion.turn_rate = 0.0f;  break;  // 运行时根据 speed 动态调整
     case GAIT_CRAWL:       g_motion.gait_duty = 0.30f; g_motion.gait_gap = 0.03f; g_motion.turn_rate = 0.0f;  break;
     case GAIT_BOUND:       g_motion.gait_duty = 0.35f; g_motion.gait_gap = 0.15f; g_motion.turn_rate = 0.0f;  break;
-    case GAIT_WALKTURN_L:  g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f; g_motion.turn_rate = 1.2f;  break;
-    case GAIT_WALKTURN_R:  g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f; g_motion.turn_rate =-1.2f;  break;
-    case GAIT_TROTTURN_L:  g_motion.gait_duty = 0.40f; g_motion.gait_gap = 0.10f; g_motion.turn_rate = 1.0f;  break;
-    case GAIT_TROTTURN_R:  g_motion.gait_duty = 0.40f; g_motion.gait_gap = 0.10f; g_motion.turn_rate =-1.0f;  break;
     default: break; // stand/sit/stand_up 不调参数
     }
     ESP_LOGI(TAG, "Gait: %d (duty=%.2f gap=%.2f turn=%.1f)",
@@ -190,8 +187,9 @@ static void motion_task_main(void *pvParam)
         bool is_stand    = (g_motion.gait == GAIT_STAND);
         bool is_sit      = (g_motion.gait == GAIT_SIT);
         bool is_stand_up = (g_motion.gait == GAIT_STAND_UP);
+        bool is_jump     = (g_motion.gait == GAIT_JUMP);
 
-        if (is_stand_up) {
+        if (is_stand_up || is_jump) {
             g_motion.stand_up_elapsed += dt;
         }
 
@@ -274,21 +272,25 @@ static void motion_task_main(void *pvParam)
         float eff_gap    = g_motion.gait_gap;
         float eff_stride = g_motion.stride;
         float eff_height = g_motion.height;
+        // GO: speed≤4=walk  speed≥6=trot  → duty/gap/stride/pitch 插值
+        float eff_pitch = g_motion.body_pitch;
         if (g_motion.gait == GAIT_GO) {
             float s = eff_speed;
             if (s <= 4.0f) {
-                eff_duty = 0.20f; eff_gap = 0.04f;
-                eff_stride = 70.0f; eff_height = 60.0f;  // walk
+                eff_duty=0.20f; eff_gap=0.04f;
+                eff_stride=70.0f; eff_height=70.0f; eff_pitch=-5.0f;
             } else if (s >= 6.0f) {
-                eff_duty = 0.40f; eff_gap = 0.10f;
-                eff_stride = 50.0f; eff_height = 70.0f;  // trot
+                eff_duty=0.40f; eff_gap=0.10f;
+                eff_stride=50.0f; eff_height=70.0f; eff_pitch=-3.0f;
             } else {
-                float t = (s - 4.0f) / 2.0f;  // 4~6 插值
+                float t = (s - 4.0f) / 2.0f;
                 eff_duty   = 0.20f + t * 0.20f;
                 eff_gap    = 0.04f + t * 0.06f;
-                eff_stride = 70.0f - t * 20.0f;  // 70→50
-                eff_height = 60.0f + t * 10.0f;  // 60→70
+                eff_stride = 70.0f - t * 20.0f;
+                eff_height = 70.0f;
+                eff_pitch  = -5.0f + t * 2.0f;
             }
+            g_motion.body_pitch = eff_pitch;
         }
 
         // 计算步态偏移
@@ -306,7 +308,29 @@ static void motion_task_main(void *pvParam)
         for (int leg = 0; leg < 4; leg++) {
             float foot_x, foot_z;
 
-            if (is_sit) {
+            if (g_motion.gait == GAIT_JUMP) {
+                // 跳跃时序: 蹲(1s) → 前腿弹(0.1s) → 后腿弹(0.3s) → 回蹲→站
+                static const float crouch_z = 15.0f, jump_z = 78.0f;
+                float jt = g_motion.stand_up_elapsed;  // 复用计时器
+                float z;
+                bool front = (leg == 0 || leg == 2);
+
+                if (jt < 1.0f) {
+                    z = crouch_z;  // 蹲
+                } else if (jt < 1.1f) {
+                    z = front ? jump_z : crouch_z;  // 前腿弹
+                } else if (jt < 1.4f) {
+                    z = jump_z;  // 四腿全弹
+                } else {
+                    z = crouch_z;  // 回蹲
+                }
+                ik_result_t ik = ik_solve_2dof(0, z,
+                                    g_motion.ik_L1, g_motion.ik_L2,
+                                    leg_side[leg]);
+                servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
+                servo_group_add(leg_knee_ch[leg], ik.knee_deg);
+                continue;
+            } else if (is_sit) {
                 servo_group_add(leg_hip_ch[leg],
                     (leg_side[leg] == IK_SIDE_LEFT) ? 135.0f : 45.0f);
                 servo_group_add(leg_knee_ch[leg],
@@ -384,6 +408,9 @@ static void motion_task_main(void *pvParam)
                 }
             }
 
+            // 脚中位偏移
+            foot_x += g_motion.center_offset;
+
             // 身体姿态补偿: roll/pitch → 四腿高度偏置
             float deg2rad = 0.0174533f;
             float z_roll  = BODY_HALF_W * tanf(g_motion.body_roll  * deg2rad);
@@ -406,6 +433,15 @@ static void motion_task_main(void *pvParam)
 
         servo_group_commit();
 
+        if (is_jump && g_motion.stand_up_elapsed >= 1.5f) {
+            g_motion.gait = GAIT_STAND;
+            g_was_moving = false;
+            for (int i = 0; i < 4; i++) {
+                g_prev_fx[i] = 0.0f;
+                g_prev_fz[i] = g_motion.height;
+            }
+            ESP_LOGI(TAG, "Jump complete, now standing");
+        }
         if (is_stand_up && g_motion.stand_up_elapsed >= 3.3f) {
             g_motion.gait = GAIT_STAND;
             g_was_moving = false;
@@ -507,8 +543,8 @@ int motion_check_params(float stride, float height)
 void motion_set_params(float speed, float stride, float height)
 {
     // 速度上限
-    if (fabsf(speed) > 12.0f) {
-        ESP_LOGW(TAG, "⚠ 速度过大: |speed|=%.1f > 12, 参数未写入", fabsf(speed));
+    if (fabsf(speed) > 10.0f) {
+        ESP_LOGW(TAG, "⚠ 速度过大: |speed|=%.1f > 10, 参数未写入", fabsf(speed));
         ESP_LOGW(TAG, "→ 保持原值: speed=%.2f stride=%.0f height=%.0f",
                  g_motion.speed, g_motion.stride, g_motion.height);
         return;
@@ -545,6 +581,12 @@ void motion_set_omega(float omega)
     ESP_LOGI(TAG, "Omega base: %.2f rad/s", omega);
 }
 
+void motion_set_lift(float lift)
+{
+    g_motion.lift_height = lift;
+    ESP_LOGI(TAG, "Lift height: %.0f mm", lift);
+}
+
 void motion_set_body_pose(float roll, float pitch, float yaw)
 {
     g_motion.body_roll  = roll;
@@ -556,7 +598,13 @@ void motion_set_turn(float turn)
 {
     if (turn < -1.0f) turn = -1.0f;
     if (turn >  1.0f) turn =  1.0f;
-    g_motion.turn = turn;        // 直接生效, 不缓冲
+    g_motion.turn = turn;
+}
+
+void motion_set_center(float offset)
+{
+    g_motion.center_offset = offset;
+    ESP_LOGI(TAG, "Center offset: %.0f mm", offset);
 }
 
 void motion_emergency_stop(void)
@@ -580,4 +628,13 @@ void motion_stand_up(void)
     g_motion.emergency_stop = false;
     g_motion.stand_up_elapsed = 0.0f;
     ESP_LOGI(TAG, "Stand-up sequence started (hold=0.3s ramp=3.0s)");
+}
+
+void motion_jump(void)
+{
+    g_motion.gait = GAIT_JUMP;
+    g_motion.enabled = true;
+    g_motion.emergency_stop = false;
+    g_motion.stand_up_elapsed = 0.0f;
+    ESP_LOGI(TAG, "Jump sequence started");
 }

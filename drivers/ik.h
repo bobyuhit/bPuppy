@@ -22,7 +22,7 @@ extern "C" {
 #endif
 
 #define IK_L1_DEFAULT  40.0f   // 大腿长度 (mm)
-#define IK_L2_DEFAULT  40.0f   // 小腿长度 (mm)
+#define IK_L2_DEFAULT  45.0f   // 小腿长度 (mm)
 
 #define IK_KNEE_MIN   10.0f   // 膝舵机最小角度
 #define IK_KNEE_MAX   170.0f  // 膝舵机最大角度

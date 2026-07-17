@@ -27,8 +27,8 @@ import numpy as np
 # ==============================================================================
 
 L1 = 40.0         # 大腿长度 mm (ik.h: IK_L1_DEFAULT)
-L2 = 40.0         # 小腿长度 mm (ik.h: IK_L2_DEFAULT)
-BODY_HALF_L = 60.0  # 前后髋半距 mm (motion_task.cpp: BODY_HALF_L=60)
+L2 = 45.0         # 小腿长度 mm (ik.h: IK_L2_DEFAULT)
+BODY_HALF_L = 60.0  # 前后髋半距 mm (motion_task.cpp: BODY_HALF_L=60, 全距 120mm)
 BODY_HALF_W = 59.0  # 左右髋半宽 mm (motion_task.cpp: BODY_HALF_W=59.0, 全距 118mm)
 
 HIP_MIN, HIP_MAX = 0.0, 180.0
@@ -40,7 +40,7 @@ LEG_SIDES = ["left", "left", "right", "right"]
 # 默认步态参数 — 对应 motion_task.cpp g_motion 初始值 + motion_apply_gait_params()
 # C 代码中 stride/height/lift 对所有步态使用同一默认值，只有 duty/gap 随步态变化
 GAIT_PRESETS = {
-    "walk": {"duty": 0.20, "gap": 0.05, "stride": 70.0, "height": 60.0, "lift": 30.0},
+    "walk": {"duty": 0.20, "gap": 0.02, "stride": 70.0, "height": 60.0, "lift": 30.0},
 }
 
 
@@ -283,11 +283,16 @@ def plot_trajectories(rows: list[dict], params: GaitParams, gait_name: str):
     ax_tx.grid(True, alpha=0.3)
     ax_tx.legend(fontsize=10, loc="lower left")
 
-    # ---- Row 3: 顶视图快照 — RH 抬脚瞬间 ----
-    ax_top = fig.add_subplot(gs[2])
-    _draw_topdown_snapshot(ax_top, rows, params, colors)
-    ax_top.set_title("Top-Down View — RH Lift-off Moment  (● = foot, ■ = hip)",
-                     fontsize=13, fontweight="bold")
+    # ---- Row 3: 顶视图快照 — RH + RF 抬脚瞬间 (左右各一) ----
+    gs_top = gs[2].subgridspec(1, 2, wspace=0.25)
+    ax_rh = fig.add_subplot(gs_top[0])
+    _draw_topdown_snapshot(ax_rh, rows, params, colors, leg="RH")
+    ax_rh.set_title("Top-Down — RH Lift-off  (●=stance, ▷=swing, ■=hip)",
+                     fontsize=9, fontweight="bold")
+    ax_rf = fig.add_subplot(gs_top[1])
+    _draw_topdown_snapshot(ax_rf, rows, params, colors, leg="RF")
+    ax_rf.set_title("Top-Down — RF Lift-off",
+                     fontsize=9, fontweight="bold")
 
     # ---- Row 4: 相位甘特图 ----
     ax_gantt = fig.add_subplot(gs[3])
@@ -319,11 +324,11 @@ def _point_in_polygon(px: float, py: float, polygon: list) -> bool:
     return path.contains_point((px, py))
 
 
-def _draw_topdown_snapshot(ax, rows: list[dict], params: GaitParams, colors: list):
-    """在顶视图中绘制 RH 抬脚瞬间的身体矩形 + 四足位置"""
-    # 找 RH 进入摆动相的第一帧
-    rh_swing = np.array([r["RH_swing"] for r in rows])
-    swing_start_idx = np.where(rh_swing == 1)[0]
+def _draw_topdown_snapshot(ax, rows: list[dict], params: GaitParams, colors: list, leg: str = "RH"):
+    """在顶视图中绘制指定腿抬脚瞬间的身体矩形 + 四足位置"""
+    # 找指定腿进入摆动相的第一帧
+    swing_col = np.array([r[f"{leg}_swing"] for r in rows])
+    swing_start_idx = np.where(swing_col == 1)[0]
     if len(swing_start_idx) == 0:
         frame_idx = 0
     else:
@@ -415,7 +420,7 @@ def _draw_topdown_snapshot(ax, rows: list[dict], params: GaitParams, colors: lis
     ax.grid(True, alpha=0.3)
 
     phase_deg = row["g_phase_deg"]
-    ax.text(0.02, 0.98, f"g_phase = {phase_deg:.0f}°", transform=ax.transAxes,
+    ax.text(0.02, 0.98, f"{leg} lift-off  g_phase = {phase_deg:.0f}°", transform=ax.transAxes,
             ha="left", va="top", fontsize=10,
             bbox=dict(boxstyle="round", facecolor="wheat"))
 

@@ -15,7 +15,7 @@ import math
 LEG_COUNT = 4           # 腿数
 HIP_LENGTH = 40.0       # 髋关节长度 (mm)
 THIGH_LENGTH = 40.0     # 大腿长度 (mm)
-CALF_LENGTH = 40.0      # 小腿长度 (mm)
+CALF_LENGTH = 45.0      # 小腿长度 (mm)
 BODY_WIDTH = 100.0      # 身体半宽 (mm)
 BODY_LENGTH = 150.0     # 身体半长 (mm)
 

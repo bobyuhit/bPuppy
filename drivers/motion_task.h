@@ -26,12 +26,9 @@ typedef enum {
     GAIT_GO,            // 自适应 (speed<5→walk, speed>10→trot, 之间插值)
     GAIT_CRAWL,         // 爬行
     GAIT_BOUND,         // 跳跃
-    GAIT_WALKTURN_L,    // 猫步左转
-    GAIT_WALKTURN_R,    // 猫步右转
-    GAIT_TROTTURN_L,    // 小跑左转
-    GAIT_TROTTURN_R,    // 小跑右转
     GAIT_SIT,           // 蹲下
     GAIT_STAND_UP,      // 蹲→站过渡（缓动插值, 自动切换 GAIT_STAND）
+    GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
     GAIT_COUNT
 } gait_type_t;
 
@@ -53,6 +50,7 @@ typedef struct {
     float       gait_gap;       // 同侧间隙 (walk:0.04, trot:0.10)
     float       turn_rate;      // (旧) 转弯速率, 将被 turn 替代
     float       turn;           // 转弯系数 -1(左) ~ +1(右)
+    float       center_offset;  // 脚中位偏移 (正=前移, 负=后移)
     bool        emergency_stop; // 急停标志
     bool        enabled;        // 运动使能
     float       stand_up_elapsed; // 站立过渡已用时间 (秒)
@@ -98,11 +96,17 @@ void motion_cal_ik(float L1, float L2);
 // 设置基准角频率 (rad/s)
 void motion_set_omega(float omega);
 
+// 设置抬腿高度 (mm)
+void motion_set_lift(float lift);
+
 // 设置身体姿态
 void motion_set_body_pose(float roll, float pitch, float yaw);
 
 // 设置转弯系数 (-1=左, +1=右, 0=直)
 void motion_set_turn(float turn);
+
+// 设置脚中位偏移 (正=前移, 负=后移)
+void motion_set_center(float offset);
 
 // 急停
 void motion_emergency_stop(void);
@@ -112,6 +116,9 @@ void motion_resume(void);
 
 // 站立过渡：蹲姿 → 缓动 → 站立
 void motion_stand_up(void);
+
+// 跳跃：蹲→前腿弹→后腿弹→回蹲
+void motion_jump(void);
 
 #ifdef __cplusplus
 }
