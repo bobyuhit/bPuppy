@@ -51,10 +51,17 @@ except ImportError as e:
 try:
     import bpuppy_motion
     # 先将舵机设到蹲姿，避免 start() 瞬间跳变
-    bpuppy_servo.set_angle(0, 135);  bpuppy_servo.set_angle(1, 45)   # LF
-    bpuppy_servo.set_angle(2, 135);  bpuppy_servo.set_angle(3, 45)   # LH
-    bpuppy_servo.set_angle(4, 45);   bpuppy_servo.set_angle(5, 135)  # RF
-    bpuppy_servo.set_angle(6, 45);   bpuppy_servo.set_angle(7, 135)  # RH
+    # 注意: 改 ik.h IK_KNEE_REAR_FORWARD 后需同时切换下面两行
+    # 四腿后弯 (IK_KNEE_REAR_FORWARD=0):
+    # bpuppy_servo.set_angle(0, 135);  bpuppy_servo.set_angle(1, 45)   # LF
+    # bpuppy_servo.set_angle(2, 135);  bpuppy_servo.set_angle(3, 45)   # LH
+    # bpuppy_servo.set_angle(4, 45);   bpuppy_servo.set_angle(5, 135)  # RF
+    # bpuppy_servo.set_angle(6, 45);   bpuppy_servo.set_angle(7, 135)  # RH
+    # 后腿前弯 (IK_KNEE_REAR_FORWARD=1):
+    bpuppy_servo.set_angle(0, 135);  bpuppy_servo.set_angle(1, 45)   # LF: hip后指 knee后折
+    bpuppy_servo.set_angle(2, 45);   bpuppy_servo.set_angle(3, 135)  # LH: hip前指 knee前凸
+    bpuppy_servo.set_angle(4, 45);   bpuppy_servo.set_angle(5, 135)  # RF: hip前指 knee后折
+    bpuppy_servo.set_angle(6, 135);  bpuppy_servo.set_angle(7, 45)   # RH: hip后指 knee前凸
     bpuppy_motion.start()
     bpuppy_motion.stand_up()
     modules_loaded.append("motion")

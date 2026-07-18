@@ -40,6 +40,8 @@ static const int leg_hip_ch[]  = {0, 2, 4, 6};
 static const int leg_knee_ch[] = {1, 3, 5, 7};
 static const int leg_side[]    = {IK_SIDE_LEFT, IK_SIDE_LEFT,
                                    IK_SIDE_RIGHT, IK_SIDE_RIGHT};
+static const int leg_pair[]    = {IK_LEG_FRONT, IK_LEG_REAR,
+                                   IK_LEG_FRONT, IK_LEG_REAR};
 
 /* ---- 全局状态 ---- */
 __attribute__((weak)) motion_state_t g_motion = {
@@ -328,15 +330,21 @@ static void motion_task_main(void *pvParam)
                 }
                 ik_result_t ik = ik_solve_2dof(0, z,
                                     g_motion.ik_L1, g_motion.ik_L2,
-                                    leg_side[leg]);
+                                    leg_side[leg], leg_pair[leg]);
                 servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
                 servo_group_add(leg_knee_ch[leg], ik.knee_deg);
                 continue;
             } else if (is_sit) {
-                servo_group_add(leg_hip_ch[leg],
-                    (leg_side[leg] == IK_SIDE_LEFT) ? 135.0f : 45.0f);
-                servo_group_add(leg_knee_ch[leg],
-                    (leg_side[leg] == IK_SIDE_LEFT) ? 45.0f : 135.0f);
+                float sit_hip  = (leg_side[leg] == IK_SIDE_LEFT) ? 135.0f : 45.0f;
+                float sit_knee = (leg_side[leg] == IK_SIDE_LEFT) ? 45.0f : 135.0f;
+#if IK_KNEE_REAR_FORWARD
+                if (leg_pair[leg] == IK_LEG_REAR) {
+                    sit_hip  = 180.0f - sit_hip;   // 后腿髋角互换
+                    sit_knee = 180.0f - sit_knee;  // 后腿膝角互换
+                }
+#endif
+                servo_group_add(leg_hip_ch[leg],  sit_hip);
+                servo_group_add(leg_knee_ch[leg], sit_knee);
                 continue;
             } else if (is_stand_up) {
                 float t = g_motion.stand_up_elapsed;
@@ -345,10 +353,16 @@ static void motion_task_main(void *pvParam)
 
                 float sit_hip  = (leg_side[leg] == IK_SIDE_LEFT) ? 135.0f : 45.0f;
                 float sit_knee = (leg_side[leg] == IK_SIDE_LEFT) ? 45.0f : 135.0f;
+#if IK_KNEE_REAR_FORWARD
+                if (leg_pair[leg] == IK_LEG_REAR) {
+                    sit_hip  = 180.0f - sit_hip;
+                    sit_knee = 180.0f - sit_knee;
+                }
+#endif
 
-                ik_result_t ik = ik_solve_2dof(0, g_motion.height,
+                ik_result_t ik = ik_solve_2dof(g_motion.center_offset, g_motion.height,
                                     g_motion.ik_L1, g_motion.ik_L2,
-                                    leg_side[leg]);
+                                    leg_side[leg], leg_pair[leg]);
 
                 if (t < hold) {
                     servo_group_add(leg_hip_ch[leg],  sit_hip);
@@ -428,7 +442,7 @@ static void motion_task_main(void *pvParam)
 
             ik_result_t ik = ik_solve_2dof(foot_x, foot_z,
                                 g_motion.ik_L1, g_motion.ik_L2,
-                                leg_side[leg]);
+                                leg_side[leg], leg_pair[leg]);
             servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
             servo_group_add(leg_knee_ch[leg], ik.knee_deg);
         }

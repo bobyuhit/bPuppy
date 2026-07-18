@@ -50,6 +50,12 @@ extern float ik_knee_max;
 #define IK_SIDE_LEFT  0
 #define IK_SIDE_RIGHT 1
 
+#define IK_KNEE_REAR_FORWARD  1   // 1=后腿膝前弯(真狗式) 0=四腿后弯
+// ⚠ 设为1时需同步修改后腿膝关节舵机的小腿安装方向 (180°翻转)
+
+#define IK_LEG_FRONT  0
+#define IK_LEG_REAR   1
+
 // IK 解算结果
 typedef struct {
     float hip_deg;   // 髋舵机角度 (0-180)
@@ -61,7 +67,7 @@ typedef struct {
 // L1: 大腿长度, L2: 小腿长度
 // side: IK_SIDE_LEFT 或 IK_SIDE_RIGHT
 ik_result_t ik_solve_2dof(float foot_x, float foot_z,
-                          float L1, float L2, int side);
+                          float L1, float L2, int side, int leg_pair);
 
 #ifdef __cplusplus
 }

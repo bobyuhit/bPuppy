@@ -32,10 +32,13 @@ BODY_HALF_L = 60.0  # 前后髋半距 mm (motion_task.cpp: BODY_HALF_L=60, 全�
 BODY_HALF_W = 59.0  # 左右髋半宽 mm (motion_task.cpp: BODY_HALF_W=59.0, 全距 118mm)
 
 HIP_MIN, HIP_MAX = 0.0, 180.0
-KNEE_MIN, KNEE_MAX = 10.0, 170.0  # 对应 ik.h IK_KNEE_MIN / IK_KNEE_MAX
+KNEE_MIN, KNEE_MAX = 10.0, 170.0  # 对应 ik.h ik_knee_min / ik_knee_max
+
+IK_KNEE_REAR_FORWARD = 1   # 与 ik.h 保持一致: 1=后腿前弯, 0=四腿后弯
 
 LEG_NAMES = ["LF", "LH", "RF", "RH"]
 LEG_SIDES = ["left", "left", "right", "right"]
+LEG_PAIRS = ["front", "rear", "front", "rear"]
 
 # 默认步态参数 — 对应 motion_task.cpp g_motion 初始值 + motion_apply_gait_params()
 # C 代码中 stride/height/lift 对所有步态使用同一默认值，只有 duty/gap 随步态变化
@@ -137,17 +140,19 @@ def foot_trajectory(phase_norm: float, stride: float, height: float,
 # IK 解算 — 移植自 ik.c ik_solve_2dof()
 # ==============================================================================
 
-def ik_solve(foot_x: float, foot_z: float, side: str) -> tuple[float, float]:
+def ik_solve(foot_x: float, foot_z: float, side: str,
+             leg_pair: str = "front") -> tuple[float, float]:
     """
     2-DOF 平面逆运动学。
 
     foot_x: 前后 (正=前), foot_z: 上下 (正=下)
+    side: "left" | "right", leg_pair: "front" | "rear"
     返回 (hip_deg, knee_deg) 舵机角度。
     """
     d_sq = foot_x * foot_x + foot_z * foot_z
     d = math.sqrt(d_sq)
 
-    # 钳位到机械可达范围 (ik.c 中用 L1L2_max-1, L2L1_min+1)
+    # 钳位到机械可达范围
     l_sum = L1 + L2
     l_diff = abs(L2 - L1)
     if d > l_sum - 1.0:
@@ -155,25 +160,32 @@ def ik_solve(foot_x: float, foot_z: float, side: str) -> tuple[float, float]:
     if d < l_diff + 1.0:
         d = l_diff + 1.0
 
-    # 膝角 (大腿-小腿夹角, 0=直, π=全折)
+    # 膝角 (大腿-小腿夹角, 0°=折叠, 180°=伸直)
     cos_knee = (L1 * L1 + L2 * L2 - d * d) / (2.0 * L1 * L2)
     cos_knee = max(-1.0, min(1.0, cos_knee))
     knee_angle = math.acos(cos_knee)
 
-    # 髋角
+    # 髋角: 膝后弯 hip=alpha+beta, 膝前弯 hip=alpha-beta
     alpha = math.atan2(foot_z, foot_x)
     cos_beta = (L1 * L1 + d * d - L2 * L2) / (2.0 * L1 * d)
     cos_beta = max(-1.0, min(1.0, cos_beta))
     beta = math.acos(cos_beta)
-    hip_angle = alpha + beta
+    if IK_KNEE_REAR_FORWARD and leg_pair == "rear":
+        hip_angle = alpha - beta
+    else:
+        hip_angle = alpha + beta
 
     hip_deg = math.degrees(hip_angle)
     knee_deg = math.degrees(knee_angle)
 
-    # 右腿镜像 (ik.c lines 62-67)
+    # 膝角映射: 后腿前弯时左右互换
+    knee_mirror = (side == "right")
+    if IK_KNEE_REAR_FORWARD and leg_pair == "rear":
+        knee_mirror = not knee_mirror
+
     if side == "right":
         hip_deg = 180.0 - hip_deg
-        knee_deg = 180.0 - knee_deg
+    knee_deg = 180.0 - knee_deg if knee_mirror else knee_deg
 
     # 钳位
     hip_deg = max(HIP_MIN, min(HIP_MAX, hip_deg))
@@ -217,7 +229,8 @@ def simulate_cycle(params: GaitParams, num_steps: int = 200) -> list[dict]:
 
             # IK 需要髋关节坐标系: z 正=下, hip→ground = height
             foot_z_ik = params.height - fz
-            hip_deg, knee_deg = ik_solve(fx, foot_z_ik, side)
+            hip_deg, knee_deg = ik_solve(fx, foot_z_ik, side,
+                                          LEG_PAIRS[leg_idx])
 
             # 摆动/支撑标识
             in_swing = 1 if phase_norm < params.duty else 0

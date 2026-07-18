@@ -28,7 +28,7 @@ float ik_knee_max = IK_KNEE_MAX_DEFAULT;
 #define DEG(x)  ((x) * 180.0f / (float)M_PI)
 
 ik_result_t ik_solve_2dof(float foot_x, float foot_z,
-                          float L1, float L2, int side)
+                          float L1, float L2, int side, int leg_pair)
 {
     ik_result_t r;
     float L1L2_max = L1 + L2;
@@ -41,19 +41,25 @@ ik_result_t ik_solve_2dof(float foot_x, float foot_z,
     if (d > L1L2_max - 1.0f)  d = L1L2_max - 1.0f;
     if (d < L2L1_min + 1.0f)  d = L2L1_min + 1.0f;
 
-    // 膝角 (大腿与小腿之间的角度, 0=直)
+    // 膝角 (大腿与小腿之间的夹角, 0°=并拢折叠, 180°=完全伸直)
     float cos_knee = (L1 * L1 + L2 * L2 - d * d) / (2.0f * L1 * L2);
     if (cos_knee > 1.0f)  cos_knee = 1.0f;
     if (cos_knee < -1.0f) cos_knee = -1.0f;
-    float knee_angle = acosf(cos_knee);  // 弧度, 0 = 完全伸直
+    float knee_angle = acosf(cos_knee);  // [0, π], 0=折叠  π=伸直
 
-    // 髋角 (大腿与水平面夹角, 0=水平向前)
-    float alpha = atan2f(foot_z, foot_x);  // 足端方向
+    // 髋角 (大腿与水平面夹角, 0=水平向前, 90°=指向下)
+    float alpha = atan2f(foot_z, foot_x);               // 足端方向
     float cos_beta = (L1 * L1 + d * d - L2 * L2) / (2.0f * L1 * d);
     if (cos_beta > 1.0f)  cos_beta = 1.0f;
     if (cos_beta < -1.0f) cos_beta = -1.0f;
     float beta = acosf(cos_beta);
-    float hip_angle = alpha + beta;  // 弧度
+    // 膝后弯: hip = alpha + beta   膝前弯: hip = alpha - beta
+    float hip_angle;
+#if IK_KNEE_REAR_FORWARD
+    hip_angle = (leg_pair == IK_LEG_REAR) ? (alpha - beta) : (alpha + beta);
+#else
+    hip_angle = alpha + beta;
+#endif
 
     // 弧度 → 舵机度
     r.hip_deg = DEG(hip_angle);
@@ -61,16 +67,16 @@ ik_result_t ik_solve_2dof(float foot_x, float foot_z,
     // 膝舵机映射
     float knee_deg = DEG(knee_angle);  // 0°=直, 180°=最大折
 
-    if (side == IK_SIDE_LEFT) {
-        // 左腿: HIP(0°前→90°下→180°后)
-        //       KNEE: servo 0°=折叠 180°=伸直 → servo = knee_deg
-        r.knee_deg = knee_deg;
-    } else {
-        // 右腿: HIP(0°后→90°下→180°前) — 反转
-        //       KNEE: servo 0°=伸直 180°=折叠 → servo = 180 - knee_deg
-        r.hip_deg  = 180.0f - r.hip_deg;
-        r.knee_deg = 180.0f - knee_deg;
+    // 后腿前弯: 膝角映射左右互换 (0=四腿后弯, 1=后腿前弯兼真狗式)
+    int knee_mirror = (side == IK_SIDE_RIGHT);
+#if IK_KNEE_REAR_FORWARD
+    if (leg_pair == IK_LEG_REAR) knee_mirror = !knee_mirror;
+#endif
+
+    if (side == IK_SIDE_RIGHT) {
+        r.hip_deg = 180.0f - r.hip_deg;
     }
+    r.knee_deg = knee_mirror ? (180.0f - knee_deg) : knee_deg;
 
     // 钳位 (运行时变量, NVS 可覆盖)
     if (r.hip_deg < ik_hip_min)  r.hip_deg = ik_hip_min;
