@@ -66,6 +66,9 @@ void servo_init_all(void);
 // 设置舵机校准参考角（90° 时腿真正垂直的那个舵机值）
 void servo_set_cal(uint8_t channel, float ref_angle_deg);
 
+// 读取校准参考角（offset = ref - 90）
+float servo_get_cal(uint8_t channel);
+
 // 从 NVS 加载校准数据（开机时调用）
 void servo_load_cal(void);
 

@@ -51,6 +51,8 @@ typedef struct {
     float       turn_rate;      // (旧) 转弯速率, 将被 turn 替代
     float       turn;           // 转弯系数 -1(左) ~ +1(右)
     float       center_offset;  // 脚中位偏移 (正=前移, 负=后移)
+    float       body_half_l;    // 前后髋半距 (mm), 默认 62.5
+    float       body_half_w;    // 左右髋半宽 (mm), 默认 59.0
     bool        emergency_stop; // 急停标志
     bool        enabled;        // 运动使能
     float       stand_up_elapsed; // 站立过渡已用时间 (秒)
@@ -92,6 +94,17 @@ void motion_cal_RH_KNEE(float deg);
 
 // IK 校准：调整大腿/小腿长度
 void motion_cal_ik(float L1, float L2);
+
+// 身体尺寸校准：调整前后/左右髋距
+void motion_set_body_dims(float half_l, float half_w);
+
+// 舵机极限校准：调整髋/膝舵机角度限位
+void motion_set_joint_limits(float hip_min, float hip_max,
+                              float knee_min, float knee_max);
+
+// 几何参数持久化：从 NVS 加载 / 保存到 NVS
+void motion_load_geometry(void);
+void motion_save_geometry(void);
 
 // 设置基准角频率 (rad/s)
 void motion_set_omega(float omega);

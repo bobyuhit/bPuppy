@@ -170,6 +170,12 @@ void servo_load_cal(void)
     cal_load_from_nvs();
 }
 
+float servo_get_cal(uint8_t channel)
+{
+    if (channel >= SERVO_MAX_CHANNELS) return 90.0f;
+    return g_servo_cal[channel] + 90.0f;  // offset → ref_angle
+}
+
 void servo_set_cal(uint8_t channel, float ref_angle_deg)
 {
     if (channel >= SERVO_MAX_CHANNELS) return;
@@ -367,6 +373,13 @@ STATIC mp_obj_t mp_servo_cal(mp_obj_t ch_obj, mp_obj_t deg_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_servo_cal_obj, mp_servo_cal);
 
+// ---- get_cal(channel) → float ----
+STATIC mp_obj_t mp_servo_get_cal(mp_obj_t ch_obj) {
+    int ch = mp_obj_get_int(ch_obj);
+    return mp_obj_new_float(servo_get_cal((uint8_t)ch));
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_servo_get_cal_obj, mp_servo_get_cal);
+
 // ---- 模块定义 ----
 STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),    MP_ROM_QSTR(MP_QSTR_bpuppy_servo) },
@@ -377,6 +390,7 @@ STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_stop),        MP_ROM_PTR(&mp_servo_stop_obj) },
     { MP_ROM_QSTR(MP_QSTR_load_cal),    MP_ROM_PTR(&mp_servo_load_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal),        MP_ROM_PTR(&mp_servo_cal_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_cal),    MP_ROM_PTR(&mp_servo_get_cal_obj) },
     // 校准 (兼容旧接口)
     { MP_ROM_QSTR(MP_QSTR_cal_LF_HIP),  MP_ROM_PTR(&mp_cal_LF_HIP_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal_LF_KNEE), MP_ROM_PTR(&mp_cal_LF_KNEE_obj) },

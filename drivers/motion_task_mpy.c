@@ -3,6 +3,8 @@
  */
 
 #include "motion_task.h"
+#include "ik.h"
+#include "servo_driver.h"
 #include "py/runtime.h"
 #include "py/obj.h"
 #include <string.h>
@@ -106,6 +108,49 @@ STATIC mp_obj_t mp_motion_set_center(mp_obj_t obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_center_obj, mp_motion_set_center);
 
+STATIC mp_obj_t mp_motion_set_body_dims(mp_obj_t bl_obj, mp_obj_t bw_obj) {
+    motion_set_body_dims(mp_obj_get_float(bl_obj), mp_obj_get_float(bw_obj));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_motion_set_body_dims_obj, mp_motion_set_body_dims);
+
+STATIC mp_obj_t mp_motion_set_joint_limits(size_t n_args, const mp_obj_t *args) {
+    motion_set_joint_limits(mp_obj_get_float(args[0]), mp_obj_get_float(args[1]),
+                             mp_obj_get_float(args[2]), mp_obj_get_float(args[3]));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_motion_set_joint_limits_obj, 4, 4, mp_motion_set_joint_limits);
+
+STATIC mp_obj_t mp_motion_load_geometry(void) {
+    motion_load_geometry();
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_load_geometry_obj, mp_motion_load_geometry);
+
+STATIC mp_obj_t mp_motion_show_geometry(void) {
+    const motion_state_t *m = motion_get_state();
+    const char *ch_names[8] = {
+        "LF_HIP","LF_KNEE","LH_HIP","LH_KNEE",
+        "RF_HIP","RF_KNEE","RH_HIP","RH_KNEE"};
+    mp_printf(&mp_plat_print, "========== Geometry Parameters ==========\n");
+    mp_printf(&mp_plat_print, "Leg:     L1=%.1f mm  L2=%.1f mm\n", m->ik_L1, m->ik_L2);
+    mp_printf(&mp_plat_print, "Body:    half_l=%.1f  half_w=%.1f  (full=%.0f x %.0f mm)\n",
+              m->body_half_l, m->body_half_w, m->body_half_l * 2, m->body_half_w * 2);
+    mp_printf(&mp_plat_print, "Hip:     %.0f ~ %.0f deg\n", ik_hip_min, ik_hip_max);
+    mp_printf(&mp_plat_print, "Knee:    %.0f ~ %.0f deg\n", ik_knee_min, ik_knee_max);
+    mp_printf(&mp_plat_print, "Offset:  %.0f mm   Lift: %.0f mm\n",
+              m->center_offset, m->lift_height);
+    mp_printf(&mp_plat_print, "Omega:   %.2f rad/s\n", m->omega_base);
+    mp_printf(&mp_plat_print, "--- Servo Calibration (ref_deg) ---\n");
+    for (int i = 0; i < 8; i++) {
+        mp_printf(&mp_plat_print, "  ch%d %-7s: %.1f deg  (offset=%+.1f)\n",
+                  i, ch_names[i], servo_get_cal(i), servo_get_cal(i) - 90.0f);
+    }
+    mp_printf(&mp_plat_print, "==========================================\n");
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_show_geometry_obj, mp_motion_show_geometry);
+
 STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),       MP_ROM_QSTR(MP_QSTR_bpuppy_motion) },
     { MP_ROM_QSTR(MP_QSTR_start),          MP_ROM_PTR(&mp_motion_start_obj) },
@@ -121,6 +166,10 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_set_turn),     MP_ROM_PTR(&mp_motion_set_turn_obj) },
     { MP_ROM_QSTR(MP_QSTR_jump),         MP_ROM_PTR(&mp_motion_jump_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_center),  MP_ROM_PTR(&mp_motion_set_center_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_body_dims), MP_ROM_PTR(&mp_motion_set_body_dims_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_joint_limits), MP_ROM_PTR(&mp_motion_set_joint_limits_obj) },
+    { MP_ROM_QSTR(MP_QSTR_load_geometry), MP_ROM_PTR(&mp_motion_load_geometry_obj) },
+    { MP_ROM_QSTR(MP_QSTR_show_geometry), MP_ROM_PTR(&mp_motion_show_geometry_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(bpuppy_motion_globals, bpuppy_motion_globals_table);
 

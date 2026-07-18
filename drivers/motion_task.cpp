@@ -16,6 +16,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include <math.h>
 #include <string.h>
 
@@ -31,9 +33,7 @@ static const char *TAG = "motion";
 #define TURN_STRIDE_FACTOR 0.15f
 #define SPEED_FOLLOW_STEP 3.0f  // 每半周速度跟随最大变化量
 
-/* ---- 身体几何 ---- */
-#define BODY_HALF_L        60.0f   // 前后髋距 120mm / 2
-#define BODY_HALF_W        59.0f   // 左右髋宽 118mm / 2
+/* ---- 身体几何 (运行时变量, 默认值来自 ik.h, NVS 可覆盖) ---- */
 
 /* ---- 腿配置: LF, LH, RF, RH ---- */
 static const int leg_hip_ch[]  = {0, 2, 4, 6};
@@ -44,11 +44,11 @@ static const int leg_side[]    = {IK_SIDE_LEFT, IK_SIDE_LEFT,
 /* ---- 全局状态 ---- */
 __attribute__((weak)) motion_state_t g_motion = {
     .gait           = GAIT_STAND,
-    .speed          = 2.5f,
-    .target_speed   = 2.5f,
-    .stride         = 0.0f,
-    .height         = 60.0f,
-    .lift_height    = 30.0f,
+    .speed          = SPEED_DEFAULT,
+    .target_speed   = SPEED_DEFAULT,
+    .stride         = STRIDE_DEFAULT,
+    .height         = HEIGHT_DEFAULT,
+    .lift_height    = LIFT_DEFAULT,
     .body_roll      = 0.0f,
     .body_pitch     = 0.0f,
     .body_yaw       = 0.0f,
@@ -59,7 +59,9 @@ __attribute__((weak)) motion_state_t g_motion = {
     .gait_gap       = 0.04f,
     .turn_rate      = 0.0f,
     .turn           = 0.0f,
-    .center_offset  = 0.0f,
+    .center_offset  = CENTER_OFFSET_DEFAULT,
+    .body_half_l    = IK_BODY_HALF_L_DEFAULT,
+    .body_half_w    = IK_BODY_HALF_W_DEFAULT,
     .emergency_stop = false,
     .enabled        = false,
     .stand_up_elapsed = 0.0f,
@@ -392,7 +394,7 @@ static void motion_task_main(void *pvParam)
                         (g_motion.turn > 0 && leg_side[leg] == IK_SIDE_RIGHT))
                         leg_stride = eff_stride * (1.0f - factor);
                 }
-                float max_stride = 2.0f * BODY_HALF_L * 0.85f;
+                float max_stride = 2.0f * g_motion.body_half_l * 0.85f;
                 if (leg_stride > max_stride) leg_stride = max_stride;
 
                 foot_trajectory(phase_norm, leg_stride,
@@ -413,8 +415,8 @@ static void motion_task_main(void *pvParam)
 
             // 身体姿态补偿: roll/pitch → 四腿高度偏置
             float deg2rad = 0.0174533f;
-            float z_roll  = BODY_HALF_W * tanf(g_motion.body_roll  * deg2rad);
-            float z_pitch = BODY_HALF_L * tanf(g_motion.body_pitch * deg2rad);
+            float z_roll  = g_motion.body_half_w * tanf(g_motion.body_roll  * deg2rad);
+            float z_pitch = g_motion.body_half_l * tanf(g_motion.body_pitch * deg2rad);
             if (leg_side[leg] == IK_SIDE_LEFT)
                 foot_z -= z_roll;   else foot_z += z_roll;
             if (leg == 0 || leg == 2)  // front legs
@@ -461,6 +463,7 @@ static void motion_task_main(void *pvParam)
 void motion_task_start(void)
 {
     if (g_task_handle != NULL) return;
+    motion_load_geometry();  // 上电自动从 NVS 加载 L1/L2/髋距
     xTaskCreatePinnedToCore(motion_task_main, "motion", MOTION_STACK,
                             NULL, MOTION_PRIORITY, &g_task_handle, MOTION_CORE);
 }
@@ -488,14 +491,14 @@ static bool motion_validate_params(float stride, float height)
     bool  bad = false;
 
     // 机械步幅上限
-    float max_stride = 2.0f * BODY_HALF_L * 0.85f;
+    float max_stride = 2.0f * g_motion.body_half_l * 0.85f;
     if (stride > max_stride) {
         ESP_LOGW(TAG, "⚠ 步幅过大: stride=%.0f > max=%.0f (前后脚干涉), 参数未写入",
                  stride, max_stride);
         bad = true;
     }
 
-    // IK 膝角检查 (使用 ik.h 中的 IK_KNEE_MIN / IK_KNEE_MAX)
+    // IK 膝角检查 (使用 ik.h 中的 ik_knee_min / ik_knee_max)
     float d_sq = x * x + z * z;
     float d = sqrtf(d_sq);
     float L_sum = L1 + L2 - 0.5f;
@@ -509,15 +512,15 @@ static bool motion_validate_params(float stride, float height)
     float knee_left  = knee_raw_deg;
     float knee_right = 180.0f - knee_raw_deg;
 
-    if (knee_left < IK_KNEE_MIN || knee_left > IK_KNEE_MAX ||
-        knee_right < IK_KNEE_MIN || knee_right > IK_KNEE_MAX) {
+    if (knee_left < ik_knee_min || knee_left > ik_knee_max ||
+        knee_right < ik_knee_min || knee_right > ik_knee_max) {
 
         float worst = knee_left;
-        if (knee_right < IK_KNEE_MIN || knee_right > IK_KNEE_MAX)
+        if (knee_right < ik_knee_min || knee_right > ik_knee_max)
             worst = (knee_left < knee_right) ? knee_left : knee_right;
 
-        float cos_lim_min = cosf(IK_KNEE_MIN * (float)M_PI / 180.0f);
-        float cos_lim_max = cosf(IK_KNEE_MAX * (float)M_PI / 180.0f);
+        float cos_lim_min = cosf(ik_knee_min * (float)M_PI / 180.0f);
+        float cos_lim_max = cosf(ik_knee_max * (float)M_PI / 180.0f);
         float d2_max = L1 * L1 + L2 * L2 - 2.0f * L1 * L2 * cos_lim_max;
         float d2_min = L1 * L1 + L2 * L2 - 2.0f * L1 * L2 * cos_lim_min;
         float d_max = sqrtf(d2_max);
@@ -527,7 +530,7 @@ static bool motion_validate_params(float stride, float height)
             ESP_LOGW(TAG, "⚠ 足端不可达! d=%.1f > L1+L2=%.0f, 参数未写入", d, L1+L2);
         } else {
             ESP_LOGW(TAG, "⚠ 膝角触限! stride=%.0f height=%.0f → 膝≈%.0f° (限 %.0f°~%.0f°), 参数未写入",
-                     stride, height, worst, IK_KNEE_MIN, IK_KNEE_MAX);
+                     stride, height, worst, ik_knee_min, ik_knee_max);
             ESP_LOGW(TAG, "  建议: height %.0f~%.0fmm", d_min, d_max);
         }
         bad = true;
@@ -572,7 +575,91 @@ void motion_cal_ik(float L1, float L2)
 {
     g_motion.ik_L1 = L1;
     g_motion.ik_L2 = L2;
-    ESP_LOGI(TAG, "IK cal: L1=%.1f L2=%.1f", L1, L2);
+    motion_save_geometry();
+    ESP_LOGI(TAG, "IK cal: L1=%.1f L2=%.1f (saved)", L1, L2);
+}
+
+void motion_set_body_dims(float half_l, float half_w)
+{
+    g_motion.body_half_l = half_l;
+    g_motion.body_half_w = half_w;
+    motion_save_geometry();
+    ESP_LOGI(TAG, "Body dims: half_l=%.1f half_w=%.1f (saved)", half_l, half_w);
+}
+
+void motion_set_joint_limits(float hip_min, float hip_max,
+                              float knee_min, float knee_max)
+{
+    ik_hip_min  = hip_min;
+    ik_hip_max  = hip_max;
+    ik_knee_min = knee_min;
+    ik_knee_max = knee_max;
+    motion_save_geometry();
+    ESP_LOGI(TAG, "Joint limits: hip[%.0f~%.0f] knee[%.0f~%.0f] (saved)",
+             hip_min, hip_max, knee_min, knee_max);
+}
+
+/* ---- 几何参数 NVS 持久化 ---- */
+#define GEOM_NVS_NS  "bpuppy_geom"
+
+void motion_load_geometry(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(GEOM_NVS_NS, NVS_READONLY, &handle) != ESP_OK) {
+        ESP_LOGI(TAG, "Geometry NVS not found, using defaults: "
+                 "L1=%.1f L2=%.1f BL=%.1f BW=%.1f hip[%.0f~%.0f] knee[%.0f~%.0f]",
+                 g_motion.ik_L1, g_motion.ik_L2,
+                 g_motion.body_half_l, g_motion.body_half_w,
+                 ik_hip_min, ik_hip_max, ik_knee_min, ik_knee_max);
+        return;
+    }
+
+    int32_t val;
+    if (nvs_get_i32(handle, "l1", &val) == ESP_OK) g_motion.ik_L1 = val / 100.0f;
+    if (nvs_get_i32(handle, "l2", &val) == ESP_OK) g_motion.ik_L2 = val / 100.0f;
+    if (nvs_get_i32(handle, "bl", &val) == ESP_OK) g_motion.body_half_l = val / 100.0f;
+    if (nvs_get_i32(handle, "bw", &val) == ESP_OK) g_motion.body_half_w = val / 100.0f;
+    if (nvs_get_i32(handle, "hmin", &val) == ESP_OK) ik_hip_min  = val / 100.0f;
+    if (nvs_get_i32(handle, "hmax", &val) == ESP_OK) ik_hip_max  = val / 100.0f;
+    if (nvs_get_i32(handle, "kmin", &val) == ESP_OK) ik_knee_min = val / 100.0f;
+    if (nvs_get_i32(handle, "kmax", &val) == ESP_OK) ik_knee_max = val / 100.0f;
+    if (nvs_get_i32(handle, "co",   &val) == ESP_OK) g_motion.center_offset = val / 100.0f;
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Geometry loaded from NVS: "
+             "L1=%.1f L2=%.1f BL=%.1f BW=%.1f hip[%.0f~%.0f] knee[%.0f~%.0f] offset=%.0f",
+             g_motion.ik_L1, g_motion.ik_L2,
+             g_motion.body_half_l, g_motion.body_half_w,
+             ik_hip_min, ik_hip_max, ik_knee_min, ik_knee_max,
+             g_motion.center_offset);
+}
+
+void motion_save_geometry(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(GEOM_NVS_NS, NVS_READWRITE, &handle) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to open NVS for geometry save");
+        return;
+    }
+
+    nvs_set_i32(handle, "l1", (int32_t)(g_motion.ik_L1 * 100.0f));
+    nvs_set_i32(handle, "l2", (int32_t)(g_motion.ik_L2 * 100.0f));
+    nvs_set_i32(handle, "bl", (int32_t)(g_motion.body_half_l * 100.0f));
+    nvs_set_i32(handle, "bw", (int32_t)(g_motion.body_half_w * 100.0f));
+    nvs_set_i32(handle, "hmin", (int32_t)(ik_hip_min * 100.0f));
+    nvs_set_i32(handle, "hmax", (int32_t)(ik_hip_max * 100.0f));
+    nvs_set_i32(handle, "kmin", (int32_t)(ik_knee_min * 100.0f));
+    nvs_set_i32(handle, "kmax", (int32_t)(ik_knee_max * 100.0f));
+    nvs_set_i32(handle, "co",   (int32_t)(g_motion.center_offset * 100.0f));
+    nvs_commit(handle);
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Geometry saved to NVS: "
+             "L1=%.1f L2=%.1f BL=%.1f BW=%.1f hip[%.0f~%.0f] knee[%.0f~%.0f] offset=%.0f",
+             g_motion.ik_L1, g_motion.ik_L2,
+             g_motion.body_half_l, g_motion.body_half_w,
+             ik_hip_min, ik_hip_max, ik_knee_min, ik_knee_max,
+             g_motion.center_offset);
 }
 
 void motion_set_omega(float omega)
@@ -604,7 +691,8 @@ void motion_set_turn(float turn)
 void motion_set_center(float offset)
 {
     g_motion.center_offset = offset;
-    ESP_LOGI(TAG, "Center offset: %.0f mm", offset);
+    motion_save_geometry();
+    ESP_LOGI(TAG, "Center offset: %.0f mm (saved)", offset);
 }
 
 void motion_emergency_stop(void)

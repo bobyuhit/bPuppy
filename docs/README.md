@@ -14,18 +14,19 @@ bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v
 | 控制台 | USB-JTAG CDC (115200bps, 直连 USB) |
 | 供电 | 7.4V 2S LiPo |
 
-**当前固件参数（C 代码实际值）：**
+**当前固件参数（默认值，均可运行时修改 + NVS 持久化）：**
 
-| 参数 | 值 | 来源 |
-|------|-----|------|
-| 大腿 L1 | 40mm | `ik.h: IK_L1_DEFAULT` |
-| 小腿 L2 | 45mm | `ik.h: IK_L2_DEFAULT` |
-| 前后髋距 | 120mm | `motion_task.cpp: BODY_HALF_L=60` |
-| 左右髋宽 | 118mm | `motion_task.cpp: BODY_HALF_W=59` |
-| 膝角范围 | 10°~170° | `ik.h: IK_KNEE_MIN/MAX` |
-| 速度范围 | 0~10 | `motion_set_params()` |
-| 抬腿默认 | 30mm | `set_lift()` 可调 |
-| 脚中位偏移 | 0mm | `set_center()` 可调 |
+| 参数 | 默认值 | 运行时修改 |
+|------|--------|----------|
+| 大腿 L1 | 40mm | `cal_ik(L1, L2)` → NVS |
+| 小腿 L2 | 45mm | `cal_ik(L1, L2)` → NVS |
+| 前后髋距 | 125mm | `set_body_dims(bl, bw)` → NVS |
+| 左右髋宽 | 118mm | `set_body_dims(bl, bw)` → NVS |
+| 膝角范围 | 10°~170° | `set_joint_limits()` → NVS |
+| 髋角范围 | 0°~180° | `set_joint_limits()` → NVS |
+| 速度范围 | 0~10 | `set_params()` |
+| 抬腿默认 | 30mm | `set_lift()` |
+| 脚中位偏移 | 0mm | `set_center()` |
 | Walk 最优 | speed=2.5, stride=70, height=70 | 实测 |
 | Trot 最优 | speed=8.5, stride=70, height=60 | 实测 |
 
@@ -115,7 +116,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | 文件 | 说明 |
 |------|------|
 | `drivers/motion_task.cpp` | **核心** — 步态算法、相位框架、足端轨迹、IK、GO自适应 |
-| `drivers/ik.c` | 2-DOF 逆运动学, L1=40 L2=45, 膝 10°~170° |
+| `drivers/ik.c` | 2-DOF 逆运动学, L1/L2/髋距/限位 均运行时可变 + NVS 持久化 |
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 |
 | `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up → 启动 BLE |
@@ -267,7 +268,7 @@ IMU 已暂时屏蔽。USB D+/D- (GPIO19/20) 已恢复，UART0 (GPIO43/44) 可用
 |------|-----------|
 | 修改舵机 GPIO 引脚 | `drivers/servo_driver.c` → `servo_init_all()` |
 | 修改步态参数 | `drivers/motion_task.cpp` |
-| 修改 IK 腿长 | `drivers/ik.h` + `motion_task.cpp` 默认值 |
+| 修改 IK 腿长/髋距/限位 | 推荐运行 `cal_ik()` / `set_body_dims()` / `set_joint_limits()` → NVS 持久化；改默认值则 `drivers/ik.h` |
 | 添加 MicroPython C 函数 | 对应 `drivers/*.c` + 注册到模块表 |
 | 修改 Python 启动逻辑 | `frozen/main.py` |
 | 修改 BLE 协议 | `frozen/ble_hiwonder.py` |

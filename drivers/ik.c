@@ -19,6 +19,12 @@
 
 static const char *TAG = "ik";
 
+// 运行时舵机极限 (可通过 motion_set_joint_limits() 修改 + NVS 持久化)
+float ik_hip_min  = IK_HIP_MIN_DEFAULT;
+float ik_hip_max  = IK_HIP_MAX_DEFAULT;
+float ik_knee_min = IK_KNEE_MIN_DEFAULT;
+float ik_knee_max = IK_KNEE_MAX_DEFAULT;
+
 #define DEG(x)  ((x) * 180.0f / (float)M_PI)
 
 ik_result_t ik_solve_2dof(float foot_x, float foot_z,
@@ -66,11 +72,11 @@ ik_result_t ik_solve_2dof(float foot_x, float foot_z,
         r.knee_deg = 180.0f - knee_deg;
     }
 
-    // 钳位
-    if (r.hip_deg < 0.0f)   r.hip_deg = 0.0f;
-    if (r.hip_deg > 180.0f) r.hip_deg = 180.0f;
-    if (r.knee_deg < IK_KNEE_MIN) r.knee_deg = IK_KNEE_MIN;
-    if (r.knee_deg > IK_KNEE_MAX) r.knee_deg = IK_KNEE_MAX;
+    // 钳位 (运行时变量, NVS 可覆盖)
+    if (r.hip_deg < ik_hip_min)  r.hip_deg = ik_hip_min;
+    if (r.hip_deg > ik_hip_max)  r.hip_deg = ik_hip_max;
+    if (r.knee_deg < ik_knee_min) r.knee_deg = ik_knee_min;
+    if (r.knee_deg > ik_knee_max) r.knee_deg = ik_knee_max;
 
     return r;
 }

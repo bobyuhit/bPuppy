@@ -24,8 +24,28 @@ extern "C" {
 #define IK_L1_DEFAULT  40.0f   // 大腿长度 (mm)
 #define IK_L2_DEFAULT  45.0f   // 小腿长度 (mm)
 
-#define IK_KNEE_MIN   10.0f   // 膝舵机最小角度
-#define IK_KNEE_MAX   170.0f  // 膝舵机最大角度
+#define IK_BODY_HALF_L_DEFAULT  62.5f   // 前后髋半距默认值 (mm)
+#define IK_BODY_HALF_W_DEFAULT  59.0f   // 左右髋半宽默认值 (mm)
+
+#define IK_HIP_MIN_DEFAULT   0.0f    // 髋舵机下限默认值
+#define IK_HIP_MAX_DEFAULT   180.0f  // 髋舵机上限默认值
+#define IK_KNEE_MIN_DEFAULT  10.0f   // 膝舵机下限默认值
+#define IK_KNEE_MAX_DEFAULT  170.0f  // 膝舵机上限默认值
+
+#define CENTER_OFFSET_DEFAULT  0.0f  // 脚中位偏移默认值 (mm)
+
+// 运行时参数默认值 (不进 NVS，掉电丢失)
+#define SPEED_DEFAULT   2.5f
+#define STRIDE_DEFAULT  0.0f
+#define HEIGHT_DEFAULT  70.0f
+#define LIFT_DEFAULT    30.0f
+#define OMEGA_DEFAULT   2.0f
+
+// 运行时极限变量 (ik.c 中定义, 可通过 motion_set_joint_limits() 修改 + NVS 持久化)
+extern float ik_hip_min;
+extern float ik_hip_max;
+extern float ik_knee_min;
+extern float ik_knee_max;
 
 #define IK_SIDE_LEFT  0
 #define IK_SIDE_RIGHT 1
