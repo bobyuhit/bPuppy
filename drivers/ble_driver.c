@@ -45,7 +45,7 @@ static SemaphoreHandle_t g_rx_mutex = NULL;
 static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        if (attr == g_tx_handle && ctxt->om) {
+        if (ctxt->om) {
             int len = OS_MBUF_PKTLEN(ctxt->om);
             if (len > 0 && len < 128) {
                 uint8_t buf[128];
@@ -89,6 +89,8 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
     {0}
 };
 
+static void start_adv(void);
+
 // ---- GAP 事件 ----
 static int gap_cb(struct ble_gap_event *ev, void *arg)
 {
@@ -101,14 +103,12 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
         }
         break;
     case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGI(TAG, "断开");
+        ESP_LOGI(TAG, "断开, 重启广播");
         g_connected = false;
-        ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, NULL,
-                          gap_cb, NULL);
+        start_adv();
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, NULL,
-                          gap_cb, NULL);
+        start_adv();
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
         ESP_LOGI(TAG, "订阅 h%d notify=%d", ev->subscribe.attr_handle,

@@ -282,17 +282,17 @@ static void motion_task_main(void *pvParam)
             float s = eff_speed;
             if (s <= 4.0f) {
                 eff_duty=0.20f; eff_gap=0.04f;
-                eff_stride=70.0f; eff_height=70.0f; eff_pitch=-5.0f;
+                eff_stride=70.0f; eff_height=70.0f; eff_pitch=0.0f;
             } else if (s >= 6.0f) {
                 eff_duty=0.40f; eff_gap=0.10f;
-                eff_stride=50.0f; eff_height=70.0f; eff_pitch=-3.0f;
+                eff_stride=50.0f; eff_height=70.0f; eff_pitch=0.0f;
             } else {
                 float t = (s - 4.0f) / 2.0f;
                 eff_duty   = 0.20f + t * 0.20f;
                 eff_gap    = 0.04f + t * 0.06f;
                 eff_stride = 70.0f - t * 20.0f;
                 eff_height = 70.0f;
-                eff_pitch  = -5.0f + t * 2.0f;
+                eff_pitch  = 0.0f;
             }
             g_motion.body_pitch = eff_pitch;
         }
