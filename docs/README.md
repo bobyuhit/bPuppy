@@ -202,9 +202,9 @@ python gait_sim.py --stride 80 --height 70 --fps 4
 
 `servo_init` 设 `duty=0`, 导致初始化后舵机失能(随机位置)。如需上电即稳定, 应在 `init_all` 后立即用 `set_angle` 设定所有舵机到安全姿态, 或在 `servo_init` 中设非零初始 duty。
 
-### 5. `is_sit` 与 `stand_up` 蹲姿一致性
+### 5. `is_crouch` 与 `stand_up` 蹲姿一致性
 
-`is_sit` 和 `stand_up` 起点的蹲姿必须使用相同舵机角:
+`is_crouch` 和 `stand_up` 起点的蹲姿必须使用相同舵机角:
 - 左腿: hip=135°, knee=45° (折叠)
 - 右腿: hip=45°, knee=135° (折叠)
 

@@ -37,6 +37,8 @@ if(EXISTS ${MICROPY_HELPER_DIR})
     # 标准 ESP-IDF 项目初始化
     include($ENV{IDF_PATH}/tools/cmake/project.cmake)
     project(micropython_bpuppy)
+    # esp_tinyusb v1.0.3 缺少 CFG_TUD_CDC_EP_BUFSIZE 定义
+    idf_build_set_property(COMPILE_OPTIONS "-DCFG_TUD_CDC_EP_BUFSIZE=256" APPEND)
 
 else()
     # 模式 B: 首次 set-target（组件尚未下载）

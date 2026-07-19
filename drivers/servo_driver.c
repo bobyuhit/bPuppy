@@ -198,6 +198,7 @@ static float servo_apply_cal(uint8_t channel, float angle_deg)
     return angle_deg + g_servo_cal[channel];
 }
 
+
 /* ---- 设置舵机角度（立即生效）---- */
 void servo_set_angle(uint8_t channel, float angle_deg)
 {
@@ -217,7 +218,7 @@ float servo_get_angle(uint8_t channel)
     if (channel >= SERVO_MAX_CHANNELS || !g_servos[channel].initialized) {
         return -1.0f;
     }
-    return g_servos[channel].current_angle;
+    return g_servos[channel].current_angle - g_servo_cal[channel];
 }
 
 /* ---- 批量同步更新 ---- */
@@ -239,6 +240,7 @@ void servo_group_add(uint8_t channel, float angle_deg)
         return;
     }
 
+    // 步态批量更新不走限速（IK 角度已连续）
     g_group_channels[g_group_count] = channel;
     g_group_angles[g_group_count]   = servo_apply_cal(channel, angle_deg);
     g_group_count++;
@@ -379,6 +381,7 @@ STATIC mp_obj_t mp_servo_get_cal(mp_obj_t ch_obj) {
     return mp_obj_new_float(servo_get_cal((uint8_t)ch));
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_servo_get_cal_obj, mp_servo_get_cal);
+
 
 // ---- 模块定义 ----
 STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {

@@ -120,8 +120,8 @@ class HiwonderBLE:
                 print("[BLE] stand")
                 bpuppy_motion.stand_up()
             elif a == 4:
-                print("[BLE] sit")
-                bpuppy_motion.set_gait("sit")
+                print("[BLE] crouch")
+                bpuppy_motion.set_gait("crouch")
 
         elif cmd_id == 3:
             try:

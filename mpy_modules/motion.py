@@ -125,7 +125,7 @@ class bPuppyController:
     def sit(self):
         """蹲下"""
         import bpuppy_motion
-        bpuppy_motion.set_gait("sit")
+        bpuppy_motion.set_gait("crouch")
 
 
 # 创建全局控制器实例

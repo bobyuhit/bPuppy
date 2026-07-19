@@ -26,7 +26,9 @@ STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
     else if (strcmp(s, "trot") == 0)        g = GAIT_TROT;
     else if (strcmp(s, "trotfwd") == 0)     g = GAIT_TROT;
     else if (strcmp(s, "trotbck") == 0)     g = GAIT_TROT;
-    else if (strcmp(s, "sit") == 0)         g = GAIT_SIT;
+    else if (strcmp(s, "crouch") == 0)         g = GAIT_CROUCH;
+    else if (strcmp(s, "sit") == 0)            g = GAIT_SIT;
+    else if (strcmp(s, "play") == 0)           g = GAIT_PLAY_BOW;
     motion_set_gait(g);
     return mp_const_none;
 }

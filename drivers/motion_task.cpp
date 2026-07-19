@@ -43,6 +43,22 @@ static const int leg_side[]    = {IK_SIDE_LEFT, IK_SIDE_LEFT,
 static const int leg_pair[]    = {IK_LEG_FRONT, IK_LEG_REAR,
                                    IK_LEG_FRONT, IK_LEG_REAR};
 
+/* ---- 舵机角度限速 (每帧最大变化) ---- */
+#define SERVO_MAX_DEG_PER_FRAME  3.0f   // 每 20ms 最多移动度数
+static float g_smooth_angles[8] = {90, 90, 90, 90, 90, 90, 90, 90};
+
+// 限速: 往 target 方向最多走 max_step 度
+static float servo_step_toward(int ch, float target, float max_step) {
+    float cur = g_smooth_angles[ch];
+    if (target > cur + max_step) return cur + max_step;
+    if (target < cur - max_step) return cur - max_step;
+    return target;
+}
+
+static bool is_static_gait(gait_type_t g) {
+    return g == GAIT_STAND || g == GAIT_CROUCH || g == GAIT_SIT || g == GAIT_PLAY_BOW;
+}
+
 /* ---- 全局状态 ---- */
 __attribute__((weak)) motion_state_t g_motion = {
     .gait           = GAIT_STAND,
@@ -189,7 +205,9 @@ static void motion_task_main(void *pvParam)
         }
 
         bool is_stand    = (g_motion.gait == GAIT_STAND);
-        bool is_sit      = (g_motion.gait == GAIT_SIT);
+        bool is_crouch      = (g_motion.gait == GAIT_CROUCH);
+        bool is_sit         = (g_motion.gait == GAIT_SIT);
+        bool is_play_bow    = (g_motion.gait == GAIT_PLAY_BOW);
         bool is_stand_up = (g_motion.gait == GAIT_STAND_UP);
         bool is_jump     = (g_motion.gait == GAIT_JUMP);
 
@@ -216,7 +234,7 @@ static void motion_task_main(void *pvParam)
          * 过渡期 0.3s, 用 smoothstep 缓动: ease = t²(3-2t)
          */
         #define TRANS_TIME 0.3f
-        bool now_static = (is_stand || is_sit);
+        bool now_static = (is_stand || is_crouch || is_sit || is_play_bow);
         if (now_static && g_was_moving) {
             // 行走 → 静止: 启动停步过渡
             g_motion.pose_trans = 2;
@@ -250,7 +268,7 @@ static void motion_task_main(void *pvParam)
          * 相位冻结 (speed=0) 时也触发, 防止锁死.
          */
         // 相位累加 + 半周期速度更新
-        if (!is_stand && !is_sit && !is_stand_up) {
+        if (!is_stand && !is_crouch && !is_stand_up) {
             float omega = g_motion.omega_base * eff_speed;
             float prev_phase = g_phase;
             g_phase += omega * dt;
@@ -307,6 +325,21 @@ static void motion_task_main(void *pvParam)
             g_phase = mid * TWO_PI;
         }
 
+        // ---- play_bow 摇屁股 (每帧计算一次) ----
+        static float wiggle_phase = 0;
+        static gait_type_t wiggle_last = GAIT_STAND;
+        float wiggle = 0;
+        if (is_play_bow) {
+            if (wiggle_last != GAIT_PLAY_BOW) wiggle_phase = 0;
+            wiggle_last = GAIT_PLAY_BOW;
+            if (wiggle_phase < 6.283f * 8.0f) {
+                wiggle = sinf(wiggle_phase) * 10.0f;
+                wiggle_phase += 6.283f * 4.0f * dt;  // 4Hz
+            }
+        } else {
+            wiggle_last = g_motion.gait;
+        }
+
         servo_group_begin();
 
         for (int leg = 0; leg < 4; leg++) {
@@ -331,20 +364,64 @@ static void motion_task_main(void *pvParam)
                 ik_result_t ik = ik_solve_2dof(0, z,
                                     g_motion.ik_L1, g_motion.ik_L2,
                                     leg_side[leg], leg_pair[leg]);
+                g_smooth_angles[leg_hip_ch[leg]]  = ik.hip_deg;
+                g_smooth_angles[leg_knee_ch[leg]] = ik.knee_deg;
                 servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
                 servo_group_add(leg_knee_ch[leg], ik.knee_deg);
                 continue;
-            } else if (is_sit) {
+            } else if (is_crouch) {
                 float sit_hip  = (leg_side[leg] == IK_SIDE_LEFT) ? 135.0f : 45.0f;
                 float sit_knee = (leg_side[leg] == IK_SIDE_LEFT) ? 45.0f : 135.0f;
 #if IK_KNEE_REAR_FORWARD
                 if (leg_pair[leg] == IK_LEG_REAR) {
-                    sit_hip  = 180.0f - sit_hip;   // 后腿髋角互换
-                    sit_knee = 180.0f - sit_knee;  // 后腿膝角互换
+                    sit_hip  = 180.0f - sit_hip;
+                    sit_knee = 180.0f - sit_knee;
                 }
 #endif
+                // 静态姿态限速: 每帧最多走 SERVO_MAX_DEG_PER_FRAME 度
+                sit_hip  = servo_step_toward(leg_hip_ch[leg],  sit_hip,  SERVO_MAX_DEG_PER_FRAME);
+                sit_knee = servo_step_toward(leg_knee_ch[leg], sit_knee, SERVO_MAX_DEG_PER_FRAME);
+                g_smooth_angles[leg_hip_ch[leg]]  = sit_hip;
+                g_smooth_angles[leg_knee_ch[leg]] = sit_knee;
                 servo_group_add(leg_hip_ch[leg],  sit_hip);
                 servo_group_add(leg_knee_ch[leg], sit_knee);
+                continue;
+            } else if (is_sit) {
+                // 猫坐姿态: 前腿撑, 后腿折 (实测角度)
+                float s_hip, s_knee;
+                if (leg_side[leg] == IK_SIDE_LEFT) {
+                    s_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 120.0f : 10.0f;
+                    s_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 160.0f : 165.0f;
+                } else {
+                    s_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 60.0f : 170.0f;
+                    s_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 20.0f : 15.0f;
+                }
+                s_hip  = servo_step_toward(leg_hip_ch[leg],  s_hip,  SERVO_MAX_DEG_PER_FRAME);
+                s_knee = servo_step_toward(leg_knee_ch[leg], s_knee, SERVO_MAX_DEG_PER_FRAME);
+                g_smooth_angles[leg_hip_ch[leg]]  = s_hip;
+                g_smooth_angles[leg_knee_ch[leg]] = s_knee;
+                servo_group_add(leg_hip_ch[leg],  s_hip);
+                servo_group_add(leg_knee_ch[leg], s_knee);
+                continue;
+            } else if (is_play_bow) {
+                // 邀玩: 前低后高 (摇摆在循环外用 wiggle 变量)
+                float p_hip, p_knee;
+                if (leg_side[leg] == IK_SIDE_LEFT) {
+                    p_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 50.0f : 70.0f;
+                    p_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 125.0f : 50.0f;
+                } else {
+                    p_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 130.0f : 110.0f;
+                    p_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 55.0f : 130.0f;
+                }
+                // 后腿同加同减
+                if (leg_pair[leg] == IK_LEG_REAR)
+                    p_knee += wiggle;
+                p_hip  = servo_step_toward(leg_hip_ch[leg],  p_hip,  SERVO_MAX_DEG_PER_FRAME);
+                p_knee = servo_step_toward(leg_knee_ch[leg], p_knee, SERVO_MAX_DEG_PER_FRAME);
+                g_smooth_angles[leg_hip_ch[leg]]  = p_hip;
+                g_smooth_angles[leg_knee_ch[leg]] = p_knee;
+                servo_group_add(leg_hip_ch[leg],  p_hip);
+                servo_group_add(leg_knee_ch[leg], p_knee);
                 continue;
             } else if (is_stand_up) {
                 float t = g_motion.stand_up_elapsed;
@@ -365,16 +442,20 @@ static void motion_task_main(void *pvParam)
                                     leg_side[leg], leg_pair[leg]);
 
                 if (t < hold) {
+                    g_smooth_angles[leg_hip_ch[leg]]  = sit_hip;
+                    g_smooth_angles[leg_knee_ch[leg]] = sit_knee;
                     servo_group_add(leg_hip_ch[leg],  sit_hip);
                     servo_group_add(leg_knee_ch[leg], sit_knee);
                 } else {
                     float raw = (t - hold) / ramp;
                     if (raw > 1.0f) raw = 1.0f;
                     float ease = raw * raw * (3.0f - 2.0f * raw);
-                    servo_group_add(leg_hip_ch[leg],
-                        sit_hip  + (ik.hip_deg  - sit_hip)  * ease);
-                    servo_group_add(leg_knee_ch[leg],
-                        sit_knee + (ik.knee_deg - sit_knee) * ease);
+                    float out_hip  = sit_hip  + (ik.hip_deg  - sit_hip)  * ease;
+                    float out_knee = sit_knee + (ik.knee_deg - sit_knee) * ease;
+                    g_smooth_angles[leg_hip_ch[leg]]  = out_hip;
+                    g_smooth_angles[leg_knee_ch[leg]] = out_knee;
+                    servo_group_add(leg_hip_ch[leg],  out_hip);
+                    servo_group_add(leg_knee_ch[leg], out_knee);
                 }
                 continue;
             } else if (is_stand) {
@@ -443,6 +524,13 @@ static void motion_task_main(void *pvParam)
             ik_result_t ik = ik_solve_2dof(foot_x, foot_z,
                                 g_motion.ik_L1, g_motion.ik_L2,
                                 leg_side[leg], leg_pair[leg]);
+            // 静态姿态限速: 每帧最多走 SERVO_MAX_DEG_PER_FRAME 度
+            if (is_stand || is_sit || is_play_bow) {
+                ik.hip_deg  = servo_step_toward(leg_hip_ch[leg],  ik.hip_deg,  SERVO_MAX_DEG_PER_FRAME);
+                ik.knee_deg = servo_step_toward(leg_knee_ch[leg], ik.knee_deg, SERVO_MAX_DEG_PER_FRAME);
+            }
+            g_smooth_angles[leg_hip_ch[leg]]  = ik.hip_deg;
+            g_smooth_angles[leg_knee_ch[leg]] = ik.knee_deg;
             servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
             servo_group_add(leg_knee_ch[leg], ik.knee_deg);
         }
@@ -489,7 +577,7 @@ void motion_set_gait(gait_type_t gait)
     if (gait < GAIT_COUNT) {
         g_motion.gait = gait;
         g_motion.enabled = true;
-        if (gait != GAIT_STAND && gait != GAIT_SIT && gait != GAIT_STAND_UP)
+        if (gait != GAIT_STAND && gait != GAIT_CROUCH && gait != GAIT_SIT && gait != GAIT_PLAY_BOW && gait != GAIT_STAND_UP)
             motion_apply_gait_params(gait);
     }
 }

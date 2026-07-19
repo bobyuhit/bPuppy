@@ -26,7 +26,9 @@ typedef enum {
     GAIT_GO,            // 自适应 (speed<5→walk, speed>10→trot, 之间插值)
     GAIT_CRAWL,         // 爬行
     GAIT_BOUND,         // 跳跃
-    GAIT_SIT,           // 蹲下
+    GAIT_CROUCH,           // 蹲伏
+    GAIT_SIT,           // 猫坐 (前腿撑, 后腿折)
+    GAIT_PLAY_BOW,      // 邀玩 (前低后高, 前腿趴后腿站)
     GAIT_STAND_UP,      // 蹲→站过渡（缓动插值, 自动切换 GAIT_STAND）
     GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
     GAIT_COUNT
