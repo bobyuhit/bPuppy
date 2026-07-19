@@ -132,17 +132,27 @@ FreeRTOS:          ESP-IDF v5.1.2
 
 | speed | duty | gap | stride | height | pitch | 实际 |
 |-------|------|-----|--------|--------|-------|------|
-| ≤4 | 0.20 | 0.04 | 70 | 70 | -5° | walk |
-| 4~6 | 插值 | 插值 | 70→50 | 70 | -5°→-3° | 混合 |
-| ≥6 | 0.40 | 0.10 | 50 | 70 | -3° | trot |
+| ≤4 | 0.20 | 0.04 | 70 | 70 | 0° | walk |
+| 4~6 | 插值 | 插值 | 70→50 | 70 | 0° | 混合 |
+| ≥6 | 0.40 | 0.10 | 50 | 70 | 0° | trot |
 
 lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平滑跟随 `target_speed`。
 
 ### 姿态过渡
 
+- **静态↔静态** (stand/crouch/sit/play): 每帧限速 3° smoothstep, 自然平滑
 - **启动** (stand→go): 相位锁到 all_stance_mid, 0.3s smoothstep 足端从站立缓动到轨迹
 - **停止** (go→stand): 0.3s smoothstep 足端从轨迹缓动回 `(0, height)`
 - **变速**: 每半周期 ±3.0 步进跟随 target_speed, 避免突变
+
+### 静态姿态
+
+| gait | 说明 | 特点 |
+|------|------|------|
+| `"stand"` | 站姿 | IK 计算, 高度由 `set_params` 设定 |
+| `"crouch"` | 蹲伏 | 固定角度, 四腿折叠, 关机前放松舵机 |
+| `"sit"` | 猫坐 | 前腿撑地、后腿折藏身下 |
+| `"play"` | 邀玩 | 前低后高 + 4Hz 摇臀 8 次 ±10° |
 
 ### 足端轨迹 (smoothstep 摆线)
 
