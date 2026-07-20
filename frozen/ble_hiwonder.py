@@ -130,9 +130,7 @@ class HiwonderBLE:
                 return
 
             s = self._speed
-            if d in (6, 7, 8):
-                s = -s       # 后退
-            elif d == 0:
+            if d == 0:
                 s = 0
 
             self._last_dir = d
@@ -140,13 +138,16 @@ class HiwonderBLE:
                     6: -0.25, 8: 0.25}.get(d, 0)
             bpuppy_motion.set_turn(turn)
 
-            print("[BLE] 方向=%d speed=%.1f turn=%.1f" % (d, s, turn))
+            # stride 符号决定方向: 正=前, 负=后  (GO 忽略 stride 值，但后续会用到)
+            stride_dir = -70 if d in (6, 7, 8) else 70
+
+            print("[BLE] 方向=%d speed=%.1f stride=%d turn=%.1f" % (d, s, stride_dir, turn))
             if d == 0:
-                bpuppy_motion.set_params(0, 0, 0)  # speed=0, stride/height 不变
+                bpuppy_motion.set_params(0, 0, 70)  # speed=0, 保持站立高度
                 bpuppy_motion.set_gait("stand")
                 self._moving = False
             else:
-                bpuppy_motion.set_params(s, 0, 0)  # stride/height 由 GO 内部自适应
+                bpuppy_motion.set_params(s, stride_dir, 70)  # stride/height 由 GO 自适应
                 bpuppy_motion.set_gait("go")
                 self._moving = True
 
@@ -163,9 +164,9 @@ class HiwonderBLE:
             self._speed = 12.0 if (h < 5.0 and g > 0) else ((360.0 - h) % 360.0) / 360.0 * 12.0
 
             if self._moving:
-                s = -self._speed if self._last_dir in (6, 7, 8) else self._speed
-                print("[BLE] set speed=%.1f (from slider)" % s)
-                bpuppy_motion.set_params(s, 70, 60)
+                stride_dir = -70 if self._last_dir in (6, 7, 8) else 70
+                print("[BLE] set speed=%.1f stride=%d (from slider)" % (self._speed, stride_dir))
+                bpuppy_motion.set_params(self._speed, stride_dir, 60)
 
         elif cmd_id == 6:
             self.send("CMD|6|85|$")

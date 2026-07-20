@@ -253,9 +253,8 @@ static void motion_task_main(void *pvParam)
         }
         g_was_moving = !now_static;
 
-        // 方向与速度: 正=前, 负=后
-        float eff_speed = fabsf(g_motion.speed);
-        int   eff_dir   = (g_motion.speed < 0.0f) ? -1 : 1;
+        // speed=步频 stride=步幅+方向 (正=前, 负=后)
+        float eff_speed = g_motion.speed;
 
         /*
          * ============================================================
@@ -315,9 +314,11 @@ static void motion_task_main(void *pvParam)
             g_motion.body_pitch = eff_pitch;
         }
 
-        // 计算步态偏移
-        float offsets[4];
-        compute_offsets(eff_duty, eff_gap, eff_dir, offsets);
+        // 计算步态偏移: 正向 (前腿迈) + 反向 (后腿迈) 各一套
+        // turn 可能让不同侧走向不同方向，per-leg 按方向选用
+        float offsets_fwd[4], offsets_rev[4];
+        compute_offsets(eff_duty, eff_gap,  1, offsets_fwd);
+        compute_offsets(eff_duty, eff_gap, -1, offsets_rev);
 
         // 过渡开始时设一次相位到全踩地中点, 然后正常累计
         if (g_motion.pose_trans == 1 && g_motion.pose_timer < 0.02f) {
@@ -469,30 +470,36 @@ static void motion_task_main(void *pvParam)
                     foot_x = 0;
                     foot_z = g_motion.height;
                 }
-            } else if (eff_stride < 0.0f) {
-                // stride < 0: 完全站立不动
-                foot_x = 0;
-                foot_z = eff_height;
             } else {
-                // stride >= 0: 运动步态 (方向由 speed 符号决定)
-                float direction = (float)eff_dir;
+                // 运动步态 (stride 正=前, 零=原地踏步, 负=后)
 
-                float leg_phase = g_phase + offsets[leg] * TWO_PI;
+                // turn → per-side stride: 一侧不变, 另一侧 1→0→-1 连续缩放
+                // 方向符号来自用户 stride (GO 只接管 magnitude, 不改方向)
+                float stride_sign = (g_motion.stride < 0.0f) ? -1.0f : 1.0f;
+                float leg_stride;
+                if (g_motion.turn >= 0.0f) {
+                    float s = (leg_side[leg] == IK_SIDE_RIGHT)
+                            ? (1.0f - g_motion.turn * 2.0f) : 1.0f;
+                    leg_stride = eff_stride * s * stride_sign;
+                } else {
+                    float s = (leg_side[leg] == IK_SIDE_LEFT)
+                            ? (1.0f + g_motion.turn * 2.0f) : 1.0f;
+                    leg_stride = eff_stride * s * stride_sign;
+                }
+                float direction = (leg_stride < 0.0f) ? -1.0f : 1.0f;
+                float abs_stride = fabsf(leg_stride);
+                float max_stride = 2.0f * g_motion.body_half_l * 0.85f;
+                if (abs_stride > max_stride) abs_stride = max_stride;
+
+                // 每腿按自身方向选正向/反向相位
+                // walk 族 (duty+gap<0.5) 方向反了需翻转相位; trot (0.5) 对称无需
+                bool need_rev = (direction < 0) && (eff_duty + eff_gap < 0.50f);
+                float offset = need_rev ? offsets_rev[leg] : offsets_fwd[leg];
+                float leg_phase = g_phase + offset * TWO_PI;
                 if (leg_phase > TWO_PI) leg_phase -= TWO_PI;
                 float phase_norm = leg_phase / TWO_PI;
 
-                // 转弯 — 单侧减速 (-1左 ~ +1右)
-                float leg_stride = eff_stride;
-                if (g_motion.turn != 0.0f) {
-                    float factor = fabsf(g_motion.turn);
-                    if ((g_motion.turn < 0 && leg_side[leg] == IK_SIDE_LEFT) ||
-                        (g_motion.turn > 0 && leg_side[leg] == IK_SIDE_RIGHT))
-                        leg_stride = eff_stride * (1.0f - factor);
-                }
-                float max_stride = 2.0f * g_motion.body_half_l * 0.85f;
-                if (leg_stride > max_stride) leg_stride = max_stride;
-
-                foot_trajectory(phase_norm, leg_stride,
+                foot_trajectory(phase_norm, abs_stride,
                                 eff_height, g_motion.lift_height,
                                 eff_duty, direction, &foot_x, &foot_z);
 
@@ -588,15 +595,15 @@ static bool motion_validate_params(float stride, float height)
 {
     float L1 = g_motion.ik_L1;
     float L2 = g_motion.ik_L2;
-    float x  = stride * 0.5f;
+    float x  = fabsf(stride) * 0.5f;
     float z  = height;
     bool  bad = false;
 
     // 机械步幅上限
     float max_stride = 2.0f * g_motion.body_half_l * 0.85f;
-    if (stride > max_stride) {
-        ESP_LOGW(TAG, "⚠ 步幅过大: stride=%.0f > max=%.0f (前后脚干涉), 参数未写入",
-                 stride, max_stride);
+    if (fabsf(stride) > max_stride) {
+        ESP_LOGW(TAG, "⚠ 步幅过大: |stride|=%.0f > max=%.0f (前后脚干涉), 参数未写入",
+                 fabsf(stride), max_stride);
         bad = true;
     }
 
@@ -647,30 +654,28 @@ int motion_check_params(float stride, float height)
 
 void motion_set_params(float speed, float stride, float height)
 {
-    // 速度上限
-    if (fabsf(speed) > 10.0f) {
-        ESP_LOGW(TAG, "⚠ 速度过大: |speed|=%.1f > 10, 参数未写入", fabsf(speed));
+    // 速度范围 0~10
+    if (speed < 0.0f || speed > 10.0f) {
+        ESP_LOGW(TAG, "⚠ 速度超限: speed=%.1f (允许 0~10), 参数未写入", speed);
         ESP_LOGW(TAG, "→ 保持原值: speed=%.2f stride=%.0f height=%.0f",
                  g_motion.speed, g_motion.stride, g_motion.height);
         return;
     }
 
-    // 校验 stride/height (stride<0=站立, 不校验)
-    float new_stride = (stride >= 0) ? stride : g_motion.stride;
-    float new_height = (height >= 0) ? height : g_motion.height;
-    if (stride > 0 && motion_validate_params(new_stride, new_height)) {
+    // 校验步幅/高度
+    if (stride != 0 && motion_validate_params(stride, height)) {
         ESP_LOGW(TAG, "→ 保持原值: speed=%.2f stride=%.0f height=%.0f",
                  g_motion.speed, g_motion.stride, g_motion.height);
         return;
     }
 
-    g_motion.target_speed = speed;  // 正=前进, 负=后退, 0=停
-    if (stride >= 0) g_motion.stride = stride;  // stride≥0 写入 (<0 表示不更新)
-    if (height > 0) g_motion.height = height;   // height>0 写入 (0 表示不更新)
+    g_motion.target_speed = speed;  // 纯频率, ≥0
+    g_motion.stride = stride;       // 正=前, 零=原地踏步, 负=后
+    g_motion.height = height;       // 站立高度
     ESP_LOGI(TAG, "Params: speed=%.2f stride=%.0f height=%.0f (omega=%.3f rad/s, cycle=%.1fs)",
              g_motion.speed, g_motion.stride, g_motion.height,
-             g_motion.omega_base * fabsf(g_motion.speed),
-             TWO_PI / (g_motion.omega_base * fabsf(g_motion.speed) + 0.001f));
+             g_motion.omega_base * g_motion.speed,
+             TWO_PI / (g_motion.omega_base * g_motion.speed + 0.001f));
 }
 
 void motion_cal_ik(float L1, float L2)

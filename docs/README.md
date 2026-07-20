@@ -197,12 +197,11 @@ python gait_sim.py --stride 80 --height 70 --fps 4
 
 ### 2. `motion_set_params` 的参数语义
 
-- `stride >= 0` → 写入新值 (0=原地踏步)
-- `stride < 0` → 不更新 (保持原值)
-- `height > 0` → 写入新值
-- `height <= 0` → 不更新
+- `speed` = 步频 (0~10, 0=停), 纯 magnitude
+- `stride` = 步幅+方向 (正=前, 零=原地踏步, 负=后)
+- `height` = 站立高度 (mm)
 
-用 `set_params(0, 0, 0)` 来停止但不改 stride/height。**切勿用 `set_params(0, 0, 0)` 作为"清零"**，因为 stride=0 是有效的（原地踏步）。
+三个参数始终直接写入，无哨兵。
 
 ### 3. `stand_up` 完成后的 `pose_trans`
 
@@ -229,7 +228,7 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 ### 8. BLE 停止
 
-停止时只设 `speed=0`, stride/height 不更新。d=0 调 `set_params(0, 0, 0)` + `set_gait("stand")`。
+停止时设 `speed=0, stride=0`。d=0 调 `set_params(0, 0, 70)` + `set_gait("stand")`。
 
 ### 9. GPIO 引脚映射 (已确定)
 
