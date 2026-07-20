@@ -121,8 +121,12 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/ble_driver.c` | NimBLE GATT 服务 |
 | `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up → 启动 BLE |
 | `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~12 |
+| `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
+| `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
+| `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
 | `gait_sim/gait_sim.py` | PC 端步态仿真 — CSV/PNG/GIF |
 | `docs/操作指南.md` | 日常操作手册 |
+| `docs/camera_design.md` | 摄像头功能设计文档 |
 
 ---
 
@@ -185,6 +189,60 @@ python gait_sim.py                    # 输出 CSV + PNG + GIF
 python gait_sim.py --stride 80 --height 70 --fps 4
 ```
 
+
+## OV2640 摄像头
+
+### 硬件
+
+| 项目 | 规格 |
+|------|------|
+| 型号 | OV2640 (200万像素) |
+| 接口 | DVP 8-bit 并行 |
+| 最大分辨率 | UXGA 1600×1200 |
+| 输出格式 | JPEG (硬件编码) / RGB565 / GRAYSCALE |
+| XCLK | 20MHz (LCD_CAM 内部分频，不占 LEDC) |
+| 引脚 | GPIO 4~18（与舵机无冲突，详见 GPIO 表） |
+
+### 软件接口
+
+```python
+import bpuppy_camera
+
+# 默认初始化 (JPEG, 1600×1200, q=10)
+bpuppy_camera.init()
+
+# 自定义格式和分辨率
+bpuppy_camera.init_adv(bpuppy_camera.QVGA, 0, 2, 20000000, bpuppy_camera.RGB565)
+
+# 拍照 → 返回 (data, width, height, format)
+data, w, h, fmt = bpuppy_camera.capture()
+
+# 释放
+bpuppy_camera.deinit()
+```
+
+| 函数 | 说明 |
+|------|------|
+| `init()` | 默认: JPEG UXGA, q=10, 双缓冲 |
+| `init_adv(fs, q, fb, xclk, fmt)` | 自定义: 分辨率/画质/缓冲数/时钟/格式 |
+| `capture()` | 拍照，返回 `(bytes, w, h, fmt)` 或 `None` |
+| `deinit()` | 释放摄像头 |
+| `is_ready()` | 是否已初始化 |
+
+**格式常量**: `JPEG`(4) / `RGB565`(1) / `GRAYSCALE`(5)
+**分辨率常量**: `QQVGA`(160×120) / `QVGA`(320×240) / `VGA`(640×480) / `SVGA`(800×600) / `XGA`(1024×768) / `UXGA`(1600×1200)
+
+### PC 端串口拍照
+
+```powershell
+pip install pyserial
+python tools/capture.py COM14
+# 连接后按 Enter 拍照，自动打开图片，q 退出
+```
+
+> 原理: PC 通过串口发送命令，ESP32 拍照后 base64 回传，PC 解码保存为 JPEG。
+
+---
 ---
 
 ## 开发注意事项 — 易错点总结
@@ -241,6 +299,20 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 IMU 已暂时屏蔽。USB D+/D- (GPIO19/20) 已恢复，UART0 (GPIO43/44) 可用作备用串口。
 
+### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)
+
+| 信号 | GPIO | 信号 | GPIO |
+|------|------|------|------|
+| SIOD (SDA) | 4 | SIOC (SCL) | 5 |
+| VSYNC | 6 | HREF | 7 |
+| XCLK | 15 | PCLK | 13 |
+| Y2 (D0) | 11 | Y6 (D4) | 12 |
+| Y3 (D1) | 9 | Y7 (D5) | 18 |
+| Y4 (D2) | 8 | Y8 (D6) | 17 |
+| Y5 (D3) | 10 | Y9 (D7) | 16 |
+
+> 与舵机 GPIO 无冲突。PWDN/RESET 未接。
+
 ---
 
 ## 首次编译问题排查
@@ -281,6 +353,8 @@ IMU 已暂时屏蔽。USB D+/D- (GPIO19/20) 已恢复，UART0 (GPIO43/44) 可用
 | 添加 MicroPython C 函数 | 对应 `drivers/*.c` + 注册到模块表 |
 | 修改 Python 启动逻辑 | `frozen/main.py` |
 | 修改 BLE 协议 | `frozen/ble_hiwonder.py` |
+| 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |
+| 修改 PC 拍照工具 | `tools/capture.py` |
 | 修改构建参数 | `CMakeLists.txt` + `sdkconfig.defaults` |
 | 更新版本号 | `drivers/bpuppy_version.c` → `BP_VERSION` |
 | 修改分区表 | `partitions.csv` |

@@ -3,3 +3,4 @@
 dependencies:
   idf: ">=5.0"
   mr9you/micropython-helper: "~1.22.1"
+  espressif/esp32-camera: "^2"
