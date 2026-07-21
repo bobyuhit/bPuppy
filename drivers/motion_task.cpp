@@ -56,7 +56,7 @@ static float servo_step_toward(int ch, float target, float max_step) {
 }
 
 static bool is_static_gait(gait_type_t g) {
-    return g == GAIT_STAND || g == GAIT_CROUCH || g == GAIT_SIT || g == GAIT_PLAY_BOW;
+    return g == GAIT_STAND || g == GAIT_CROUCH || g == GAIT_SIT || g == GAIT_PLAY_BOW || g == GAIT_WAVE;
 }
 
 /* ---- 全局状态 ---- */
@@ -210,6 +210,7 @@ static void motion_task_main(void *pvParam)
         bool is_play_bow    = (g_motion.gait == GAIT_PLAY_BOW);
         bool is_stand_up = (g_motion.gait == GAIT_STAND_UP);
         bool is_jump     = (g_motion.gait == GAIT_JUMP);
+        bool is_wave     = (g_motion.gait == GAIT_WAVE);
 
         if (is_stand_up || is_jump) {
             g_motion.stand_up_elapsed += dt;
@@ -341,6 +342,23 @@ static void motion_task_main(void *pvParam)
             wiggle_last = g_motion.gait;
         }
 
+        // ---- wave 摇右前膝 ----
+        static float wave_phase = 0;
+        static gait_type_t wave_last = GAIT_STAND;
+        float wave_knee = 0;
+        if (is_wave) {
+            if (wave_last != GAIT_WAVE) wave_phase = 0;
+            wave_last = GAIT_WAVE;
+            if (wave_phase < 6.283f * 3.0f) {
+                wave_knee = sinf(wave_phase) * 10.0f;
+                wave_phase += 6.283f * 1.0f * dt;
+            } else {
+                g_motion.gait = GAIT_SIT;  // 挥手完成，回坐
+            }
+        } else {
+            wave_last = g_motion.gait;
+        }
+
         servo_group_begin();
 
         for (int leg = 0; leg < 4; leg++) {
@@ -396,6 +414,28 @@ static void motion_task_main(void *pvParam)
                 } else {
                     s_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 60.0f : 170.0f;
                     s_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 20.0f : 15.0f;
+                }
+                s_hip  = servo_step_toward(leg_hip_ch[leg],  s_hip,  SERVO_MAX_DEG_PER_FRAME);
+                s_knee = servo_step_toward(leg_knee_ch[leg], s_knee, SERVO_MAX_DEG_PER_FRAME);
+                g_smooth_angles[leg_hip_ch[leg]]  = s_hip;
+                g_smooth_angles[leg_knee_ch[leg]] = s_knee;
+                servo_group_add(leg_hip_ch[leg],  s_hip);
+                servo_group_add(leg_knee_ch[leg], s_knee);
+                continue;
+            } else if (is_wave) {
+                // 挥手: sit姿势 + 右前腿抬起摆动
+                float s_hip, s_knee;
+                if (leg_side[leg] == IK_SIDE_LEFT) {
+                    s_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 120.0f : 10.0f;
+                    s_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 160.0f : 165.0f;
+                } else {
+                    if (leg_pair[leg] == IK_LEG_FRONT) {
+                        s_hip  = 150.0f;
+                        s_knee = 45.0f + wave_knee;
+                    } else {
+                        s_hip  = 170.0f;
+                        s_knee = 15.0f;
+                    }
                 }
                 s_hip  = servo_step_toward(leg_hip_ch[leg],  s_hip,  SERVO_MAX_DEG_PER_FRAME);
                 s_knee = servo_step_toward(leg_knee_ch[leg], s_knee, SERVO_MAX_DEG_PER_FRAME);

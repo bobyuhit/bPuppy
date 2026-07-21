@@ -31,6 +31,7 @@ typedef enum {
     GAIT_PLAY_BOW,      // 邀玩 (前低后高, 前腿趴后腿站)
     GAIT_STAND_UP,      // 蹲→站过渡（缓动插值, 自动切换 GAIT_STAND）
     GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
+    GAIT_WAVE,          // 挥手：坐下→右前膝 ±10 摆动 3 次→回坐
     GAIT_COUNT
 } gait_type_t;
 
