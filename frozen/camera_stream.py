@@ -124,7 +124,7 @@ def _accept_loop():
 
         try:
             client.settimeout(2.0)
-            request = client.recv(256).decode("utf-8", errors="ignore")
+            request = client.recv(256).decode("utf-8", "ignore")
         except OSError:
             client.close()
             continue
