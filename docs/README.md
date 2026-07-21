@@ -41,16 +41,31 @@ MicroPython v1.22.1  ──只能搭配──▶  ESP-IDF v5.1.2
                                     ⚠ 不可用 v5.3 / v5.5
 ```
 
-### Docker 编译（唯一推荐方式）
+### Docker 编译（唯一方式，带 ccache 加速）
+
+**编译准则（AI 和人类共同遵守）：**
+
+1. 始终在**宿主机 Git Bash** 中运行 `build.sh`，不要在容器内手动编译
+2. `build.sh` 已自动处理 `MSYS_NO_PATHCONV=1`（防止 Git Bash 路径转换错误）
+3. `build/` 目录不提交 git
+4. 每台电脑首次使用前建一次 ccache 目录
 
 ```bash
-# 使用官方 ESP-IDF 镜像
-docker run --rm -v "d:\HiWonder\CODE\Dog\bPuppy:/workspace" \
-  espressif/idf:v5.1.2 bash -c "cd /workspace && idf.py build"
+# === 首次设置（新电脑上只需一次） ===
+mkdir -p ~/.ccache_bpuppy
+
+# === 日常编译 ===
+bash build.sh
+
+# === 改了 CMakeLists.txt / sdkconfig / idf_component.yml ===
+rm -rf build && bash build.sh
 ```
 
-> 首次需先 `idf.py set-target esp32s3`。日常增量编译只需 `idf.py build`。
-> 产物: `build/micropython_bpuppy.bin`
+**ccache 缓存原理**：`~/.ccache_bpuppy` 挂载到容器内 `/root/.ccache`，容器销毁后缓存不丢。增量编译从 1356 步降到 ~10 步，几秒完成。
+
+**多台电脑**：每台电脑各自维护 `~/.ccache_bpuppy`，互不影响。`build/` 目录也在各自电脑上独立存在。
+
+**产物**: `build/micropython_bpuppy.bin`
 
 ### Windows 烧录
 
