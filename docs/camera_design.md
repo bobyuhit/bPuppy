@@ -6,7 +6,7 @@ ESP32-S3 通过 DVP 并行接口驱动 OV2640 摄像头，提供两个独立功�
 
 | | 功能 1：手机实时图传 | 功能 2：色球识别 |
 |---|---|---|
-| **文件** | `frozen/camera_stream.py` | `frozen/color_track.py` |
+| **文件** | `frozen/camera_stream.py` ✅ 已完成 | `frozen/color_track.py` |
 | **摄像头格式** | JPEG（硬件编码） | RGB565（原始像素） |
 | **分辨率** | SVGA 800×600 | QVGA 320×240 |
 | **帧率** | ~15 fps | ~25 fps |
@@ -249,7 +249,7 @@ turn = 偏移量 / 160 * 系数
 |------|------|------|
 | `drivers/camera_driver.h` | C 头文件 | 摄像头驱动声明（已完成） |
 | `drivers/camera_driver.c` | C 源码 | 摄像头驱动 + MicroPython 绑定（需加 format 参数） |
-| `frozen/camera_stream.py` | Python | WiFi AP + MJPEG 图传（新增） |
+| `frozen/camera_stream.py` | Python | WiFi AP + MJPEG 图传（✅ 已完成） |
 | `frozen/color_track.py` | Python | 色球识别 + 跟随（新增） |
 | `frozen/main.py` | Python | 启动脚本（不变） |
 | `frozen/manifest.py` | Python | 冻结模块清单（需加 2 个新文件） |
