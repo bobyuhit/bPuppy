@@ -32,13 +32,13 @@ try:
 except ImportError as e:
     modules_failed.append(("servo", e))
 
-# IMU 传感器 — QMI8658 (暂时屏蔽，待引脚确认)
-# try:
-#     import bpuppy_imu
-#     bpuppy_imu.init(0, 1, 2, 0x6A)  # I2C0, SDA=GPIO1, SCL=GPIO2, addr=0x6A
-#     modules_loaded.append("imu")
-# except ImportError as e:
-#     modules_failed.append(("imu", e))
+# IMU 传感器 — MPU9250 9轴 (SDA=GPIO3, SCL=GPIO14, addr=0x68)
+try:
+    import bpuppy_imu
+    bpuppy_imu.init(0, 3, 14, 0x68)  # I2C0, SDA=3, SCL=14
+    modules_loaded.append("imu")
+except ImportError as e:
+    modules_failed.append(("imu", e))
 
 # UART 通信（骨架）
 try:

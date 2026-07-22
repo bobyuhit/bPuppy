@@ -59,8 +59,8 @@ static const char *TAG = "imu";
 #define IMU_TASK_HZ     100
 #define IMU_TASK_PERIOD (1000/IMU_TASK_HZ)
 
-#define MAHONY_KP  1.0f
-#define MAHONY_KI  1.0f
+#define MAHONY_KP  0.5f
+#define MAHONY_KI  0.01f
 
 static bool g_imu_ready, g_mag_ready, g_i2c_installed;
 static i2c_port_t g_i2c_port;
