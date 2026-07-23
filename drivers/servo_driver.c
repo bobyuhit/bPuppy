@@ -321,6 +321,29 @@ STATIC mp_obj_t mp_servo_set_angle(mp_obj_t ch_obj, mp_obj_t angle_obj) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_servo_set_angle_obj, mp_servo_set_angle);
 
 // ---- servo_get_angle(channel) → float ----
+// ---- servo_group_begin() ----
+STATIC mp_obj_t mp_servo_group_begin(void) {
+    servo_group_begin();
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_servo_group_begin_obj, mp_servo_group_begin);
+
+// ---- servo_group_add(channel, angle_deg) ----
+STATIC mp_obj_t mp_servo_group_add(mp_obj_t ch_obj, mp_obj_t angle_obj) {
+    int ch = mp_obj_get_int(ch_obj);
+    float angle = mp_obj_get_float(angle_obj);
+    servo_group_add((uint8_t)ch, angle);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_servo_group_add_obj, mp_servo_group_add);
+
+// ---- servo_group_commit() ----
+STATIC mp_obj_t mp_servo_group_commit(void) {
+    servo_group_commit();
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_servo_group_commit_obj, mp_servo_group_commit);
+
 STATIC mp_obj_t mp_servo_get_angle(mp_obj_t ch_obj) {
     int ch = mp_obj_get_int(ch_obj);
     float angle = servo_get_angle((uint8_t)ch);
@@ -385,12 +408,15 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_servo_get_cal_obj, mp_servo_get_cal);
 
 // ---- 模块定义 ----
 STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {
-    { MP_ROM_QSTR(MP_QSTR___name__),    MP_ROM_QSTR(MP_QSTR_bpuppy_servo) },
-    { MP_ROM_QSTR(MP_QSTR_init),        MP_ROM_PTR(&mp_servo_init_obj) },
-    { MP_ROM_QSTR(MP_QSTR_init_all),    MP_ROM_PTR(&mp_servo_init_all_obj) },
-    { MP_ROM_QSTR(MP_QSTR_set_angle),   MP_ROM_PTR(&mp_servo_set_angle_obj) },
-    { MP_ROM_QSTR(MP_QSTR_get_angle),   MP_ROM_PTR(&mp_servo_get_angle_obj) },
-    { MP_ROM_QSTR(MP_QSTR_stop),        MP_ROM_PTR(&mp_servo_stop_obj) },
+    { MP_ROM_QSTR(MP_QSTR___name__),        MP_ROM_QSTR(MP_QSTR_bpuppy_servo) },
+    { MP_ROM_QSTR(MP_QSTR_init),            MP_ROM_PTR(&mp_servo_init_obj) },
+    { MP_ROM_QSTR(MP_QSTR_init_all),        MP_ROM_PTR(&mp_servo_init_all_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_angle),       MP_ROM_PTR(&mp_servo_set_angle_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_angle),       MP_ROM_PTR(&mp_servo_get_angle_obj) },
+    { MP_ROM_QSTR(MP_QSTR_stop),            MP_ROM_PTR(&mp_servo_stop_obj) },
+    { MP_ROM_QSTR(MP_QSTR_group_begin),     MP_ROM_PTR(&mp_servo_group_begin_obj) },
+    { MP_ROM_QSTR(MP_QSTR_group_add),       MP_ROM_PTR(&mp_servo_group_add_obj) },
+    { MP_ROM_QSTR(MP_QSTR_group_commit),    MP_ROM_PTR(&mp_servo_group_commit_obj) },
     { MP_ROM_QSTR(MP_QSTR_load_cal),    MP_ROM_PTR(&mp_servo_load_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal),        MP_ROM_PTR(&mp_servo_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_cal),    MP_ROM_PTR(&mp_servo_get_cal_obj) },

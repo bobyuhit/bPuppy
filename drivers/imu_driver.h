@@ -58,8 +58,22 @@ void imu_read_angles(imu_angles_t *angles);
 
 // 校准: 采集静止状态下 N 次数据计算零偏
 // 加速度计 + 陀螺仪: 均值归零
-// 磁力计: 硬铁校准 (max+min/2)
 void imu_calibrate(int samples);
+
+// 磁力计 3D 椭球拟合校准 (引导式, SLV0 后台读持续运行)
+void imu_start_mag_cal(void);
+// 采集一次磁力计数据, 返回统计: (count, r_x, r_y, r_z, min_x, max_x, min_y, max_y, min_z, max_z)
+// 调用前需先 start_mag_cal, 调用后通过指针获取结果
+bool imu_mag_cal_collect(int *count,
+                          float *r_x, float *r_y, float *r_z,
+                          float *mn_x, float *mx_x,
+                          float *mn_y, float *mx_y,
+                          float *mn_z, float *mx_z);
+// 椭球拟合 + 写 NVS + 恢复 IMU 任务. 返回残差 (-1=fail)
+float imu_finish_mag_cal(void);
+
+// 软铁 3×3 矩阵 (行优先), 默认单位阵
+extern float g_mag_soft_iron[9];
 
 #ifdef __cplusplus
 }

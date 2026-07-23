@@ -16,6 +16,8 @@
 #include "ik.h"
 #include <math.h>
 #include "esp_log.h"
+#include "py/runtime.h"
+#include "py/obj.h"
 
 static const char *TAG = "ik";
 
@@ -86,3 +88,42 @@ ik_result_t ik_solve_2dof(float foot_x, float foot_z,
 
     return r;
 }
+
+/* ---- MicroPython 绑定 ---- */
+
+STATIC mp_obj_t mp_ik_solve(size_t n_args, const mp_obj_t *args) {
+    float foot_x  = mp_obj_get_float(args[0]);
+    float foot_z  = mp_obj_get_float(args[1]);
+    float L1      = mp_obj_get_float(args[2]);
+    float L2      = mp_obj_get_float(args[3]);
+    int   side    = mp_obj_get_int(args[4]);
+    int   leg_pair = mp_obj_get_int(args[5]);
+
+    ik_result_t r = ik_solve_2dof(foot_x, foot_z, L1, L2, side, leg_pair);
+
+    mp_obj_t items[2] = {
+        mp_obj_new_float(r.hip_deg),
+        mp_obj_new_float(r.knee_deg),
+    };
+    return mp_obj_new_tuple(2, items);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_ik_solve_obj, 6, 6, mp_ik_solve);
+
+STATIC const mp_rom_map_elem_t ik_globals_table[] = {
+    { MP_ROM_QSTR(MP_QSTR___name__),    MP_ROM_QSTR(MP_QSTR_bpuppy_ik) },
+    { MP_ROM_QSTR(MP_QSTR_solve),       MP_ROM_PTR(&mp_ik_solve_obj) },
+    // 常量
+    { MP_ROM_QSTR(MP_QSTR_LEFT),        MP_ROM_INT(IK_SIDE_LEFT) },
+    { MP_ROM_QSTR(MP_QSTR_RIGHT),       MP_ROM_INT(IK_SIDE_RIGHT) },
+    { MP_ROM_QSTR(MP_QSTR_FRONT),       MP_ROM_INT(IK_LEG_FRONT) },
+    { MP_ROM_QSTR(MP_QSTR_REAR),        MP_ROM_INT(IK_LEG_REAR) },
+    { MP_ROM_QSTR(MP_QSTR_L1),          MP_ROM_INT(IK_L1_DEFAULT) },
+    { MP_ROM_QSTR(MP_QSTR_L2),          MP_ROM_INT(IK_L2_DEFAULT) },
+};
+STATIC MP_DEFINE_CONST_DICT(ik_globals, ik_globals_table);
+
+const mp_obj_module_t bpuppy_ik_module = {
+    .base = { &mp_type_module },
+    .globals = (mp_obj_dict_t *)&ik_globals,
+};
+MP_REGISTER_MODULE(MP_QSTR_bpuppy_ik, bpuppy_ik_module);
