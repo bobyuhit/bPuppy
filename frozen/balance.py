@@ -7,7 +7,7 @@ balance.py — 站立自平衡 (绕过 motion task, 直接舵机控制)
     balance.start()
     balance.stop()
 
-默认参数: kp=0.08, ki=0.0015, kd=0.5
+默认参数: kp=0.06, ki=0.0, kd=0.43
 """
 
 import bpuppy_imu
@@ -47,13 +47,12 @@ def _clip(v, lim):
     return v
 
 
-def start(kp=0.08, ki=0.0015, kd=0.5, deadband=0.5, max_body=45.0, height=60.0):
+def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
     bpuppy_motion.emergency_stop()
     time.sleep(0.05)
 
     dt = 0.02
     br, bp = 0.0, 0.0
-    zr_prev, zp_prev = 0.0, 0.0
     i_r, i_p = 0.0, 0.0
     prev_er, prev_ep = 0.0, 0.0
 
@@ -65,26 +64,23 @@ def start(kp=0.08, ki=0.0015, kd=0.5, deadband=0.5, max_body=45.0, height=60.0):
 
     while True:
         r, p, y = bpuppy_imu.read_angles()
-        r = -(r - ri)   # 去偏置 + 方向翻转
-        p -= pi
 
-        # 从上帧足高反算实际身体-足平面角
-        ra = math.atan2(zr_prev, HALF_W) / D2R
-        pa = math.atan2(zp_prev, HALF_L) / D2R
+        er = ri - r     # 误差 = 初始姿态 − 当前姿态
+        ep = pi - p
 
-        # 误差 = IMU − 实际
-        er = r - ra
-        ep = p - pa
-
-        # 增量式 PID: br += kp×err + ki×∫err + kd×derr
+        # 补偿增量 = kp×err + ki×∫err + kd×(err−err_prev)
         if abs(er) > deadband:
             i_r += er; d_r = er - prev_er
-            br += kp * er + ki * i_r + kd * d_r
-        else: i_r *= 0.9
+            inc_r = kp * er + ki * i_r + kd * d_r
+            br += inc_r
+        else:
+            i_r *= 0.9; inc_r = 0.0
         if abs(ep) > deadband:
             i_p += ep; d_p = ep - prev_ep
-            bp += kp * ep + ki * i_p + kd * d_p
-        else: i_p *= 0.9
+            inc_p = -(kp * ep + ki * i_p + kd * d_p)
+            bp += inc_p
+        else:
+            i_p *= 0.9; inc_p = 0.0
         prev_er = er; prev_ep = ep
 
         if br > max_body: br = max_body
@@ -93,9 +89,9 @@ def start(kp=0.08, ki=0.0015, kd=0.5, deadband=0.5, max_body=45.0, height=60.0):
         if bp < -max_body: bp = -max_body
 
         # ---- 四足高度 ----
-        zr_prev = HALF_W * math.tan(br * D2R)
-        zp_prev = HALF_L * math.tan(bp * D2R)
-        dz = [-zr_prev+zp_prev, -zr_prev-zp_prev, +zr_prev+zp_prev, +zr_prev-zp_prev]
+        z_roll  = HALF_W * math.tan(br * D2R)
+        z_pitch = HALF_L * math.tan(bp * D2R)
+        dz = [-z_roll+z_pitch, -z_roll-z_pitch, +z_roll+z_pitch, +z_roll-z_pitch]
         c_min = max(MIN_Z - d for d in dz)
         c_max = min(MAX_Z - d for d in dz)
         if c_min <= c_max:
@@ -112,8 +108,8 @@ def start(kp=0.08, ki=0.0015, kd=0.5, deadband=0.5, max_body=45.0, height=60.0):
             bpuppy_servo.group_add(knee_ch, knee)
         bpuppy_servo.group_commit()
 
-        print('IMU %+5.1f %+5.1f | act %+5.1f %+5.1f | err %+5.1f %+5.1f | tgt %+5.1f %+5.1f' %
-              (r, p, ra, pa, er, ep, br, bp))
+        print('IMU P%+.1f R%+.1f | Err Pe%+.1f Re%+.1f | Inc iP%+.2f iR%+.2f | Tar Pt%+.1f Rt%+.1f' %
+              (p, r, ep, er, inc_p, inc_r, bp, br))
         time.sleep(dt)
 
 
