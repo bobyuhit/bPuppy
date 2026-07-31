@@ -39,6 +39,9 @@ def _show_stats(ri, rx, ry, rz, count):
 
 
 def start():
+    if not bpuppy_imu.is_ready():
+        bpuppy_imu.init(0, 3, 14, 0x68)   # 自动启动 IMU
+
     print('\n===== 磁力计 3D 椭球校准 =====\n')
     print('拿起机器狗，在空中自由旋转。')
     print('依次完成 Roll / Pitch / Yaw 三轴覆盖。\n')

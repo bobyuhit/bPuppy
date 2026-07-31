@@ -48,6 +48,8 @@ def _clip(v, lim):
 
 
 def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
+    if not bpuppy_imu.is_ready():
+        bpuppy_imu.init(0, 3, 14, 0x68)   # 自动启动 IMU
     bpuppy_motion.emergency_stop()
     time.sleep(0.05)
 
@@ -59,7 +61,7 @@ def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
     # 记录初始姿态当零点
     ri, pi, _ = bpuppy_imu.read_angles()
 
-    print("Balance ON  kp=%.1f  max=%.0f  h=%.0f  ofs=%+.1f/%+.1f" %
+    print("Balance ON  kp=%.3f  max=%.0f  h=%.0f  ofs=%+.1f/%+.1f" %
           (kp, max_body, height, ri, pi))
 
     while True:

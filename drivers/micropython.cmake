@@ -11,6 +11,7 @@ target_sources(usermod INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/servo_driver.c
     ${CMAKE_CURRENT_LIST_DIR}/imu_driver.c
     ${CMAKE_CURRENT_LIST_DIR}/uart_driver.c
+    ${CMAKE_CURRENT_LIST_DIR}/adc_driver.c
     ${CMAKE_CURRENT_LIST_DIR}/ik.c
     ${CMAKE_CURRENT_LIST_DIR}/motion_task.cpp
     ${CMAKE_CURRENT_LIST_DIR}/motion_task_mpy.c

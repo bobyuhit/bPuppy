@@ -133,7 +133,19 @@ static esp_err_t ak8963_init(void) {
     return ESP_OK;
 }
 
+bool imu_is_ready(void) { return g_imu_ready; }
+
+void imu_stop(void) {
+    if (!g_imu_ready) return;
+    g_task_run = false;                                  // 让 AHRS 任务退出
+    if (g_imu_task) vTaskDelay(pdMS_TO_TICKS(IMU_TASK_PERIOD * 3));
+    g_imu_ready = false;
+    g_mpu_addr = 0;                                      // 下次 init 重新扫描
+    mp_printf(&mp_plat_print, "[imu] stopped (可重新 init)\n");
+}
+
 void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
+    if (g_imu_ready) return;   // 幂等: 已初始化直接返回
     g_i2c_port = (i2c_port_t)port;
     (void)addr;
     if (!g_i2c_installed) {
@@ -144,9 +156,16 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
         ESP_ERROR_CHECK(i2c_driver_install(g_i2c_port,c.mode,0,0,0));
         g_i2c_installed = true;
     }
-    for (uint8_t a=0x68; a<=0x69; a++) {
-        uint8_t ww; if (r(a,MPU_WHO_AM_I,&ww,1)==ESP_OK&&(ww==0x71||ww==0x73))
-            {g_mpu_addr=a; mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X\n",a); break;}
+    // 扫描 MPU9250 — 上电初期传感器未稳定可能扫不到, 延时重试最多 3 次
+    for (int retry = 0; retry < 3 && !g_mpu_addr; retry++) {
+        if (retry > 0) {
+            mp_printf(&mp_plat_print, "[imu] retry %d...\n", retry);
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        for (uint8_t a=0x68; a<=0x69; a++) {
+            uint8_t ww; if (r(a,MPU_WHO_AM_I,&ww,1)==ESP_OK&&(ww==0x71||ww==0x73))
+                {g_mpu_addr=a; mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X\n",a); break;}
+        }
     }
     if (!g_mpu_addr) {mp_printf(&mp_plat_print,"[imu] NOT FOUND\n"); return;}
 
@@ -548,6 +567,12 @@ restore:
 STATIC mp_obj_t mi_init(size_t n,const mp_obj_t *a){imu_init(mp_obj_get_int(a[0]),mp_obj_get_int(a[1]),mp_obj_get_int(a[2]),mp_obj_get_int(a[3]));return mp_const_none;}
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mi_init_o,4,4,mi_init);
 
+STATIC mp_obj_t mi_ready(void){return mp_obj_new_bool(imu_is_ready());}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_ready_o,mi_ready);
+
+STATIC mp_obj_t mi_stop(void){imu_stop();return mp_const_none;}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_stop_o,mi_stop);
+
 STATIC mp_obj_t mi_raw(void){imu_raw_data_t d;memset(&d,0,sizeof(d));imu_read_raw(&d);
     mp_obj_t aa[3]={mp_obj_new_float(d.accel_x),mp_obj_new_float(d.accel_y),mp_obj_new_float(d.accel_z)};
     mp_obj_t gg[3]={mp_obj_new_float(d.gyro_x),mp_obj_new_float(d.gyro_y),mp_obj_new_float(d.gyro_z)};
@@ -588,6 +613,8 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_mag_cal_finish_o,mi_mag_cal_finish);
 STATIC const mp_rom_map_elem_t table[]={
     {MP_ROM_QSTR(MP_QSTR___name__),MP_ROM_QSTR(MP_QSTR_bpuppy_imu)},
     {MP_ROM_QSTR(MP_QSTR_init),MP_ROM_PTR(&mi_init_o)},
+    {MP_ROM_QSTR(MP_QSTR_is_ready),MP_ROM_PTR(&mi_ready_o)},
+    {MP_ROM_QSTR(MP_QSTR_stop),MP_ROM_PTR(&mi_stop_o)},
     {MP_ROM_QSTR(MP_QSTR_read_raw),MP_ROM_PTR(&mi_raw_o)},
     {MP_ROM_QSTR(MP_QSTR_read_angles),MP_ROM_PTR(&mi_ang_o)},
     {MP_ROM_QSTR(MP_QSTR_calibrate),MP_ROM_PTR(&mi_cal_o)},

@@ -1,9 +1,9 @@
 /*
  * bPuppy UART 通信驱动 — 头文件
  *
- * 与上位机/遥控器双向通信
- * ESP32-S3 有 3 个 UART: UART0, UART1, UART2
- * 控制台可通过 USB-JTAG CDC 使用，UART0 可腾出给外设
+ * UART2 (GPIO 19=RX, 20=TX) — 默认通信口 (CI-33T / micro:bit)
+ * UART1 (GPIO 18=RX, 17=TX) — 摄像头复用口 (D5/Y7, D6/Y8)
+ * UART0 (GPIO 43/44)         — 烧录 + REPL 控制台
  */
 
 #pragma once
@@ -15,27 +15,35 @@
 extern "C" {
 #endif
 
+/* ---- 引脚默认值 ---- */
+#define UART2_DEFAULT_RX   GPIO_NUM_19
+#define UART2_DEFAULT_TX   GPIO_NUM_20
+#define UART2_DEFAULT_BAUD 115200
+
+#define UART1_DEFAULT_RX   GPIO_NUM_18   // CAM D5/Y7
+#define UART1_DEFAULT_TX   GPIO_NUM_17   // CAM D6/Y8
+#define UART1_DEFAULT_BAUD 115200
+
 /* ---- 命令回调类型 ---- */
 typedef void (*uart_cmd_callback_t)(uint8_t cmd, const uint8_t *data, int len);
 
-/* ---- API ---- */
+/* ---- UART2 API ---- */
 
-// 初始化 UART
-// uart_num: UART_NUM_1 或 UART_NUM_2
 void uart_comm_init(uint8_t uart_num, int tx_pin, int rx_pin, int baud);
-
-// 发送数据
 void uart_comm_send(const uint8_t *data, int len);
-
-// 发送字符串
 void uart_comm_send_str(const char *str);
-
-// 读取数据（非阻塞）
-// 返回实际读取的字节数
 int uart_comm_read(uint8_t *buf, int max_len);
-
-// 设置命令回调
 void uart_comm_set_callback(uart_cmd_callback_t cb);
+// 停止 UART2 (释放外设, 可重新 init)
+void uart_comm_stop(void);
+
+/* ---- UART1 API (摄像头复用) ---- */
+
+void uart1_comm_init(int tx_pin, int rx_pin, int baud);
+void uart1_comm_send(const uint8_t *data, int len);
+int uart1_comm_read(uint8_t *buf, int max_len);
+// 停止 UART1 (释放外设, 可重新 init)
+void uart1_comm_stop(void);
 
 #ifdef __cplusplus
 }

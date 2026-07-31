@@ -32,6 +32,9 @@ def start(target=57.0):
     _target = target
     _running = True
 
+    if not bpuppy_imu.is_ready():
+        bpuppy_imu.init(0, 3, 14, 0x68)   # 自动启动 IMU
+
     bpuppy_motion.set_params(2.5, 70, 70)
     bpuppy_motion.set_gait("go")
 

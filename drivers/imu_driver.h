@@ -44,11 +44,17 @@ typedef struct {
 
 /* ---- API ---- */
 
-// 初始化 IMU (I2C 接口)
+// 初始化 IMU (I2C 接口), 幂等: 已初始化则直接返回
 // port: I2C 端口号 (I2C_NUM_0 或 I2C_NUM_1)
 // sda_pin, scl_pin: GPIO 引脚
 // addr: I2C 地址 (MPU9250 默认 0x68)
 void imu_init(uint8_t port, uint8_t sda_pin, uint8_t scl_pin, uint8_t addr);
+
+// 是否已初始化 (供依赖模块按需启动)
+bool imu_is_ready(void);
+
+// 停止 AHRS 任务, 释放 IMU (可重新 init)
+void imu_stop(void);
 
 // 读取原始数据 (9轴 + 温度)
 void imu_read_raw(imu_raw_data_t *data);

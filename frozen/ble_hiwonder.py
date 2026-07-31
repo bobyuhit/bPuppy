@@ -50,6 +50,12 @@ class HiwonderBLE:
     def connected(self):
         return bpuppy_ble.connected()
 
+    def stop(self):
+        """关闭 BLE: 停止广播 + 断开连接 (NimBLE 栈保留, 可再 start)"""
+        bpuppy_ble.stop()
+        self._balance = False
+        print("[BLE] 已停止 (广播停, 连接断)")
+
     def send(self, data):
         if isinstance(data, str):
             bpuppy_ble.send(data)

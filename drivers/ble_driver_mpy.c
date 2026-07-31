@@ -12,6 +12,12 @@ STATIC mp_obj_t mp_ble_start(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_ble_start_obj, mp_ble_start);
 
+STATIC mp_obj_t mp_ble_stop(void) {
+    ble_driver_stop();
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_ble_stop_obj, mp_ble_stop);
+
 STATIC mp_obj_t mp_ble_connected(void) {
     return mp_obj_new_bool(ble_is_connected());
 }
@@ -41,6 +47,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_ble_set_battery_obj, mp_ble_set_battery);
 STATIC const mp_rom_map_elem_t bpuppy_ble_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),      MP_ROM_QSTR(MP_QSTR_bpuppy_ble) },
     { MP_ROM_QSTR(MP_QSTR_start),         MP_ROM_PTR(&mp_ble_start_obj) },
+    { MP_ROM_QSTR(MP_QSTR_stop),          MP_ROM_PTR(&mp_ble_stop_obj) },
     { MP_ROM_QSTR(MP_QSTR_connected),     MP_ROM_PTR(&mp_ble_connected_obj) },
     { MP_ROM_QSTR(MP_QSTR_recv),          MP_ROM_PTR(&mp_ble_recv_obj) },
     { MP_ROM_QSTR(MP_QSTR_send),          MP_ROM_PTR(&mp_ble_send_obj) },

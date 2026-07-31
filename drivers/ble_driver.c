@@ -32,6 +32,8 @@ static bool      g_connected = false;
 static uint16_t  g_conn_handle = 0;
 static uint16_t  g_tx_handle = 0;
 static uint16_t  g_rx_handle = 0;
+static bool      g_ble_started = false;   // NimBLE 栈是否已初始化
+static bool      g_adv_enabled = false;   // 广播是否开启 (手动 stop 后关闭)
 
 // 接收缓冲
 #define RX_BUF_SIZE 512
@@ -103,12 +105,12 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
         }
         break;
     case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGI(TAG, "断开, 重启广播");
+        ESP_LOGI(TAG, "断开");
         g_connected = false;
-        start_adv();
+        if (g_adv_enabled) start_adv();   // 手动 stop 后不自动重启广播
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        start_adv();
+        if (g_adv_enabled) start_adv();
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
         ESP_LOGI(TAG, "订阅 h%d notify=%d", ev->subscribe.attr_handle,
@@ -120,6 +122,7 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
 
 static void start_adv(void)
 {
+    if (!g_adv_enabled) return;
     struct ble_gap_adv_params p = {
         .conn_mode = BLE_GAP_CONN_MODE_UND,
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
@@ -133,13 +136,16 @@ static void start_adv(void)
     f.name_len = strlen(g_device_name);
     f.name_is_complete = 1;
     ble_gap_adv_set_fields(&f);
-    ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
-                      &p, gap_cb, NULL);
+    int rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
+                               &p, gap_cb, NULL);
+    if (rc != 0 && rc != BLE_HS_EALREADY) {
+        ESP_LOGW(TAG, "adv_start rc=%d", rc);
+    }
     ESP_LOGI(TAG, "广播: %s", g_device_name);
 }
 
 static void on_sync(void) {
-    start_adv();
+    if (g_adv_enabled) start_adv();
 }
 
 static void on_reset(int reason) {
@@ -167,30 +173,47 @@ static void host_task(void *p) {
 
 // ---- Public API ----
 void ble_driver_start(void) {
-    int rc;
-    // 读取 MAC 地址, 生成 mechdog_{:02X} 设备名
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_BT);
-    snprintf(g_device_name, sizeof(g_device_name), "mechdog_%02X", mac[5]);
+    if (!g_ble_started) {
+        int rc;
+        // 读取 MAC 地址, 生成 mechdog_{:02X} 设备名
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_BT);
+        snprintf(g_device_name, sizeof(g_device_name), "mechdog_%02X", mac[5]);
 
-    g_rx_mutex = xSemaphoreCreateMutex();
-    esp_nimble_hci_init();
-    nimble_port_init();
+        g_rx_mutex = xSemaphoreCreateMutex();
+        esp_nimble_hci_init();
+        nimble_port_init();
 
-    // 配置 NimBLE host（必须在 nimble_port_freertos_init 之前）
-    ble_hs_cfg.reset_cb = on_reset;
-    ble_hs_cfg.sync_cb = on_sync;
-    ble_hs_cfg.gatts_register_cb = gatt_register_cb;
-    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+        // 配置 NimBLE host（必须在 nimble_port_freertos_init 之前）
+        ble_hs_cfg.reset_cb = on_reset;
+        ble_hs_cfg.sync_cb = on_sync;
+        ble_hs_cfg.gatts_register_cb = gatt_register_cb;
+        ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
-    // 注册 GATT 服务（必须在 nimble_port_freertos_init 之前）
-    ble_svc_gap_device_name_set(g_device_name);
-    rc = ble_gatts_count_cfg(gatt_svcs);
-    ESP_LOGI(TAG, "count_cfg: %d", rc);
-    rc = ble_gatts_add_svcs(gatt_svcs);
-    ESP_LOGI(TAG, "add_svcs: %d  tx_h=%d rx_h=%d", rc, g_tx_handle, g_rx_handle);
+        // 注册 GATT 服务（必须在 nimble_port_freertos_init 之前）
+        ble_svc_gap_device_name_set(g_device_name);
+        rc = ble_gatts_count_cfg(gatt_svcs);
+        ESP_LOGI(TAG, "count_cfg: %d", rc);
+        rc = ble_gatts_add_svcs(gatt_svcs);
+        ESP_LOGI(TAG, "add_svcs: %d  tx_h=%d rx_h=%d", rc, g_tx_handle, g_rx_handle);
 
-    nimble_port_freertos_init(host_task);
+        nimble_port_freertos_init(host_task);
+        g_ble_started = true;
+    }
+    // 栈已初始化: 重新开启广播 (首次或 stop 后再开)
+    g_adv_enabled = true;
+    start_adv();
+}
+
+void ble_driver_stop(void) {
+    if (!g_ble_started) return;
+    g_adv_enabled = false;                 // 先关, 防止回调自动重启广播
+    ble_gap_adv_stop();
+    if (g_connected) {
+        ble_gap_terminate(g_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        g_connected = false;
+    }
+    ESP_LOGI(TAG, "BLE stopped (广播已停, 连接已断)");
 }
 
 bool ble_is_connected(void) { return g_connected; }

@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 void ble_driver_start(void);
+void ble_driver_stop(void);
 bool ble_is_connected(void);
 
 // 收指令: 返回长度, 0=无数据. buf 至少 128 字节

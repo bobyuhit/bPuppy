@@ -32,20 +32,10 @@ try:
 except ImportError as e:
     modules_failed.append(("servo", e))
 
-# IMU 传感器 — MPU9250 9轴 (SDA=GPIO3, SCL=GPIO14, addr=0x68)
-try:
-    import bpuppy_imu
-    bpuppy_imu.init(0, 3, 14, 0x68)  # I2C0, SDA=3, SCL=14
-    modules_loaded.append("imu")
-except ImportError as e:
-    modules_failed.append(("imu", e))
-
-# UART 通信（骨架）
-try:
-    import bpuppy_uart
-    modules_loaded.append("uart")
-except ImportError as e:
-    modules_failed.append(("uart", e))
+# IMU / UART / ADC / BLE — 手动或按需启动, 上电不 import
+#   bpuppy_imu  由 balance / set_heading / calib_mag 的 start() 自动 init
+#   bpuppy_uart / bpuppy_adc  用的时候手动 import + init()
+#   BLE         由 ble_hiwonder.HiwonderBLE() 构造时自动启动
 
 # 运动控制 — 上电自动站立
 try:
@@ -67,23 +57,6 @@ try:
     modules_loaded.append("motion")
 except ImportError as e:
     modules_failed.append(("motion", e))
-
-# BLE 遥控 — Hiwonder Wonderbot App 兼容 (NimBLE C 驱动)
-try:
-    import ble_hiwonder
-    ble = ble_hiwonder.HiwonderBLE()
-
-    # 后台线程轮询 BLE 指令, REPL 不受影响
-    try:
-        import _thread
-        _thread.start_new_thread(ble_hiwonder.run_ble_task, (ble, 50))
-        print("  [BLE] 后台轮询已启动")
-    except Exception as e:
-        print("  [BLE] 后台线程启动失败: %s (需手动调用 ble.check())" % e)
-
-    modules_loaded.append("ble")
-except Exception as e:
-    modules_failed.append(("ble", e))
 
 # ---- 状态报告 ----
 print(f"  Loaded:   {', '.join(modules_loaded) if modules_loaded else '(none)'}")
