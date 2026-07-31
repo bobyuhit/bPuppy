@@ -9,8 +9,8 @@ bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v
 |------|------|
 | 主控 | ESP32-S3 WROOM-1 N16R8 (16MB Flash, 8MB Octal PSRAM) |
 | 舵机 | 8× 模拟舵机 (每条腿 2DOF: 髋 + 膝) |
-| IMU | QMI8658 6轴 (I2C, 暂未启用) |
-| 通信 | BLE (NimBLE, Hiwonder Wonderbot 协议) |
+| IMU | MPU9250 9轴 (I2C0: SDA=GPIO3, SCL=GPIO14, addr=0x68, Mahony 姿态) |
+| 通信 | BLE (NimBLE, Hiwonder Wonderbot 协议) + UART2 (GPIO19/20, CI-33T/micro:bit) |
 | 控制台 | USB-JTAG CDC (115200bps, 直连 USB) |
 | 供电 | 7.4V 2S LiPo |
 
@@ -70,23 +70,51 @@ rm -rf build && bash build.sh
 
 **产物**: `build/micropython_bpuppy.bin`
 
-### Windows 烧录
+### Windows 烧录 (PowerShell)
 
 ```powershell
-# ESP32-S3 原生 USB-JTAG，直连 USB 即可
-esptool --chip esp32s3 --port COM10 --baud 115200 write-flash `
+# ESP32-S3 原生 USB-JTAG，直连 USB 即可，无需 USB-UART 转接
+# 端口: 插入 USB 后从设备管理器查看 (因机器而异)
+esptool --chip esp32s3 --port COM3 --baud 115200 write-flash `
   0x10000 build/micropython_bpuppy.bin
 ```
 
-> 日常增量烧录只写 app 分区 (0x10000)。首次或改了 bootloader/分区表才需要全烧。
+> **日常增量**只写 app 分区 (0x10000)。改了 bootloader/分区表、或首次烧录时才需要**全烧**:
+>
+> ```powershell
+> esptool --chip esp32s3 --port COM3 --baud 115200 write-flash `
+>   0x0 build/bootloader/bootloader.bin `
+>   0x8000 build/partition_table/partition-table.bin `
+>   0x10000 build/micropython_bpuppy.bin
+> ```
+
+> 成功标志: 三行 `Wrote xxx bytes` + `Hash of data verified`。烧完按 RESET 或重新上电。
+
+### 串口连接
+
+- 波特率: **115200**
+- 端口: 设备管理器查看 (USB-JTAG CDC，直连 USB 即可)
+- 工具: PuTTY / Tera Term / VS Code Serial Monitor
+
+烧录后重启，应看到:
+```
+============================================
+  bPuppy Robot Dog - ESP32-S3 MicroPython
+  Build: ...
+  WROOM-1 N16R8 | uPy v1.22.1 | IDF v5.1.2
+============================================
+  Loaded:   servo, motion
+Ready.
+>>>
+```
 
 ### 改了哪些文件需要怎么构建
 
 | 改了什么 | 怎么构建 |
 |---------|---------|
-| `frozen/*.py` | `idf.py build` → 只烧 app 分区 |
-| `drivers/*.c/.cpp` | `idf.py build` → 只烧 app 分区 |
-| `CMakeLists.txt` / `sdkconfig.*` / `partitions.csv` | `rm -rf build && idf.py build` → **全烧** |
+| `frozen/*.py` | `bash build.sh` → 只烧 app 分区 |
+| `drivers/*.c/.cpp` | `bash build.sh` → 只烧 app 分区 |
+| `CMakeLists.txt` / `sdkconfig.*` / `partitions.csv` | `rm -rf build && bash build.sh` → **全烧** |
 
 ---
 
@@ -112,13 +140,16 @@ esptool --chip esp32s3 --port COM10 --baud 115200 write-flash `
 ## 软件架构
 
 ```
-MicroPython 层:   frozen/main.py → 上电自动站立 + BLE 后台
+MicroPython 层:   frozen/main.py → 上电自动站立 (IMU/BLE/UART/ADC 手动或按需启动)
                        ↑ import
-C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_ble / bpuppy_motion
+C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_uart / bpuppy_adc /
+                  bpuppy_ik / bpuppy_motion / bpuppy_camera / bpuppy_ble
                        ↑ MP_REGISTER_MODULE
 C 驱动层:
-  servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode)
-  imu_driver.c      — I2C QMI8658 IMU (暂未启用)
+  servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode) + NVS 校准
+  imu_driver.c      — I2C MPU9250 9轴 (Mahony 姿态融合 + 磁力计椭球校准)
+  uart_driver.c     — UART2 通信口 + UART1 摄像头复用口
+  adc_driver.c      — ADC1_CH2 (GPIO38) 电池电压测量
   ik.h / ik.c       — 2-DOF 逆运动学
   ble_driver.c      — NimBLE GATT (Hiwonder Wonderbot 协议)
   motion_task.cpp   — 50Hz FreeRTOS 步态控制 (core 0, priority 6)
@@ -136,8 +167,13 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/motion_task.cpp` | **核心** — 步态算法、相位框架、足端轨迹、IK、GO自适应 |
 | `drivers/ik.c` | 2-DOF 逆运动学, L1/L2/髋距/限位 均运行时可变 + NVS 持久化 |
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
+| `drivers/imu_driver.c` | MPU9250 + AK8963 磁力计, Mahony 姿态融合, 校准存 NVS |
+| `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO17/18) 通信驱动 |
+| `drivers/adc_driver.c` | ADC1_CH2 (GPIO38) 电池电压测量 |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 |
-| `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up → 启动 BLE |
+| `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up (IMU/BLE/UART/ADC 手动或按需启动) |
+| `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
+| `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
 | `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~12 |
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
@@ -175,6 +211,10 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 | `"crouch"` | 蹲伏 | 固定角度, 四腿折叠, 关机前放松舵机 |
 | `"sit"` | 猫坐 | 前腿撑地、后腿折藏身下 |
 | `"play"` | 邀玩 | 前低后高 + 4Hz 摇臀 8 次 ±10° |
+| `"wave"` | 挥手 | 坐下 + 右前膝 1Hz 摆动 3 次 ±10°, 完成后自动回 `sit` |
+
+> `play` / `wave` 属于"静态姿势 + 单次动态动作": 姿势先就位, 动作执行完回到静态。
+> 代码中二者归为 static gait (`is_static_gait`), 不应用行走参数。
 
 ### 足端轨迹 (smoothstep 摆线)
 
@@ -187,14 +227,14 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 
 ## 上电行为
 
-1. `servo_init_all()` — 初始化 8 路 LEDC（duty=0，舵机松）
-2. `load_cal()` — 从 NVS 加载校准值
-3. 等待 REPL 手动控制（motion 未启动，需手动 `start()`）
-4. `motion.start()` — 创建 50Hz FreeRTOS 任务
-5. `motion.stand_up()` — 蹲姿 0.3s → 3s smoothstep 站立
-6. BLE 后台线程启动
+1. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值
+2. 舵机设到蹲姿 → `motion.start()` — 创建 50Hz FreeRTOS 任务
+3. `motion.stand_up()` — 蹲姿 → 3s smoothstep 站立
 
-上电即自动站立, 无需手动指令。
+上电自动站立, `Loaded:` 只显示 servo/motion。**IMU / BLE / UART / ADC 均手动或按需启动**:
+- IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
+- BLE: `HiwonderBLE()` 构造时启动
+- UART / ADC: 手动 `import` + `init()`
 
 ---
 
@@ -254,7 +294,7 @@ bpuppy_camera.deinit()
 
 ```powershell
 pip install pyserial
-python tools/capture.py COM14
+python tools/capture.py COM3   # 端口换成实际值 (设备管理器查看)
 # 连接后按 Enter 拍照，自动打开图片，q 退出
 ```
 
@@ -315,7 +355,11 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 | LH_HIP 左后大腿 | 47 | RH_HIP 右后大腿 | 45 |
 | LH_KNEE 左后小腿 | 21 | RH_KNEE 右后小腿 | 48 |
 
-IMU 已暂时屏蔽。USB D+/D- (GPIO19/20) 已恢复，UART0 (GPIO43/44) 可用作备用串口。
+IMU: I2C0 (SDA=GPIO3, SCL=GPIO14, addr=0x68)。
+UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。
+UART1: GPIO17=TX, 18=RX (与摄像头 D6/D5 复用, 手动 init)。
+ADC: GPIO38 (ADC1_CH2) 电池电压。
+完整 GPIO 分配表见 `docs/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)
 
@@ -330,6 +374,12 @@ IMU 已暂时屏蔽。USB D+/D- (GPIO19/20) 已恢复，UART0 (GPIO43/44) 可用
 | Y5 (D3) | 10 | Y9 (D7) | 16 |
 
 > 与舵机 GPIO 无冲突。PWDN/RESET 未接。
+
+### 10. ADC 驱动必须用 legacy API
+
+`bpuppy_adc` 的 C 驱动**只能用 legacy driver** (`adc1_config_width` / `adc1_config_channel_atten` / `adc1_get_raw`, `#include "driver/adc.h"`)。
+
+**绝不能**用 new driver (`adc_oneshot_*`, driver_ng) — MicroPython 的 `machine.ADC` 使用 legacy driver，ESP-IDF 5.x 中两者互斥，混用会触发 `CONFLICT! driver_ng is not allowed to be used with the legacy driver` 断言并**上电无限重启**。
 
 ---
 
@@ -395,11 +445,21 @@ idf.py flash monitor       # 烧录并监控
 
 - [ ] `idf.py build` 编译成功
 - [ ] `build/micropython_bpuppy.bin` 存在
-- [ ] 烧录后 USB CDC 串口可连接 (COM10, 115200)
+- [ ] 烧录后 USB CDC 串口可连接 (115200, 端口见设备管理器)
 - [ ] 启动 banner 显示 "bPuppy Robot Dog - ESP32-S3"
 - [ ] 上电自动站立，无跳动
 - [ ] `import bpuppy; bpuppy.version()` 返回版本号
 - [ ] BLE 遥控正常 (Wonderbot App 可连接)
+
+---
+
+## 已知问题 / 待解决
+
+### IMU 校准后有固定偏差
+`calibrate(300)` 后静置，姿态角仍有固定偏差（roll/pitch 约 8°）。原因: 加速度计零偏只补偿了 Z 轴（1g），X/Y 轴零偏未标定（`imu_driver.c` `g_bias_ax/ay = 0`）。标准做法是六位置法或水平静置补 X/Y 零偏。
+
+### 自平衡起始方向依赖
+`balance.start()` 时，若机身起始方向与自平衡启动瞬间方向不一致，会稳定在肉眼看起来不平的角度上。推测与 IMU 固定偏差相关（同根因）。待解决。
 
 ---
 
