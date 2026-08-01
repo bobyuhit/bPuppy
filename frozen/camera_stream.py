@@ -26,6 +26,7 @@ _g_turn = 0.0
 _g_stride = 70
 _g_height = 70
 _g_gait = "stand"
+_speed_set = False   # 用户本会话是否拖过速度滑块
 _g_stream_client = None  # 当前唯一的流客户端
 _stream_on = False       # 图传是否开启 (可运行时切换)
 
@@ -278,8 +279,21 @@ def _close_stream():
     print("camera_stream: stream OFF")
 
 
+def _effective_speed():
+    """方向键/流线程用的速度: 用户本会话拖过滑块用 _g_speed, 否则用系统当前 target_speed
+    (避免方向键用初始 0 覆盖开机预设 speed=2.5)"""
+    global _g_speed, _speed_set
+    if not _speed_set:
+        try:
+            import bpuppy_motion
+            _g_speed = bpuppy_motion.get_params()[0]   # [0] = target_speed
+        except Exception:
+            pass
+    return _g_speed
+
+
 def _parse_cmd(path):
-    global _g_speed, _g_turn, _g_stride, _g_height, _g_gait
+    global _g_speed, _g_turn, _g_stride, _g_height, _g_gait, _speed_set
 
     qs = path[5:] if path.startswith("/cmd?") else path
     # print("CMD:", qs)
@@ -331,6 +345,7 @@ def _parse_cmd(path):
         if "set" in params:
             if "speed" in params:
                 _g_speed = float(params["speed"])
+                _speed_set = True
                 try:
                     cur = bpuppy_motion.get_params()          # (speed, stride, height, ...)
                     bpuppy_motion.set_params(_g_speed, cur[1], cur[2])  # 写 g_motion
@@ -355,6 +370,7 @@ def _parse_cmd(path):
         # 存新值
         if "speed" in params:
             _g_speed = float(params["speed"])
+            _speed_set = True
         if "turn" in params:
             _g_turn = float(params["turn"])
         if "stride" in params:
@@ -367,8 +383,8 @@ def _parse_cmd(path):
             _g_gait = "go"
             bpuppy_motion.set_gait("go")
 
-        # 应用
-        bpuppy_motion.set_params(abs(_g_speed), _g_stride, _g_height)
+        # 应用 (速度: 用户拖过滑块用 _g_speed, 否则用系统当前 target_speed)
+        bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
         bpuppy_motion.set_turn(_g_turn)
 
     return "OK"
@@ -429,7 +445,7 @@ def _send_stream(client):
                     last_gait = _g_gait
                     last_speed = None
                 if last_speed != _g_speed or last_turn != _g_turn:
-                    bpuppy_motion.set_params(abs(_g_speed), _g_stride, _g_height)
+                    bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
                     bpuppy_motion.set_turn(_g_turn)
                     last_speed = _g_speed
                     last_turn = _g_turn

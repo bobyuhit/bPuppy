@@ -46,10 +46,13 @@ static const int leg_pair[]    = {IK_LEG_FRONT, IK_LEG_REAR,
 /* ---- 舵机角度限速 (每帧最大变化) ---- */
 #define SERVO_MAX_DEG_PER_FRAME  3.0f   // 每 20ms 最多移动度数
 static float g_smooth_angles[8] = {90, 90, 90, 90, 90, 90, 90, 90};
-static int   g_dir_last = 1;     // 上次运动方向 (+1 前进 / -1 后退)
-static bool  g_reverse = false;  // 换向过渡中 (停步→反向起步)
+static int   g_dir_last = 1;          // 上次运动方向 (+1 前进 / -1 后退)
+static bool  g_reverse = false;       // 换向过渡中 (停→stand→反向起步)
 static float g_stride_smooth = 0.0f;  // GO 平滑步长 (起步从 0 爬升)
 static bool  g_half_pulse = false;    // 半周期脉冲 (步长平滑触发)
+static bool  g_stop_decel = false;    // 减速停进行中 (运动步态下减速, 未收脚)
+static gait_type_t g_pending_gait = GAIT_STAND;  // 减速停完成后切换的静态步态
+static gait_type_t g_rev_gait = GAIT_GO;         // 换向前运动步态 (反向起步用)
 
 // 限速: 往 target 方向最多走 max_step 度
 static float servo_step_toward(int ch, float target, float max_step) {
@@ -258,22 +261,23 @@ static void motion_task_main(void *pvParam)
         }
         g_was_moving = !now_static;
 
-        // 换向检测: 运动方向变化 → 先停步再反向起步 (平滑换向, 经过 stand)
+        // 换向检测: 运动方向变化 → 减速停 → stand → 反向起步 (平滑换向)
         int cur_dir = (g_motion.stride < 0.0f) ? -1 : 1;
         if (cur_dir != g_dir_last && !now_static && !is_stand_up) {
-            if (g_motion.pose_trans == 0) {
-                g_motion.pose_trans = 2;   // 先停步 (收拢到站立)
-                g_motion.pose_timer = 0.0f;
-                g_motion.speed = 0.0f;
+            if (!g_stop_decel && g_motion.pose_trans == 0) {
+                g_stop_decel = true;         // 先减速停 (每半步 -3 到 0)
+                g_pending_gait = GAIT_STAND; // 停稳后先到 stand
                 g_reverse = true;
+                g_rev_gait = g_motion.gait;  // 记住运动步态 (反向起步用)
             }
         }
         g_dir_last = cur_dir;
-        // 换向: 停步完成后自动反向起步
-        if (g_reverse && g_motion.pose_trans == 0) {
-            g_motion.pose_trans = 1;       // 反向起步 (展开到新方向轨迹)
-            g_motion.pose_timer = 0.0f;
+        // 换向: stand 到位后自动反向起步 (步长从 0, 速度 kick)
+        if (g_reverse && g_motion.gait == GAIT_STAND && g_motion.pose_trans == 0) {
             g_reverse = false;
+            g_motion.gait = g_rev_gait;      // 恢复运动步态
+            g_motion.pose_trans = 1;         // 起步过渡
+            g_motion.pose_timer = 0.0f;
         }
 
         // speed=步频 stride=步幅+方向 (正=前, 负=后)
@@ -300,13 +304,16 @@ static void motion_task_main(void *pvParam)
                               (int)(g_phase     / (float)M_PI);
             if (cross_half || prev_phase == g_phase) {
                 if (cross_half) g_half_pulse = true;
-                float ds = g_motion.target_speed - g_motion.speed;
+                // 减速停/换向停: 速度目标临时为 0 (每半步 -3 到 0)
+                float target_eff = g_stop_decel ? 0.0f : g_motion.target_speed;
+                float ds = target_eff - g_motion.speed;
                 if (fabsf(ds) < 0.15f) {
-                    g_motion.speed = g_motion.target_speed; // 接近就到位
-                } else if (g_motion.speed < 0.15f && g_motion.target_speed > 0.0f) {
-                    // 起步 kick: speed=0 相位不动, 先给起步速度(≤2.5)让相位能动, 再半周期爬升
-                    g_motion.speed = (g_motion.target_speed < SPEED_DEFAULT)
-                                   ? g_motion.target_speed : SPEED_DEFAULT;
+                    g_motion.speed = target_eff; // 接近就到位
+                } else if (!g_stop_decel && g_motion.speed < 0.15f && target_eff > 0.0f) {
+                    // 起步 kick (仅"从静止到起步": 站立→GO / 换向反向起步 / 暂停恢复):
+                    // speed=0 相位不动, 先给起步速度(≤2.5)让相位能动, 再半周期爬升
+                    g_motion.speed = (target_eff < SPEED_DEFAULT)
+                                   ? target_eff : SPEED_DEFAULT;
                     g_stride_smooth = 0.0f;   // 起步步长从 0 爬升 (4 半周期到目标)
                 } else {
                     float step = SPEED_FOLLOW_STEP;
@@ -343,8 +350,10 @@ static void motion_task_main(void *pvParam)
             g_motion.body_pitch = eff_pitch;
         }
         // GO 步长平滑: 半周期点向目标逼近 ±目标/4 (4 半周期到位)
+        // 减速停/换向停: 目标改为 0, 步长同步渐收, 让最后一步最短再收脚
         if (g_half_pulse && g_motion.gait == GAIT_GO) {
-            float diff = eff_stride - g_stride_smooth;
+            float stride_target = g_stop_decel ? 0.0f : eff_stride;
+            float diff = stride_target - g_stride_smooth;
             if (fabsf(diff) > 0.1f) {
                 float step = fabsf(eff_stride) / 4.0f;
                 if (step < 1.0f) step = 1.0f;
@@ -357,6 +366,12 @@ static void motion_task_main(void *pvParam)
             eff_stride = g_stride_smooth;
         }
         g_half_pulse = false;
+
+        // 减速停完成: speed≈0 → 切换静态步态 (收脚站定, 最后一步已用渐收步长)
+        if (g_stop_decel && g_motion.speed <= 0.05f) {
+            g_stop_decel = false;
+            g_motion.gait = g_pending_gait;
+        }
 
         // 计算步态偏移: 正向 (前腿迈) + 反向 (后腿迈) 各一套
         // turn 可能让不同侧走向不同方向，per-leg 按方向选用
@@ -611,14 +626,6 @@ static void motion_task_main(void *pvParam)
                     foot_x = 0.0f + (foot_x - 0.0f) * ease;
                     foot_z = eff_height + (foot_z - eff_height) * ease;
                 }
-                // 换向停步过渡: 足端从轨迹收拢到站立 (0, height)
-                if (g_motion.pose_trans == 2) {
-                    float t = g_motion.pose_timer / TRANS_TIME;
-                    if (t > 1.0f) t = 1.0f;
-                    float ease = t * t * (3.0f - 2.0f * t);
-                    foot_x = foot_x * (1.0f - ease);
-                    foot_z = g_motion.height + (foot_z - g_motion.height) * (1.0f - ease);
-                }
             }
 
             // 脚中位偏移
@@ -691,8 +698,21 @@ const motion_state_t *motion_get_state(void) { return &g_motion; }
 void motion_set_gait(gait_type_t gait)
 {
     if (gait < GAIT_COUNT) {
-        g_motion.gait = gait;
         g_motion.enabled = true;
+        // 运动步态 → 静态步态: 先减速停, 延迟切换 (统一减速停, 减到 0 再收脚)
+        if (is_static_gait(gait) && !is_static_gait(g_motion.gait)) {
+            if (!g_stop_decel) {
+                g_stop_decel = true;
+                g_pending_gait = gait;
+            }
+            return;
+        }
+        // 静态→运动 或 同态切换: 立即生效, 并取消挂起的减速停
+        if (!is_static_gait(gait)) {
+            g_stop_decel = false;
+            g_reverse = false;
+        }
+        g_motion.gait = gait;
         if (gait != GAIT_STAND && gait != GAIT_CROUCH && gait != GAIT_SIT && gait != GAIT_PLAY_BOW && gait != GAIT_STAND_UP)
             motion_apply_gait_params(gait);
     }
