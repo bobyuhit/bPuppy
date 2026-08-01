@@ -343,6 +343,46 @@ def _send_stream(client):
     client.close()
 
 
+def _dns_server():
+    """Captive portal DNS: 把所有域名解析到 192.168.4.1, 触发手机自动弹窗"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("0.0.0.0", 53))
+        s.settimeout(1.0)
+    except OSError as e:
+        print("camera_stream: DNS bind fail: %s" % e)
+        return
+    print("camera_stream: captive portal DNS on :53")
+    while _running:
+        try:
+            data, addr = s.recvfrom(512)
+        except OSError:
+            continue                    # 超时, 回到循环检查 _running
+        if len(data) < 12:
+            continue
+        try:
+            # 定位 question 结束 (header 12 + QNAME)
+            pos = 12
+            while pos < len(data) and data[pos] != 0:
+                pos += data[pos] + 1
+            if pos >= len(data) - 4:
+                continue
+            qend = pos + 5               # 0 + QTYPE(2) + QCLASS(2)
+            # DNS 响应: 回显 ID/flags/question + A 记录 → 192.168.4.1
+            resp = (data[0:2] + b"\x81\x80" + data[4:6] + b"\x00\x01"
+                    + b"\x00\x00\x00\x00" + data[12:qend]
+                    + b"\xc0\x0c" + b"\x00\x01" + b"\x00\x01"
+                    + b"\x00\x00\x00\x3c" + b"\x00\x04"
+                    + b"\xc0\xa8\x04\x01")
+            s.sendto(resp, addr)
+        except OSError:
+            break
+        except Exception:
+            pass
+    s.close()
+
+
 def _accept_loop():
     global _running
 
@@ -360,10 +400,15 @@ def _accept_loop():
 
         try:
             client.settimeout(2.0)
-            request = client.recv(512).decode("utf-8", "ignore")
+            raw = client.recv(512)
         except OSError:
             client.close()
             continue
+
+        try:
+            request = raw.decode("utf-8", "ignore")   # MicroPython: 非法 UTF-8 可能仍抛 UnicodeError
+        except UnicodeError:
+            request = ""
 
         if not request:
             client.close()
@@ -406,7 +451,7 @@ def _accept_loop():
     s.close()
 
 
-def start(ssid=None, password="12345678", stream=False):
+def start(ssid=None, password="12345678", stream=False, captive=True):
     global _ap, _running, _lock
 
     if _running:
@@ -436,6 +481,8 @@ def start(ssid=None, password="12345678", stream=False):
 
     _running = True
     _thread.start_new_thread(_accept_loop, ())
+    if captive:
+        _thread.start_new_thread(_dns_server, ())   # captive portal 自动弹窗
     print("camera_stream: started — http://192.168.4.1")
 
 
