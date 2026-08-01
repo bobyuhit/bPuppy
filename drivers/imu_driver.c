@@ -63,6 +63,7 @@
 
 #define MAG_CAL_BUF_MAX  1200
 #define MAG_SI_NVS_KEY   "mag_si"
+#define MAG_MIN_DIST2    (2.0f * 2.0f)   // 相邻样本最小距离² (μT²), 滤掉停留重复点
 
 static bool g_imu_ready, g_mag_ready, g_i2c_installed;
 static i2c_port_t g_i2c_port;
@@ -226,6 +227,14 @@ static bool read_all(imu_raw_data_t *d) {
 }
 
 static float q0=1,q1,q2,q3,ifx,ify,ifz;
+// 磁力计是否参与 roll/pitch 融合. balance 用 OFF(只修yaw), 避免磁力计残差拉偏 roll/pitch
+static bool g_mag_fusion = true;
+
+void imu_set_mag_fusion(bool enable) {
+    g_mag_fusion = enable;
+    mp_printf(&mp_plat_print, "[imu] mag fusion %s\n", enable ? "ON" : "OFF");
+}
+
 static void mahony(float gx,float gy,float gz,float ax,float ay,float az,float mx,float my,float mz,float dt) {
     if (dt<=0) return;
     float n=sqrtf(ax*ax+ay*ay+az*az);
@@ -239,7 +248,12 @@ static void mahony(float gx,float gy,float gz,float ax,float ay,float az,float m
         float hy=mx*(q1*q2+q0*q3)+my*(q0*q0+q2*q2-0.5f)+mz*(q2*q3-q0*q1);
         float bx=sqrtf(hx*hx+hy*hy);
         float hwx=bx*(0.5f-q2*q2-q3*q3), hwy=bx*(q1*q2-q0*q3), hwz=bx*(q1*q3+q0*q2);
-        hex+=my*hwz-mz*hwy; hey+=mz*hwx-mx*hwz; hez+=mx*hwy-my*hwx;
+        if (g_mag_fusion) {
+            // 磁力计参与 roll/pitch (9轴融合)
+            hex+=my*hwz-mz*hwy; hey+=mz*hwx-mx*hwz;
+        }
+        // 磁力计始终修正 yaw (关 roll/pitch 时 yaw 仍稳定)
+        hez+=mx*hwy-my*hwx;
     }
     ifx+=MAHONY_KI*hex*dt; ify+=MAHONY_KI*hey*dt; ifz+=MAHONY_KI*hez*dt;
     gx+=MAHONY_KP*hex+ifx; gy+=MAHONY_KP*hey+ify; gz+=MAHONY_KP*hez+ifz;
@@ -324,7 +338,11 @@ void imu_calibrate(int n) {
     }
     float nn=(float)n;
     float raw_gx=sx/nn, raw_gy=sy/nn, raw_gz=sz/nn;
-    g_bias_ax=0; g_bias_ay=0; g_bias_az=(sc/nn/ACCEL_SCALE*G_MPS2)-G_MPS2;
+    // 加速度计零偏: 水平静置校准, 三轴都补 (X/Y 均值即零偏, Z 为 1g 偏差)
+    // ⚠ 校准时机身必须水平, 否则 X/Y 均值混入重力投影, 引入错误
+    g_bias_ax=sa/nn/ACCEL_SCALE*G_MPS2;
+    g_bias_ay=sb/nn/ACCEL_SCALE*G_MPS2;
+    g_bias_az=(sc/nn/ACCEL_SCALE*G_MPS2)-G_MPS2;
     g_bias_gx=raw_gx/GYRO_SCALE*DEG2RAD; g_bias_gy=raw_gy/GYRO_SCALE*DEG2RAD; g_bias_gz=raw_gz/GYRO_SCALE*DEG2RAD;
     mp_printf(&mp_plat_print,"  raw gyro avg: %.0f %.0f %.0f  bias: %.4f %.4f %.4f rad/s\n",
               raw_gx,raw_gy,raw_gz, g_bias_gx,g_bias_gy,g_bias_gz);
@@ -502,6 +520,15 @@ bool imu_mag_cal_collect(int *count,
     }
     int16_t mx=(mbuf[2]<<8)|mbuf[1], my=(mbuf[4]<<8)|mbuf[3], mz=(mbuf[6]<<8)|mbuf[5];
     float fx=mx*MAG_SCALE, fy=my*MAG_SCALE, fz=mz*MAG_SCALE;
+    // 去重: 与最后一个样本距离太近则跳过 (保证方向多样性, 滤掉停留重复点)
+    if (g_mc_count > 0) {
+        int li = (g_mc_count - 1) * 3;
+        float dx = fx - g_mc_buf[li], dy = fy - g_mc_buf[li+1], dz = fz - g_mc_buf[li+2];
+        if (dx*dx + dy*dy + dz*dz < MAG_MIN_DIST2) {
+            if (count) *count = g_mc_count;
+            return false;
+        }
+    }
     // 存入缓冲区
     int idx=g_mc_count*3;
     g_mc_buf[idx]=fx; g_mc_buf[idx+1]=fy; g_mc_buf[idx+2]=fz;
@@ -573,6 +600,9 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_ready_o,mi_ready);
 STATIC mp_obj_t mi_stop(void){imu_stop();return mp_const_none;}
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_stop_o,mi_stop);
 
+STATIC mp_obj_t mi_mag_fusion(mp_obj_t e){imu_set_mag_fusion(mp_obj_is_true(e));return mp_const_none;}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mi_mag_fusion_o,mi_mag_fusion);
+
 STATIC mp_obj_t mi_raw(void){imu_raw_data_t d;memset(&d,0,sizeof(d));imu_read_raw(&d);
     mp_obj_t aa[3]={mp_obj_new_float(d.accel_x),mp_obj_new_float(d.accel_y),mp_obj_new_float(d.accel_z)};
     mp_obj_t gg[3]={mp_obj_new_float(d.gyro_x),mp_obj_new_float(d.gyro_y),mp_obj_new_float(d.gyro_z)};
@@ -615,6 +645,7 @@ STATIC const mp_rom_map_elem_t table[]={
     {MP_ROM_QSTR(MP_QSTR_init),MP_ROM_PTR(&mi_init_o)},
     {MP_ROM_QSTR(MP_QSTR_is_ready),MP_ROM_PTR(&mi_ready_o)},
     {MP_ROM_QSTR(MP_QSTR_stop),MP_ROM_PTR(&mi_stop_o)},
+    {MP_ROM_QSTR(MP_QSTR_set_mag_fusion),MP_ROM_PTR(&mi_mag_fusion_o)},
     {MP_ROM_QSTR(MP_QSTR_read_raw),MP_ROM_PTR(&mi_raw_o)},
     {MP_ROM_QSTR(MP_QSTR_read_angles),MP_ROM_PTR(&mi_ang_o)},
     {MP_ROM_QSTR(MP_QSTR_calibrate),MP_ROM_PTR(&mi_cal_o)},

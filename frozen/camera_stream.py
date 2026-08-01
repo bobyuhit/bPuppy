@@ -178,7 +178,7 @@ def _close_stream():
     if not _stream_on:
         return
     _stream_on = False
-    time.sleep(0.1)          # 让流线程退出
+    time.sleep_ms(100)          # 让流线程退出
     bpuppy_camera.deinit()
     print("camera_stream: stream OFF")
 
@@ -305,7 +305,7 @@ def _send_stream(client):
 
     for _ in range(3):
         bpuppy_camera.capture()
-        time.sleep(0.03)
+        time.sleep_ms(30)
 
     last_gait = None
     last_speed = None
@@ -329,7 +329,7 @@ def _send_stream(client):
 
         result = bpuppy_camera.capture()
         if result is None:
-            time.sleep(0.05)
+            time.sleep_ms(50)
             continue
 
         data = result[0]
@@ -338,7 +338,7 @@ def _send_stream(client):
             client.sendall(data)
         except OSError:
             break
-        time.sleep(0.07)
+        time.sleep_ms(70)
 
     client.close()
 
@@ -477,7 +477,7 @@ def start(ssid=None, password="12345678", stream=False, captive=True):
     _ap = network.WLAN(network.AP_IF)
     _ap.active(True)
     _ap.config(essid=ssid, password=password, authmode=network.AUTH_WPA2_PSK, max_clients=4)
-    time.sleep(0.5)
+    time.sleep_ms(500)
 
     _running = True
     _thread.start_new_thread(_accept_loop, ())
@@ -493,7 +493,7 @@ def stop():
         return
 
     _running = False
-    time.sleep(0.4)
+    time.sleep_ms(400)
 
     _close_stream()          # 只释放已开启的图传
 

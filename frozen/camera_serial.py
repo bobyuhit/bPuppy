@@ -18,7 +18,7 @@ def snap():
     # 清掉缓冲区旧帧 (双缓冲可能存着几秒前的画面)
     for _ in range(3):
         bpuppy_camera.capture()
-        time.sleep(0.03)
+        time.sleep_ms(30)
 
     # 现在取真正的新帧
     data, w, h, fmt = bpuppy_camera.capture()

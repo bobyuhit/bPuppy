@@ -56,6 +56,9 @@ bool imu_is_ready(void);
 // 停止 AHRS 任务, 释放 IMU (可重新 init)
 void imu_stop(void);
 
+// 磁力计是否参与 roll/pitch 融合. balance 用 OFF(只修yaw), 避免磁力计残差拉偏 roll/pitch
+void imu_set_mag_fusion(bool enable);
+
 // 读取原始数据 (9轴 + 温度)
 void imu_read_raw(imu_raw_data_t *data);
 

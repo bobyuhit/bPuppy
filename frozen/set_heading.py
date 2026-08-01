@@ -64,7 +64,7 @@ def start(target=57.0):
         except Exception as e:
             print("ERR:", e)
 
-        time.sleep(0.05)  # 20Hz
+        time.sleep_ms(50)  # 20Hz
 
 
 def stop():

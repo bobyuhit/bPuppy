@@ -185,4 +185,4 @@ def run_ble_task(ble, poll_ms=50):
             ble.check()
         except Exception as e:
             print("[BLE] 轮询: %s" % e)
-        time.sleep(poll_ms / 1000.0)
+        time.sleep_ms(poll_ms)

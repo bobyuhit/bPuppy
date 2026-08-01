@@ -13,6 +13,7 @@ import bpuppy_imu
 import time
 
 _TARGETS = (60.0, 60.0, 60.0)  # X/Y/Z 最小覆盖范围 (μT)
+MIN_SAMPLES = 300              # 最小样本数 (椭球拟合质量, 太少拟合不准)
 _AXIS_NAMES = ('X (Roll)', 'Y (Pitch)', 'Z (Yaw)')
 _HINTS = (
     '请左右倾斜机器狗，覆盖 Roll 范围',
@@ -47,7 +48,7 @@ def start():
     print('依次完成 Roll / Pitch / Yaw 三轴覆盖。\n')
 
     bpuppy_imu.start_mag_cal()
-    time.sleep(0.1)
+    time.sleep_ms(100)
 
     for axis_idx in range(3):
         name = _AXIS_NAMES[axis_idx]
@@ -71,14 +72,31 @@ def start():
                     print('  ✓ 达标!\n')
                     break
 
-            time.sleep(0.02)  # ~50Hz 采集
+            time.sleep_ms(20)  # ~50Hz 采集
+
+    # 覆盖达标后, 补足最小样本数 (保证椭球拟合质量)
+    if count < MIN_SAMPLES:
+        print('\n--- 补充采样: 请继续自由旋转, 采够 %d 样本 (当前 %d) ---'
+              % (MIN_SAMPLES, count))
+        while count < MIN_SAMPLES:
+            result = bpuppy_imu.mag_cal_collect()
+            ok, count = result[0], result[1]
+            if ok and count % 25 == 0:
+                pct = min(count / MIN_SAMPLES * 100.0, 100.0)
+                print('  样本: %s %3.0f%%  %d/%d' %
+                      (_bar(pct), pct, count, MIN_SAMPLES))
+            time.sleep_ms(20)
+        print('  样本已够: %d\n' % count)
 
     print('正在拟合椭球...')
-    time.sleep(0.2)
+    time.sleep_ms(200)
     resid = bpuppy_imu.finish_mag_cal()
 
     if resid < 0:
         print('✗ 校准失败! 请重试。')
     else:
         print('✓ 校准完成! 残差: %.4f' % resid)
-        print('  硬铁 + 软铁校正已保存到 NVS')
+        if resid > 0.08:
+            print('  ⚠ 残差偏大 (理想 <0.05), 拟合质量差, 建议重新校准')
+        else:
+            print('  硬铁 + 软铁校正已保存到 NVS')
