@@ -342,19 +342,31 @@ static void motion_task_main(void *pvParam)
             wiggle_last = g_motion.gait;
         }
 
-        // ---- wave 摇右前膝 ----
-        static float wave_phase = 0;
+        // ---- wave 分阶段: sit → 后腿到位 → 抬RF挥动 → RF恢复 → 后腿恢复回sit ----
+        static int wave_stage = 0;
+        static float wave_timer = 0.0f;
+        static float wave_phase = 0.0f;
         static gait_type_t wave_last = GAIT_STAND;
         float wave_knee = 0;
         if (is_wave) {
-            if (wave_last != GAIT_WAVE) wave_phase = 0;
+            if (wave_last != GAIT_WAVE) { wave_stage = 0; wave_timer = 0; wave_phase = 0; }
             wave_last = GAIT_WAVE;
-            if (wave_phase < 6.283f * 3.0f) {
-                wave_knee = sinf(wave_phase) * 10.0f;
-                wave_phase += 6.283f * 1.0f * dt;
-            } else {
-                g_motion.gait = GAIT_SIT;  // 挥手完成，回坐
+
+            if (wave_stage == 0) {           // ① 先 sit (停留 0.3s)
+                if (wave_timer > 0.3f) { wave_stage = 1; wave_timer = 0; }
+            } else if (wave_stage == 1) {    // ② 后腿大腿到位 (0.6s)
+                if (wave_timer > 0.6f) { wave_stage = 2; wave_timer = 0; wave_phase = 0; }
+            } else if (wave_stage == 2) {    // ③ 抬右前腿 + 挥动 3 次
+                if (wave_phase < 6.283f * 3.0f) {
+                    wave_knee = sinf(wave_phase) * 10.0f;
+                    wave_phase += 6.283f * 1.0f * dt;
+                } else { wave_stage = 3; wave_timer = 0; }
+            } else if (wave_stage == 3) {    // ④ 右前腿恢复 sit (0.5s)
+                if (wave_timer > 0.5f) { wave_stage = 4; wave_timer = 0; }
+            } else if (wave_stage == 4) {    // ⑤ 后腿恢复 sit (0.6s)
+                if (wave_timer > 0.6f) { g_motion.gait = GAIT_SIT; }
             }
+            wave_timer += dt;
         } else {
             wave_last = g_motion.gait;
         }
@@ -423,19 +435,24 @@ static void motion_task_main(void *pvParam)
                 servo_group_add(leg_knee_ch[leg], s_knee);
                 continue;
             } else if (is_wave) {
-                // 挥手: sit姿势 + 右前腿抬起摆动
+                // 挥手分阶段: 0=sit 1~3=后腿到位+RF摆动 4=后腿恢复
                 float s_hip, s_knee;
+                // sit 基准角度
                 if (leg_side[leg] == IK_SIDE_LEFT) {
                     s_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 120.0f : 10.0f;
                     s_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 160.0f : 165.0f;
                 } else {
-                    if (leg_pair[leg] == IK_LEG_FRONT) {
-                        s_hip  = 150.0f;
-                        s_knee = 45.0f + wave_knee;
-                    } else {
-                        s_hip  = 170.0f;
-                        s_knee = 15.0f;
-                    }
+                    s_hip  = (leg_pair[leg] == IK_LEG_FRONT) ? 60.0f : 170.0f;
+                    s_knee = (leg_pair[leg] == IK_LEG_FRONT) ? 20.0f : 15.0f;
+                }
+                // 阶段 1~3: 后腿大腿到位 (LH=48, RH=132)
+                if (leg_pair[leg] == IK_LEG_REAR && wave_stage >= 1 && wave_stage <= 3) {
+                    s_hip = (leg_side[leg] == IK_SIDE_LEFT) ? 48.0f : 132.0f;
+                }
+                // 阶段 2: 右前腿抬起摆动
+                if (leg_side[leg] == IK_SIDE_RIGHT && leg_pair[leg] == IK_LEG_FRONT && wave_stage == 2) {
+                    s_hip  = 150.0f;
+                    s_knee = 45.0f + wave_knee;
                 }
                 s_hip  = servo_step_toward(leg_hip_ch[leg],  s_hip,  SERVO_MAX_DEG_PER_FRAME);
                 s_knee = servo_step_toward(leg_knee_ch[leg], s_knee, SERVO_MAX_DEG_PER_FRAME);

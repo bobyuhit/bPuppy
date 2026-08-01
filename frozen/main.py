@@ -36,6 +36,7 @@ except ImportError as e:
 #   bpuppy_imu  由 balance / set_heading / calib_mag 的 start() 自动 init
 #   bpuppy_uart / bpuppy_adc  用的时候手动 import + init()
 #   BLE         由 ble_hiwonder.HiwonderBLE() 构造时自动启动
+#   WiFi 遥控   上电自动开启 (见下), 纯遥控不开摄像头
 
 # 运动控制 — 上电自动站立
 try:
@@ -57,6 +58,15 @@ try:
     modules_loaded.append("motion")
 except ImportError as e:
     modules_failed.append(("motion", e))
+
+# WiFi 遥控 — 上电自动开启 (纯遥控, 不开摄像头)
+# 图传可在网页点「图传 开」开启, 或 camera_stream.start(stream=True)
+try:
+    import camera_stream
+    camera_stream.start()          # 默认 stream=False → 纯遥控
+    modules_loaded.append("wifi")
+except Exception as e:
+    modules_failed.append(("wifi", e))
 
 # ---- 状态报告 ----
 print(f"  Loaded:   {', '.join(modules_loaded) if modules_loaded else '(none)'}")

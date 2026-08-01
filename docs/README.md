@@ -140,7 +140,7 @@ Ready.
 ## 软件架构
 
 ```
-MicroPython 层:   frozen/main.py → 上电自动站立 (IMU/BLE/UART/ADC 手动或按需启动)
+MicroPython 层:   frozen/main.py → 上电自动站立 + WiFi 遥控 (IMU/BLE/UART/ADC 手动或按需启动)
                        ↑ import
 C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_uart / bpuppy_adc /
                   bpuppy_ik / bpuppy_motion / bpuppy_camera / bpuppy_ble
@@ -230,11 +230,13 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 1. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值
 2. 舵机设到蹲姿 → `motion.start()` — 创建 50Hz FreeRTOS 任务
 3. `motion.stand_up()` — 蹲姿 → 3s smoothstep 站立
+4. `camera_stream.start()` — 自动开启 WiFi 遥控热点 (纯遥控, **不开摄像头**)
 
-上电自动站立, `Loaded:` 只显示 servo/motion。**IMU / BLE / UART / ADC 均手动或按需启动**:
+上电自动站立 + WiFi 遥控, `Loaded:` 显示 servo/motion/wifi。**IMU / BLE / UART / ADC 均手动或按需启动**:
 - IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
 - BLE: `HiwonderBLE()` 构造时启动
 - UART / ADC: 手动 `import` + `init()`
+- WiFi 图传: 网页点「图传 开」或 `camera_stream.start(stream=True)`
 
 ---
 
