@@ -53,6 +53,7 @@ static bool  g_half_pulse = false;    // 半周期脉冲 (步长平滑触发)
 static bool  g_stop_decel = false;    // 减速停进行中 (运动步态下减速, 未收脚)
 static gait_type_t g_pending_gait = GAIT_STAND;  // 减速停完成后切换的静态步态
 static gait_type_t g_rev_gait = GAIT_GO;         // 换向前运动步态 (反向起步用)
+static int   g_decel_sign = 1;        // 换向减速停期间保持的原方向 (+1 前进 / -1 后退)
 
 // 限速: 往 target 方向最多走 max_step 度
 static float servo_step_toward(int ch, float target, float max_step) {
@@ -269,6 +270,7 @@ static void motion_task_main(void *pvParam)
                 g_pending_gait = GAIT_STAND; // 停稳后先到 stand
                 g_reverse = true;
                 g_rev_gait = g_motion.gait;  // 记住运动步态 (反向起步用)
+                g_decel_sign = g_dir_last;   // 记住原方向 (减速停期间保持, 防腿打架)
             }
         }
         g_dir_last = cur_dir;
@@ -350,12 +352,14 @@ static void motion_task_main(void *pvParam)
             g_motion.body_pitch = eff_pitch;
         }
         // GO 步长平滑: 半周期点向目标逼近 ±目标/4 (4 半周期到位)
-        // 减速停/换向停: 目标改为 0, 步长同步渐收, 让最后一步最短再收脚
+        // 停步 (减速停 / 目标速度≈0): 目标改为 0, 步长渐收; 减速期步进加大(减半), 让最后一步短
         if (g_half_pulse && g_motion.gait == GAIT_GO) {
-            float stride_target = g_stop_decel ? 0.0f : eff_stride;
+            bool stopping = g_stop_decel || g_motion.target_speed <= 0.1f;
+            float stride_target = stopping ? 0.0f : eff_stride;
             float diff = stride_target - g_stride_smooth;
             if (fabsf(diff) > 0.1f) {
-                float step = fabsf(eff_stride) / 4.0f;
+                float step = stopping ? fabsf(g_stride_smooth) * 0.5f
+                                      : fabsf(eff_stride) / 4.0f;
                 if (step < 1.0f) step = 1.0f;
                 if (diff >  step) diff =  step;
                 if (diff < -step) diff = -step;
@@ -590,7 +594,12 @@ static void motion_task_main(void *pvParam)
 
                 // turn → per-side stride: 一侧不变, 另一侧 1→0→-1 连续缩放
                 // 方向符号来自用户 stride (GO 只接管 magnitude, 不改方向)
-                float stride_sign = (g_motion.stride < 0.0f) ? -1.0f : 1.0f;
+                // 换向减速停期间保持原方向, 反向起步后才用新方向 (防止腿瞬间打架)
+                float stride_sign;
+                if (g_reverse && g_stop_decel)
+                    stride_sign = (float)g_decel_sign;
+                else
+                    stride_sign = (g_motion.stride < 0.0f) ? -1.0f : 1.0f;
                 float leg_stride;
                 if (g_motion.turn >= 0.0f) {
                     float s = (leg_side[leg] == IK_SIDE_RIGHT)
