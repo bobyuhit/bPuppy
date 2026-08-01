@@ -46,6 +46,10 @@ static const int leg_pair[]    = {IK_LEG_FRONT, IK_LEG_REAR,
 /* ---- 舵机角度限速 (每帧最大变化) ---- */
 #define SERVO_MAX_DEG_PER_FRAME  3.0f   // 每 20ms 最多移动度数
 static float g_smooth_angles[8] = {90, 90, 90, 90, 90, 90, 90, 90};
+static int   g_dir_last = 1;     // 上次运动方向 (+1 前进 / -1 后退)
+static bool  g_reverse = false;  // 换向过渡中 (停步→反向起步)
+static float g_stride_smooth = 0.0f;  // GO 平滑步长 (起步从 0 爬升)
+static bool  g_half_pulse = false;    // 半周期脉冲 (步长平滑触发)
 
 // 限速: 往 target 方向最多走 max_step 度
 static float servo_step_toward(int ch, float target, float max_step) {
@@ -62,8 +66,8 @@ static bool is_static_gait(gait_type_t g) {
 /* ---- 全局状态 ---- */
 __attribute__((weak)) motion_state_t g_motion = {
     .gait           = GAIT_STAND,
-    .speed          = SPEED_DEFAULT,
-    .target_speed   = SPEED_DEFAULT,
+    .speed          = 0.0f,          // 实际速度静止为 0
+    .target_speed   = SPEED_DEFAULT, // 目标速度默认 2.5
     .stride         = STRIDE_DEFAULT,
     .height         = HEIGHT_DEFAULT,
     .lift_height    = LIFT_DEFAULT,
@@ -254,6 +258,24 @@ static void motion_task_main(void *pvParam)
         }
         g_was_moving = !now_static;
 
+        // 换向检测: 运动方向变化 → 先停步再反向起步 (平滑换向, 经过 stand)
+        int cur_dir = (g_motion.stride < 0.0f) ? -1 : 1;
+        if (cur_dir != g_dir_last && !now_static && !is_stand_up) {
+            if (g_motion.pose_trans == 0) {
+                g_motion.pose_trans = 2;   // 先停步 (收拢到站立)
+                g_motion.pose_timer = 0.0f;
+                g_motion.speed = 0.0f;
+                g_reverse = true;
+            }
+        }
+        g_dir_last = cur_dir;
+        // 换向: 停步完成后自动反向起步
+        if (g_reverse && g_motion.pose_trans == 0) {
+            g_motion.pose_trans = 1;       // 反向起步 (展开到新方向轨迹)
+            g_motion.pose_timer = 0.0f;
+            g_reverse = false;
+        }
+
         // speed=步频 stride=步幅+方向 (正=前, 负=后)
         float eff_speed = g_motion.speed;
 
@@ -277,9 +299,15 @@ static void motion_task_main(void *pvParam)
             bool cross_half = (int)(prev_phase / (float)M_PI) !=
                               (int)(g_phase     / (float)M_PI);
             if (cross_half || prev_phase == g_phase) {
+                if (cross_half) g_half_pulse = true;
                 float ds = g_motion.target_speed - g_motion.speed;
                 if (fabsf(ds) < 0.15f) {
                     g_motion.speed = g_motion.target_speed; // 接近就到位
+                } else if (g_motion.speed < 0.15f && g_motion.target_speed > 0.0f) {
+                    // 起步 kick: speed=0 相位不动, 先给起步速度(≤2.5)让相位能动, 再半周期爬升
+                    g_motion.speed = (g_motion.target_speed < SPEED_DEFAULT)
+                                   ? g_motion.target_speed : SPEED_DEFAULT;
+                    g_stride_smooth = 0.0f;   // 起步步长从 0 爬升 (4 半周期到目标)
                 } else {
                     float step = SPEED_FOLLOW_STEP;
                     if (ds >  step) ds =  step;
@@ -314,6 +342,21 @@ static void motion_task_main(void *pvParam)
             }
             g_motion.body_pitch = eff_pitch;
         }
+        // GO 步长平滑: 半周期点向目标逼近 ±目标/4 (4 半周期到位)
+        if (g_half_pulse && g_motion.gait == GAIT_GO) {
+            float diff = eff_stride - g_stride_smooth;
+            if (fabsf(diff) > 0.1f) {
+                float step = fabsf(eff_stride) / 4.0f;
+                if (step < 1.0f) step = 1.0f;
+                if (diff >  step) diff =  step;
+                if (diff < -step) diff = -step;
+                g_stride_smooth += diff;
+            }
+        }
+        if (g_motion.gait == GAIT_GO) {
+            eff_stride = g_stride_smooth;
+        }
+        g_half_pulse = false;
 
         // 计算步态偏移: 正向 (前腿迈) + 反向 (后腿迈) 各一套
         // turn 可能让不同侧走向不同方向，per-leg 按方向选用
@@ -563,9 +606,18 @@ static void motion_task_main(void *pvParam)
                 // 起步过渡: 足端从站立 (0,height) 缓动到预备位轨迹
                 if (g_motion.pose_trans == 1) {
                     float t = g_motion.pose_timer / TRANS_TIME;
+                    if (t > 1.0f) t = 1.0f;
                     float ease = t * t * (3.0f - 2.0f * t);
                     foot_x = 0.0f + (foot_x - 0.0f) * ease;
                     foot_z = eff_height + (foot_z - eff_height) * ease;
+                }
+                // 换向停步过渡: 足端从轨迹收拢到站立 (0, height)
+                if (g_motion.pose_trans == 2) {
+                    float t = g_motion.pose_timer / TRANS_TIME;
+                    if (t > 1.0f) t = 1.0f;
+                    float ease = t * t * (3.0f - 2.0f * t);
+                    foot_x = foot_x * (1.0f - ease);
+                    foot_z = g_motion.height + (foot_z - g_motion.height) * (1.0f - ease);
                 }
             }
 

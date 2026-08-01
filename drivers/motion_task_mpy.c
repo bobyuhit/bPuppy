@@ -130,11 +130,12 @@ STATIC mp_obj_t mp_motion_load_geometry(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_load_geometry_obj, mp_motion_load_geometry);
 
-// 读取当前运动参数 (speed, stride, height, lift, omega, turn, gait)
+// 读取当前运动参数 (speed=目标步频, stride, height, lift, omega, turn, gait)
+// speed 返回 target_speed (用户设定值, 停止时不被清零), 供网页滑块显示
 STATIC mp_obj_t mp_motion_get_params(void) {
     const motion_state_t *m = motion_get_state();
     mp_obj_t items[7] = {
-        mp_obj_new_float(m->speed),
+        mp_obj_new_float(m->target_speed),
         mp_obj_new_float(m->stride),
         mp_obj_new_float(m->height),
         mp_obj_new_float(m->lift_height),
