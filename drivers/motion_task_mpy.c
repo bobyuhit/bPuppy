@@ -130,6 +130,22 @@ STATIC mp_obj_t mp_motion_load_geometry(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_load_geometry_obj, mp_motion_load_geometry);
 
+// 读取当前运动参数 (speed, stride, height, lift, omega, turn, gait)
+STATIC mp_obj_t mp_motion_get_params(void) {
+    const motion_state_t *m = motion_get_state();
+    mp_obj_t items[7] = {
+        mp_obj_new_float(m->speed),
+        mp_obj_new_float(m->stride),
+        mp_obj_new_float(m->height),
+        mp_obj_new_float(m->lift_height),
+        mp_obj_new_float(m->omega_base),
+        mp_obj_new_float(m->turn),
+        mp_obj_new_int((int)m->gait),
+    };
+    return mp_obj_new_tuple(7, items);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_get_params_obj, mp_motion_get_params);
+
 STATIC mp_obj_t mp_motion_show_geometry(void) {
     const motion_state_t *m = motion_get_state();
     const char *ch_names[8] = {
@@ -173,6 +189,7 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_set_joint_limits), MP_ROM_PTR(&mp_motion_set_joint_limits_obj) },
     { MP_ROM_QSTR(MP_QSTR_load_geometry), MP_ROM_PTR(&mp_motion_load_geometry_obj) },
     { MP_ROM_QSTR(MP_QSTR_show_geometry), MP_ROM_PTR(&mp_motion_show_geometry_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_params),    MP_ROM_PTR(&mp_motion_get_params_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(bpuppy_motion_globals, bpuppy_motion_globals_table);
 

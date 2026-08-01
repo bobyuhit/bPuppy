@@ -44,7 +44,7 @@ _PART_TEMPLATE = (
     "\r\n"
 )
 
-# ---- 网页遥控器 (图传可选, 运行时开关) ----
+# ---- 网页遥控器 (图传可选, 运行时开关, 多页面菜单) ----
 _HTML_TEMPLATE = """\
 HTTP/1.0 200 OK\r\n\
 Content-Type: text/html; charset=utf-8\r\n\
@@ -54,76 +54,159 @@ Content-Type: text/html; charset=utf-8\r\n\
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>bPuppy</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#1a1a1a;color:#ddd;font:14px/1.4 system-ui,sans-serif;margin:0}
-img{width:100%;max-width:400px;display:block;transform:scaleX(-1)}
-#vbox{position:relative;width:100%;max-width:400px;margin:0 auto;background:#111}
-#dogph{height:225px;display:flex;align-items:center;justify-content:center}
-.sb{background:rgba(0,0,0,0.55);color:#fff;border:1px solid rgba(255,255,255,0.35);font-size:12px;height:28px;line-height:28px;min-width:54px;padding:0 8px;border-radius:14px}
-#pad{width:100%;max-width:400px;background:#222;padding:8px 10px}
-.r{display:flex;justify-content:center;gap:6px;margin:4px 0}
-a{text-decoration:none;color:#ddd;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;height:42px;min-width:52px;padding:0 8px}
-a:active{opacity:0.6}
-.d{width:64px;height:56px;line-height:56px;border-radius:14px;font-size:26px;background:#345}
-.ds{background:#622;font-size:16px;font-weight:bold;height:56px;line-height:56px}
-.t{font-size:11px;color:#aaa;margin-top:-2px}
-.p{background:#3a3a3a;font-size:14px;height:38px;line-height:38px;border-radius:8px;min-width:58px}
-.w{background:#543010;font-size:14px;height:38px;line-height:38px;border-radius:8px;min-width:58px}
-.sl{display:flex;align-items:center;gap:8px}
-.sl input{flex:1;height:30px;accent-color:#4a4}
-.sl span{font-size:20px;font-weight:bold;color:#4f4;min-width:28px;text-align:right}
-.sl label{font-size:12px;color:#888}
+:root{
+  --bg1:#0f1115; --bg2:#151a22;
+  --card:#1a1d24; --card2:#20242e; --card3:#262b36;
+  --border:#2a2f3a;
+  --txt:#e5e7eb; --txt2:#9ca3af;
+  --acc:#2dd4bf; --acc2:#3b82f6;
+  --danger:#f87171; --purple:#8b5cf6;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--txt);font:14px/1.4 system-ui,sans-serif;min-height:100vh;padding-bottom:24px}
+img{width:100%;max-width:420px;display:block;transform:scaleX(-1)}
+
+/* 顶部菜单栏 */
+.navbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;background:rgba(16,19,26,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:10px 14px}
+.brand{font-size:19px;font-weight:700;letter-spacing:.5px;color:var(--acc)}
+.menus{display:flex;gap:8px}
+.menu{position:relative}
+.menu-btn{background:var(--card);color:var(--txt);border:1px solid var(--border);border-radius:10px;padding:8px 13px;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:5px}
+.menu-btn:hover,.menu.open .menu-btn{background:var(--card2);border-color:var(--acc)}
+.menu-btn::after{content:'\\25BE';font-size:10px;color:var(--txt2)}
+.dropdown{display:none;position:absolute;right:0;top:calc(100%+6px);background:var(--card);border:1px solid var(--border);border-radius:12px;min-width:160px;padding:6px;box-shadow:0 10px 28px rgba(0,0,0,.55);z-index:60}
+.menu.open .dropdown{display:block}
+.dropdown a{display:block;color:var(--txt);text-decoration:none;padding:10px 12px;border-radius:8px;font-size:14px}
+.dropdown a:hover{background:var(--card2);color:var(--acc)}
+.dropdown .sep{height:1px;background:var(--border);margin:4px 10px}
+
+/* 视频区 */
+#vbox{position:relative;width:100%;max-width:420px;margin:14px auto 12px;background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+#dogph{height:235px;display:flex;align-items:center;justify-content:center}
+.sb{position:absolute;top:8px;right:8px;z-index:10;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.3);font-size:12px;height:30px;line-height:30px;min-width:62px;padding:0 10px;border-radius:15px;text-align:center}
+
+/* 遥控面板 */
+#pad{width:100%;max-width:420px;margin:0 auto;padding:0 12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.title{font-size:12px;color:var(--txt2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.title::before{content:'';width:3px;height:12px;background:var(--acc);border-radius:2px}
+.row{display:flex;justify-content:center;gap:10px;margin:7px 0}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:14px;user-select:none;transition:transform .05s}
+a.btn:active{opacity:.75;transform:scale(.95)}
+.dir{width:64px;height:58px;font-size:24px;background:var(--card3);color:var(--txt);border:1px solid var(--border)}
+.dir:hover{background:#2e3542}
+.stop{background:linear-gradient(135deg,#e11d48,#be123c);color:#fff;font-weight:700;font-size:16px;width:64px;height:58px}
+.pose{background:var(--card2);font-size:14px;height:42px;min-width:66px;padding:0 12px;border:1px solid var(--border)}
+.action{background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:14px;height:42px;min-width:66px;padding:0 12px}
+.sl{display:flex;align-items:center;gap:10px}
+.sl label{font-size:12px;color:var(--txt2);width:30px}
+.sl input{flex:1;height:34px;accent-color:var(--acc)}
+.sl span{font-size:20px;font-weight:700;color:var(--acc);min-width:32px;text-align:right}
 </style>
 </head><body>
 
+<nav class="navbar">
+  <div class="brand">bPuppy</div>
+  <div class="menus">
+    <div class="menu">
+      <button class="menu-btn">功能</button>
+      <div class="dropdown">
+        <a href="#">指南小狗</a>
+        <a href="#">自平衡</a>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menu-btn">设置</button>
+      <div class="dropdown">
+        <a href="#">舵机校准</a>
+        <a href="#">IMU 校准</a>
+        <div class="sep"></div>
+        <a href="#">运动参数</a>
+        <a href="#">持久化参数</a>
+        <a href="#">系统信息</a>
+        <div class="sep"></div>
+        <a href="#">语言设置</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
 <div id="vbox">
   __VIDEO__
-  <div style="position:absolute;top:6px;right:6px;z-index:10">__STREAM_BTN__</div>
+  __STREAM_BTN__
 </div>
 <iframe name="f" style="display:none"></iframe>
 
 <div id="pad">
 
-  <form class="sl" action="/cmd" method="get" target="f">
-    <label>速</label>
-    <input type="hidden" name="set" value="1">
-    <input type="range" name="speed" min="0" max="10" step="0.5" value="0"
-      onchange="this.form.submit()"
-      oninput="document.getElementById('sv').innerHTML=this.value">
-    <span id="sv">0</span>
-  </form>
-
-  <div class="r">
-    <a href="/cmd?stride=70&turn=-0.5"  class="d" target="f">&#x2196;</a>
-    <a href="/cmd?stride=70&turn=0"     class="d" target="f">&#x25B2;</a>
-    <a href="/cmd?stride=70&turn=0.5"   class="d" target="f">&#x2197;</a>
+  <div class="card">
+    <div class="title">速度与移动</div>
+    <form class="sl" action="/cmd" method="get" target="f">
+      <label>速</label>
+      <input type="hidden" name="set" value="1">
+      <input type="range" id="speed" name="speed" min="0" max="10" step="0.5" value="__SPEED__"
+        onchange="this.form.submit()"
+        oninput="document.getElementById('sv').innerHTML=this.value">
+      <span id="sv">__SPEED_DISPLAY__</span>
+    </form>
+    <div class="row">
+      <a class="btn dir" href="/cmd?stride=70&turn=-0.5" target="f">&#x2196;</a>
+      <a class="btn dir" href="/cmd?stride=70&turn=0"    target="f">&#x25B2;</a>
+      <a class="btn dir" href="/cmd?stride=70&turn=0.5"  target="f">&#x2197;</a>
+    </div>
+    <div class="row">
+      <a class="btn dir" href="/cmd?stride=0&turn=-0.8"  target="f">&#x25C0;</a>
+      <a class="btn stop" href="/cmd?gait=stand" target="f">停</a>
+      <a class="btn dir" href="/cmd?stride=0&turn=0.8"   target="f">&#x25B6;</a>
+    </div>
+    <div class="row">
+      <a class="btn dir" href="/cmd?stride=-70&turn=-0.5" target="f">&#x2199;</a>
+      <a class="btn dir" href="/cmd?stride=-70&turn=0"    target="f">&#x25BC;</a>
+      <a class="btn dir" href="/cmd?stride=-70&turn=0.5"  target="f">&#x2198;</a>
+    </div>
   </div>
 
-
-  <div class="r">
-    <a href="/cmd?stride=0&turn=-0.8"   class="d" target="f">&#x25C0;</a>
-    <a href="/cmd?gait=stand" class="d ds" target="f">停</a>
-    <a href="/cmd?stride=0&turn=0.8"    class="d" target="f">&#x25B6;</a>
-  </div>
-
-  <div class="r">
-    <a href="/cmd?stride=-70&turn=-0.5" class="d" target="f">&#x2199;</a>
-    <a href="/cmd?stride=-70&turn=0"    class="d" target="f">&#x25BC;</a>
-    <a href="/cmd?stride=-70&turn=0.5"  class="d" target="f">&#x2198;</a>
-  </div>
-
-  <div class="r">
-    <a href="/cmd?gait=stand"  class="p" target="f">站立</a>
-    <a href="/cmd?gait=sit"    class="p" target="f">坐下</a>
-    <a href="/cmd?gait=crouch" class="p" target="f">蹲下</a>
-  </div>
-
-  <div class="r">
-    <a href="/cmd?gait=play" class="w" target="f">玩</a>
-    <a href="/cmd?wave=1" class="w" target="f">挥手</a>
+  <div class="card">
+    <div class="title">姿态</div>
+    <div class="row">
+      <a class="btn pose" href="/cmd?gait=stand"  target="f">站立</a>
+      <a class="btn pose" href="/cmd?gait=sit"    target="f">坐下</a>
+      <a class="btn pose" href="/cmd?gait=crouch" target="f">蹲下</a>
+    </div>
+    <div class="row">
+      <a class="btn action" href="/cmd?gait=play" target="f">玩</a>
+      <a class="btn action" href="/cmd?wave=1"    target="f">挥手</a>
+    </div>
   </div>
 
 </div>
+
+<script>
+document.querySelectorAll('.menu').forEach(function(m){
+  m.querySelector('.menu-btn').addEventListener('click', function(e){
+    e.stopPropagation();
+    var open = document.querySelector('.menu.open');
+    if (open && open !== m) open.classList.remove('open');
+    m.classList.toggle('open');
+  });
+});
+document.addEventListener('click', function(){
+  document.querySelectorAll('.menu.open').forEach(function(m){m.classList.remove('open')});
+});
+// 速度条与狗实际速度双向同步
+function syncSpeed(){
+  fetch('/cmd?get_params=1').then(function(r){return r.text()}).then(function(t){
+    var m={}; t.split('&').forEach(function(kv){var p=kv.split('=');m[p[0]]=parseFloat(p[1])});
+    var inp=document.getElementById('speed');
+    if(document.activeElement!==inp && m.SPEED!==undefined){
+      inp.value=m.SPEED;
+      document.getElementById('sv').innerHTML=m.SPEED.toFixed(1);
+    }
+  });
+}
+syncSpeed();
+setInterval(syncSpeed, 1500);
+</script>
 </body></html>"""
 
 
@@ -158,7 +241,19 @@ def _html_page():
         btn = ('<a href="/cmd?stream=on" '
                'onclick="fetch(this.href);setTimeout(function(){location.reload()},200);return false;" '
                'class="sb">图传 开</a>')
-    return _HTML_TEMPLATE.replace("__VIDEO__", video).replace("__STREAM_BTN__", btn)
+
+    # 服务端注入当前实际 speed 到滑块 (页面加载即显示真实值, 不依赖 JS fetch)
+    speed_val = 0.0
+    try:
+        import bpuppy_motion
+        p = bpuppy_motion.get_params()
+        speed_val = p[0]
+    except Exception:
+        pass
+    page = _HTML_TEMPLATE.replace("__VIDEO__", video).replace("__STREAM_BTN__", btn)
+    page = page.replace("__SPEED__", "%.1f" % speed_val)
+    page = page.replace("__SPEED_DISPLAY__", "%.1f" % speed_val)
+    return page
 
 
 def _open_stream():
@@ -202,6 +297,15 @@ def _parse_cmd(path):
         return "motion N/A"
 
     with _lock:
+        # === 读取当前运动参数 (网页速度条同步) ===
+        if "get_params" in params:
+            try:
+                p = bpuppy_motion.get_params()
+                return ("SPEED=%.1f&STRIDE=%.0f&HEIGHT=%.0f&LIFT=%.0f&OMEGA=%.1f&TURN=%.1f"
+                        % (p[0], p[1], p[2], p[3], p[4], p[5]))
+            except Exception:
+                return "SPEED=0&STRIDE=0&HEIGHT=70&LIFT=30&OMEGA=2.0&TURN=0"
+
         # === 图传开关 (运行时) ===
         if "stream" in params:
             if params["stream"] == "on":
@@ -223,10 +327,15 @@ def _parse_cmd(path):
             _g_gait = "stand"
             return "OK:stop"
 
-        # === 仅存值，不调运动（滑块用） ===
+        # === 滑块: 存值 + speed 直接写 g_motion ===
         if "set" in params:
             if "speed" in params:
                 _g_speed = float(params["speed"])
+                try:
+                    cur = bpuppy_motion.get_params()          # (speed, stride, height, ...)
+                    bpuppy_motion.set_params(_g_speed, cur[1], cur[2])  # 写 g_motion
+                except Exception:
+                    pass
             if "turn" in params:
                 _g_turn = float(params["turn"])
             if "stride" in params:
