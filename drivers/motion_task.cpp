@@ -306,8 +306,8 @@ static void motion_task_main(void *pvParam)
                               (int)(g_phase     / (float)M_PI);
             if (cross_half || prev_phase == g_phase) {
                 if (cross_half) g_half_pulse = true;
-                // 减速停/换向停: 速度目标临时为 0 (每半步 -3 到 0)
-                float target_eff = g_stop_decel ? 0.0f : g_motion.target_speed;
+                // 停步/换向停: 速度不减, 照常跟随 target_speed (只减步长)
+                float target_eff = g_motion.target_speed;
                 float ds = target_eff - g_motion.speed;
                 if (fabsf(ds) < 0.15f) {
                     g_motion.speed = target_eff; // 接近就到位
@@ -370,10 +370,11 @@ static void motion_task_main(void *pvParam)
         }
         g_half_pulse = false;
 
-        // 减速停完成: speed≈0 → 切换静态步态 (收脚站定, 最后一步已用渐收步长)
-        if (g_stop_decel && g_motion.speed <= 0.05f) {
+        // 减速停完成: 步长渐收到 0 → 切换静态步态 (最后一步最短, 收脚站定)
+        if (g_stop_decel && g_stride_smooth <= 0.1f) {
             g_stop_decel = false;
             g_motion.gait = g_pending_gait;
+            g_motion.speed = 0.0f;          // 停稳后速度清零 (相位冻结, 让 stand 收脚)
         }
 
         // 计算步态偏移: 正向 (前腿迈) + 反向 (后腿迈) 各一套
