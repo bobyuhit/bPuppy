@@ -274,13 +274,6 @@ static void motion_task_main(void *pvParam)
             }
         }
         g_dir_last = cur_dir;
-        // 换向: stand 到位后自动反向起步 (步长从 0, 速度 kick)
-        if (g_reverse && g_motion.gait == GAIT_STAND && g_motion.pose_trans == 0) {
-            g_reverse = false;
-            g_motion.gait = g_rev_gait;      // 恢复运动步态
-            g_motion.pose_trans = 1;         // 起步过渡
-            g_motion.pose_timer = 0.0f;
-        }
 
         // speed=步频 stride=步幅+方向 (正=前, 负=后)
         float eff_speed = g_motion.speed;
@@ -351,14 +344,14 @@ static void motion_task_main(void *pvParam)
             }
             g_motion.body_pitch = eff_pitch;
         }
-        // GO 步长平滑: 半周期点向目标逼近 ±目标/2 (2 半周期=1 周期到位, 与起步对称)
-        // 停步 (减速停 / 目标速度≈0): 目标改为 0, 同样按 ±目标/2 渐收
+        // GO 步长平滑: 起步 step=±目标/4 (4半周期到位), 停步 step=±目标/2 (2半周期到0)
         if (g_half_pulse && g_motion.gait == GAIT_GO) {
             bool stopping = g_stop_decel || g_motion.target_speed <= 0.1f;
             float stride_target = stopping ? 0.0f : eff_stride;
             float diff = stride_target - g_stride_smooth;
             if (fabsf(diff) > 0.1f) {
-                float step = fabsf(eff_stride) / 2.0f;
+                float div = stopping ? 2.0f : 4.0f;
+                float step = fabsf(eff_stride) / div;
                 if (step < 1.0f) step = 1.0f;
                 if (diff >  step) diff =  step;
                 if (diff < -step) diff = -step;
@@ -370,12 +363,17 @@ static void motion_task_main(void *pvParam)
         }
         g_half_pulse = false;
 
-        // 减速停完成: 步长渐收到 0 → 切换静态步态 (最后一步最短, 收脚站定)
-        // 按停 / 滑块到 0 都会触发: 步长归零, 速度清零, 切静态收脚
+        // 减速停完成: 步长渐收到 0
+        // 换向: 直接反方向走 (步长=0 脚已在 stand, 不经过 stand 收脚+起步过渡)
+        // 按停/滑块到0: 切静态步态, 收脚站定
         if ((g_stop_decel || g_motion.target_speed <= 0.1f) && g_stride_smooth <= 0.1f) {
             g_stop_decel = false;
-            g_motion.gait = g_pending_gait;
-            g_motion.speed = 0.0f;          // 停稳后速度清零 (相位冻结, 让 stand 收脚)
+            if (g_reverse) {
+                g_reverse = false;              // 直接反向 (跳过 stand 中间态)
+            } else {
+                g_motion.gait = g_pending_gait;
+                g_motion.speed = 0.0f;
+            }
         }
 
         // 计算步态偏移: 正向 (前腿迈) + 反向 (后腿迈) 各一套
