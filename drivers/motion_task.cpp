@@ -351,15 +351,14 @@ static void motion_task_main(void *pvParam)
             }
             g_motion.body_pitch = eff_pitch;
         }
-        // GO 步长平滑: 半周期点向目标逼近 ±目标/4 (4 半周期到位)
-        // 停步 (减速停 / 目标速度≈0): 目标改为 0, 步长渐收; 减速期步进加大(减半), 让最后一步短
+        // GO 步长平滑: 半周期点向目标逼近 ±目标/4 (4 半周期到位, 与起步对称)
+        // 停步 (减速停 / 目标速度≈0): 目标改为 0, 同样按 ±目标/4 渐收
         if (g_half_pulse && g_motion.gait == GAIT_GO) {
             bool stopping = g_stop_decel || g_motion.target_speed <= 0.1f;
             float stride_target = stopping ? 0.0f : eff_stride;
             float diff = stride_target - g_stride_smooth;
             if (fabsf(diff) > 0.1f) {
-                float step = stopping ? fabsf(g_stride_smooth) * 0.5f
-                                      : fabsf(eff_stride) / 4.0f;
+                float step = fabsf(eff_stride) / 4.0f;
                 if (step < 1.0f) step = 1.0f;
                 if (diff >  step) diff =  step;
                 if (diff < -step) diff = -step;

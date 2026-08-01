@@ -66,7 +66,7 @@ def main():
         sys.exit(1)
 
     port = sys.argv[1]
-    baud = 115200
+    baud = 921600
 
     # 打开串口（尝试阻止复位）
     ser = serial.Serial(port, baud, timeout=1, dsrdtr=False)

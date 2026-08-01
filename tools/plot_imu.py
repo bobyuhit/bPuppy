@@ -22,7 +22,7 @@ from collections import deque
 import re
 
 MAX_POINTS = 300
-BAUDRATE = 115200
+BAUDRATE = 921600
 
 def main():
     port = sys.argv[1] if len(sys.argv) > 1 else 'COM8'

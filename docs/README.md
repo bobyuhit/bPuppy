@@ -11,7 +11,7 @@ bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v
 | 舵机 | 8× 模拟舵机 (每条腿 2DOF: 髋 + 膝) |
 | IMU | MPU9250 9轴 (I2C0: SDA=GPIO3, SCL=GPIO14, addr=0x68, Mahony 姿态) |
 | 通信 | BLE (NimBLE, Hiwonder Wonderbot 协议) + UART2 (GPIO19/20, CI-33T/micro:bit) |
-| 控制台 | USB-JTAG CDC (115200bps, 直连 USB) |
+| 控制台 | USB-JTAG CDC (921600bps, 直连 USB) |
 | 供电 | 7.4V 2S LiPo |
 
 **当前固件参数（默认值，均可运行时修改 + NVS 持久化）：**
@@ -75,14 +75,14 @@ rm -rf build && bash build.sh
 ```powershell
 # ESP32-S3 原生 USB-JTAG，直连 USB 即可，无需 USB-UART 转接
 # 端口: 插入 USB 后从设备管理器查看 (因机器而异)
-esptool --chip esp32s3 --port COM3 --baud 115200 write-flash `
+esptool --chip esp32s3 --port COM3 --baud 921600 write-flash `
   0x10000 build/micropython_bpuppy.bin
 ```
 
 > **日常增量**只写 app 分区 (0x10000)。改了 bootloader/分区表、或首次烧录时才需要**全烧**:
 >
 > ```powershell
-> esptool --chip esp32s3 --port COM3 --baud 115200 write-flash `
+> esptool --chip esp32s3 --port COM3 --baud 921600 write-flash `
 >   0x0 build/bootloader/bootloader.bin `
 >   0x8000 build/partition_table/partition-table.bin `
 >   0x10000 build/micropython_bpuppy.bin
@@ -92,7 +92,7 @@ esptool --chip esp32s3 --port COM3 --baud 115200 write-flash `
 
 ### 串口连接
 
-- 波特率: **115200**
+- 波特率: **921600**
 - 端口: 设备管理器查看 (USB-JTAG CDC，直连 USB 即可)
 - 工具: PuTTY / Tera Term / VS Code Serial Monitor
 
@@ -447,7 +447,7 @@ idf.py flash monitor       # 烧录并监控
 
 - [ ] `idf.py build` 编译成功
 - [ ] `build/micropython_bpuppy.bin` 存在
-- [ ] 烧录后 USB CDC 串口可连接 (115200, 端口见设备管理器)
+- [ ] 烧录后 USB CDC 串口可连接 (921600, 端口见设备管理器)
 - [ ] 启动 banner 显示 "bPuppy Robot Dog - ESP32-S3"
 - [ ] 上电自动站立，无跳动
 - [ ] `import bpuppy; bpuppy.version()` 返回版本号
