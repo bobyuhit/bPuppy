@@ -344,21 +344,27 @@ static void motion_task_main(void *pvParam)
             }
             g_motion.body_pitch = eff_pitch;
         }
-        // GO 步长平滑: 起步 step=±目标/4 (4半周期到位), 停步 step=±目标/2 (2半周期到0)
-        if (g_half_pulse && g_motion.gait == GAIT_GO) {
-            bool stopping = g_stop_decel || g_motion.target_speed <= 0.1f;
-            float stride_target = stopping ? 0.0f : eff_stride;
-            float diff = stride_target - g_stride_smooth;
-            if (fabsf(diff) > 0.1f) {
-                float div = stopping ? 2.0f : 4.0f;
-                float step = fabsf(eff_stride) / div;
-                if (step < 1.0f) step = 1.0f;
-                if (diff >  step) diff =  step;
-                if (diff < -step) diff = -step;
-                g_stride_smooth += diff;
-            }
-        }
+        // GO 步长平滑: 起步 step=±目标/5 (5半周期到位)
+        // 停步/换向停: 立刻切到目标/3 → 1个半周期后归零 → 切静态
         if (g_motion.gait == GAIT_GO) {
+            bool stopping = g_stop_decel || g_motion.target_speed <= 0.1f;
+            if (stopping) {
+                // 立刻切 1/3 (不在半周期边界), 1个半周期后归零
+                float one_third = fabsf(eff_stride) / 3.0f;
+                if (g_stride_smooth > one_third + 0.1f)
+                    g_stride_smooth = one_third;
+                if (g_half_pulse)
+                    g_stride_smooth = 0.0f;
+            } else if (g_half_pulse) {
+                float diff = eff_stride - g_stride_smooth;
+                if (fabsf(diff) > 0.1f) {
+                    float step = fabsf(eff_stride) / 5.0f;
+                    if (step < 1.0f) step = 1.0f;
+                    if (diff >  step) diff =  step;
+                    if (diff < -step) diff = -step;
+                    g_stride_smooth += diff;
+                }
+            }
             eff_stride = g_stride_smooth;
         }
         g_half_pulse = false;
