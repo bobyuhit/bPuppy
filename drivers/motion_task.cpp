@@ -309,7 +309,6 @@ static void motion_task_main(void *pvParam)
                     // speed=0 相位不动, 先给起步速度(≤2.5)让相位能动, 再半周期爬升
                     g_motion.speed = (target_eff < SPEED_DEFAULT)
                                    ? target_eff : SPEED_DEFAULT;
-                    g_stride_smooth = 0.0f;   // 起步步长从 0 爬升 (4 半周期到目标)
                 } else {
                     float step = SPEED_FOLLOW_STEP;
                     if (ds >  step) ds =  step;
@@ -343,6 +342,12 @@ static void motion_task_main(void *pvParam)
                 eff_pitch  = 0.0f;
             }
             g_motion.body_pitch = eff_pitch;
+        }
+        // GO 起步首值注入: stride=0 且非停步 → 立刻给第1档 (不等半周期边界)
+        if (g_motion.gait == GAIT_GO && g_stride_smooth < 0.05f
+            && eff_speed > 0.15f && !g_stop_decel
+            && g_motion.target_speed > 0.1f) {
+            g_stride_smooth = eff_stride / 5.0f;
         }
         // GO 步长平滑: 起步 step=±目标/5 (5半周期到位)
         // 停步/换向停: 立刻切到目标/3 → 1个半周期后归零 → 切静态
