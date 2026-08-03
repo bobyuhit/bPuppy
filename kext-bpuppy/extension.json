@@ -1,0 +1,35 @@
+{
+    "id": "bpuppy",
+    "name": {
+        "zh-CN": "bPuppy 机器狗",
+        "en": "bPuppy Robot Dog"
+    },
+    "version": "1.0.0",
+    "type": "micropy",
+    "fwtype": "esptool",
+    "replmode": true,
+    "execmode": true,
+    "kittenext": true,
+    "mainboard": true,
+    "buildinpyb": true,
+    "color1": "#2DD4BF",
+    "color2": "#14B8A6",
+    "color3": "#0D9488",
+    "filesystem": "pyboard",
+    "masterExt": "bpuppy",
+    "io": ["serial"],
+    "connect": {
+        "baudrate": 115200,
+        "batch": 48,
+        "wait": 5000
+    },
+    "file": "kblock.json5",
+    "ending": "\r\n",
+    "micropython": {
+        "mainfile": "main.py",
+        "no_execfile": true
+    },
+    "image": "bpuppy.png",
+    "imageconvert": { "type": "png" },
+    "weights": 990
+}

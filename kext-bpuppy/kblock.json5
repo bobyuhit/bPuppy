@@ -1,0 +1,152 @@
+{
+  libs:{
+    "*":{import:'import bpuppy_motion, bpuppy_servo, time\nfrom time import sleep'},
+  },
+  blocks: [
+    "## 初始化",
+    {
+      opcode: 'bpuppyInit',
+      blockType: 'command',
+      text: '初始化 bPuppy',
+      pycode: "_speed = 2.5; _stride = 70; _height = 70; bpuppy_servo.init_all(); bpuppy_servo.load_cal(); bpuppy_servo.set_angle(0, 135); bpuppy_servo.set_angle(1, 45); bpuppy_servo.set_angle(2, 45); bpuppy_servo.set_angle(3, 135); bpuppy_servo.set_angle(4, 45); bpuppy_servo.set_angle(5, 135); bpuppy_servo.set_angle(6, 135); bpuppy_servo.set_angle(7, 45); bpuppy_motion.start(); bpuppy_motion.stand_up(); time.sleep(1)"
+    },
+    "---",
+    "## 运动",
+    {
+      opcode: 'forward',
+      blockType: 'command',
+      text: '前进',
+      pycode: "bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    },
+    {
+      opcode: 'backward',
+      blockType: 'command',
+      text: '后退',
+      pycode: "bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
+    },
+    {
+      opcode: 'turnLeft',
+      blockType: 'command',
+      text: '左转',
+      pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    },
+    {
+      opcode: 'turnRight',
+      blockType: 'command',
+      text: '右转',
+      pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    },
+    {
+      opcode: 'stop',
+      blockType: 'command',
+      text: '停止',
+      pycode: "bpuppy_motion.set_gait('stand')"
+    },
+    "---",
+    "## 参数",
+    {
+      opcode: 'setSpeed',
+      blockType: 'command',
+      text: '速度设为 [SPEED]',
+      arguments: {
+        SPEED: {
+          type: 'number',
+          defaultValue: '2.5'
+        }
+      },
+      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)'
+    },
+    {
+      opcode: 'setStride',
+      blockType: 'command',
+      text: '步幅设为 [STRIDE]',
+      arguments: {
+        STRIDE: {
+          type: 'number',
+          defaultValue: '70'
+        }
+      },
+      pycode: '_stride = [STRIDE]'
+    },
+    {
+      opcode: 'setHeight',
+      blockType: 'command',
+      text: '高度设为 [HEIGHT] mm',
+      arguments: {
+        HEIGHT: {
+          type: 'number',
+          defaultValue: '70'
+        }
+      },
+      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)'
+    },
+    {
+      opcode: 'setLift',
+      blockType: 'command',
+      text: '抬腿高度 [LIFT] mm',
+      arguments: {
+        LIFT: {
+          type: 'number',
+          defaultValue: '30'
+        }
+      },
+      pycode: 'bpuppy_motion.set_lift([LIFT])'
+    },
+    "---",
+    "## 步态",
+    {
+      opcode: 'setGait',
+      blockType: 'command',
+      text: '切换步态 [GAIT]',
+      arguments: {
+        GAIT: {
+          type: 'string',
+          menu: 'gaitMenu',
+          defaultValue: 'go'
+        }
+      },
+      pycode: "bpuppy_motion.set_gait('[GAIT]')"
+    },
+    "---",
+    "## 姿态动作",
+    {
+      opcode: 'crouch',
+      blockType: 'command',
+      text: '蹲下',
+      pycode: "bpuppy_motion.set_gait('crouch')"
+    },
+    {
+      opcode: 'sit',
+      blockType: 'command',
+      text: '坐下',
+      pycode: "bpuppy_motion.set_gait('sit')"
+    },
+    {
+      opcode: 'stand',
+      blockType: 'command',
+      text: '站立',
+      pycode: "bpuppy_motion.set_gait('stand')"
+    },
+    {
+      opcode: 'playBow',
+      blockType: 'command',
+      text: '邀玩',
+      pycode: "bpuppy_motion.set_gait('play')"
+    },
+    {
+      opcode: 'waveBlock',
+      blockType: 'command',
+      text: '挥手',
+      pycode: "bpuppy_motion.set_gait('wave')"
+    }
+  ],
+  menus: {
+    gaitMenu: [
+      { text: '自适应', value: 'go' },
+      { text: '猫步',   value: 'walk' },
+      { text: '小跑',   value: 'trot' },
+      { text: '站立',   value: 'stand' },
+      { text: '蹲下',   value: 'crouch' }
+    ]
+  }
+}

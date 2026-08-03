@@ -1,10 +1,17 @@
 """
 bPuppy 机器狗 — MicroPython 启动脚本
 在固件烧录后自动执行（frozen 模式）
+
+启动顺序:
+  1. 挂载 VFS (Flash 文件系统)
+  2. 检查 /user_prog.py (KittenBlock 上传的用户程序)
+  3. 有 → 执行用户程序
+  4. 无 → 执行原厂默认逻辑 (站立 + WiFi 遥控)
 """
 
 import gc
 import sys
+import os, uos
 
 # 构建版本
 try:
@@ -19,7 +26,42 @@ print(f"  Build: {version}")
 print("  WROOM-1 N16R8 | uPy v1.22.1 | IDF v5.1.2")
 print("=" * 44)
 
-# ---- 加载 C 驱动模块 ----
+# ---- 挂载 VFS ----
+_vfs_mounted = False
+try:
+    from esp32 import Partition
+    _bdev = Partition.find(1, label='vfs')  # TYPE_DATA=1
+    if _bdev:
+        try:
+            uos.mount(uos.VfsFat(_bdev[0]), '/')   # 已格式化, 直接挂载
+        except:
+            uos.VfsFat.mkfs(_bdev[0])              # 首次使用, 先格式化
+            uos.mount(uos.VfsFat(_bdev[0]), '/')
+        _vfs_mounted = True
+except Exception:
+    pass
+
+# ---- 检查用户程序 (KittenBlock 上传为 /main.py) ----
+if _vfs_mounted:
+    try:
+        with open('/main.py', 'r') as f:
+            _user_code = f.read()
+        print("[bPuppy] 运行用户程序...")
+        exec(_user_code)
+        print("Ready.")
+        # 用户程序执行完, 不再跑原厂默认
+        raise SystemExit
+    except OSError:
+        pass  # 无用户程序
+    except SystemExit:
+        raise  # 传递出去, 真正退出
+
+# ---- 原厂默认: 加载 C 驱动模块 ----
+if not _vfs_mounted:
+    print("[bPuppy] VFS 未挂载, 使用原厂默认")
+else:
+    print("[bPuppy] 无用户程序, 使用原厂默认")
+
 modules_loaded = []
 modules_failed = []
 
