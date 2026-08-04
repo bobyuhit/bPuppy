@@ -12,3 +12,4 @@ __pycache__/
 dependencies.lock
 sdkconfig
 sdkconfig.old
+components/

@@ -10,7 +10,7 @@ bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v
 | 主控 | ESP32-S3 WROOM-1 N16R8 (16MB Flash, 8MB Octal PSRAM) |
 | 舵机 | 8× 模拟舵机 (每条腿 2DOF: 髋 + 膝) |
 | IMU | MPU9250 9轴 (I2C0: SDA=GPIO3, SCL=GPIO14, addr=0x68, Mahony 姿态) |
-| 通信 | BLE (NimBLE, Hiwonder Wonderbot 协议) + UART2 (GPIO19/20, CI-33T/micro:bit) |
+| 通信 | BLE (NimBLE, 编译互斥: KittenBlock Nordic UART 或 Hiwonder FFE0) + UART2 (GPIO19/20, CI-33T/micro:bit) |
 | 控制台 | USB-JTAG CDC (921600bps, 直连 USB) |
 | 供电 | 7.4V 2S LiPo |
 
@@ -285,13 +285,16 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 1. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值
 2. 舵机设到蹲姿 → `motion.start()` — 创建 50Hz FreeRTOS 任务
 3. `motion.stand_up()` — 蹲姿 → 3s smoothstep 站立
-4. `camera_stream.start()` — 自动开启 WiFi 遥控热点 (纯遥控, **不开摄像头**)
+4. `bpuppy_ble.start()` — 启动 BLE 广播 (模式由固件编译决定, KittenBlock 模式自动注册 dupterm REPL)
 
-上电自动站立 + WiFi 遥控, `Loaded:` 显示 servo/motion/wifi。**IMU / BLE / UART / ADC 均手动或按需启动**:
-- IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
-- BLE: `HiwonderBLE()` 构造时启动
-- UART / ADC: 手动 `import` + `init()`
+上电自动站立 + **BLE 广播**（KittenBlock 蓝牙编程）。**WiFi / 摄像头 / IMU / UART / ADC 均手动或按需启动**:
+- WiFi 热点: 手动 `import camera_stream; camera_stream.start()`（上电默认不开, 把 RF 让给蓝牙）
 - WiFi 图传: 网页点「图传 开」或 `camera_stream.start(stream=True)`
+- IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
+- BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式 `HiwonderBLE()` 构造时启动
+- UART / ADC: 手动 `import` + `init()`
+
+> **蓝牙编译互斥**：两个蓝牙模式（KittenBlock Nordic / Hiwonder FFE0）**不要同时编译**，同一固件只能启用其一。由 `Kconfig.projbuild` 的 `choice BPUPPY_BLE_MODE` 单选（见 `sdkconfig.bpuppy`），详见 `kext-bpuppy/KittenBlock扩展开发.md` 第 11 节。
 
 ---
 

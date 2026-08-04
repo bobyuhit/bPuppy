@@ -1,12 +1,15 @@
 /*
- * bDog BLE 驱动 — NimBLE GATT Server (FFE0 UART)
+ * bDog BLE 驱动 — NimBLE GATT Server
  *
- * 兼容 Hiwonder Wonderbot App (MechDog 协议):
- *   FFE1: WRITE  — App 向设备写 CMD 指令
- *   FFE2: NOTIFY — 设备向 App 发送回复
+ * 两种模式（编译互斥，见 micropython.cmake 编译宏）:
+ *   BPUPPY_BLE_KEBLOCK  — KittenBlock 蓝牙 (Nordic UART + dupterm REPL)
+ *       服务 6E400001: 6E400002 WRITE (PC→设备) / 6E400003 NOTIFY (设备→PC)
+ *       广播含 0x6E40, 设备名 bPuppy_XX
+ *   BPUPPY_BLE_HIWONDER — Hiwonder Wonderbot App (MechDog 协议)
+ *       服务 0xFFE0: FFE1 WRITE (App→设备) / FFE2 NOTIFY (设备→App)
+ *       广播含 0xFFE0, 设备名 mechdog_XX
  *
- * 注意: FFE1/FFE2 的角色对 MechDog 是反直觉的 —
- *   "TX" (FFE1) 实际是 App→设备, "RX" (FFE2) 实际是 设备→App
+ * ⚠ 两个蓝牙功能不要同时编译，同一固件只能启用其一。
  */
 #include "ble_driver.h"
 #include "esp_log.h"
@@ -25,7 +28,12 @@
 #include <stdio.h>
 
 static const char *TAG = "ble";
+
+#ifdef BPUPPY_BLE_HIWONDER
 static char g_device_name[32] = "mechdog_00";
+#else
+static char g_device_name[32] = "bPuppy_00";
+#endif
 
 // ---- 状态 ----
 static bool      g_connected = false;
@@ -43,7 +51,7 @@ static volatile int g_rx_tail = 0;
 static SemaphoreHandle_t g_rx_mutex = NULL;
 
 // ---- GATT 读写回调 ----
-// MechDog 协议: App 向 FFE1 (g_tx_handle) 写命令
+// 所有 WRITE 特征的数据统一进 g_rx_buf（单一模式，无协议分流需求）
 static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
@@ -59,15 +67,16 @@ static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ct
                     g_rx_head = (g_rx_head + 1) % RX_BUF_SIZE;
                 }
                 xSemaphoreGive(g_rx_mutex);
-                ESP_LOGI(TAG, "CMD: %s", buf);
+                ESP_LOGI(TAG, "RX: %s", buf);
             }
         }
     }
     return 0;
 }
 
-// ---- GATT 服务定义 ----
-// MechDog 协议: FFE1=WRITE (App写命令), FFE2=NOTIFY (设备发回复)
+// ---- GATT 服务定义 (编译互斥) ----
+#ifdef BPUPPY_BLE_HIWONDER
+// Hiwonder 模式: FFE1=WRITE (App写命令), FFE2=NOTIFY (设备发回复)
 static const struct ble_gatt_svc_def gatt_svcs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -90,6 +99,43 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
     },
     {0}
 };
+#else
+// KittenBlock 模式: Nordic UART 透传 (6E400001)
+//   6E400002: WRITE (PC→设备, KittenBlock 写入)
+//   6E400003: NOTIFY (设备→PC, KittenBlock 接收)
+static const ble_uuid128_t nordic_svc_uuid =
+    BLE_UUID128_INIT(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                     0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
+static const ble_uuid128_t nordic_rx_uuid =
+    BLE_UUID128_INIT(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                     0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E);
+static const ble_uuid128_t nordic_tx_uuid =
+    BLE_UUID128_INIT(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                     0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
+
+static const struct ble_gatt_svc_def gatt_svcs[] = {
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &nordic_svc_uuid.u,
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = &nordic_rx_uuid.u,      // 6E400002: PC 写入
+                .access_cb = gatt_cb,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .val_handle = &g_tx_handle,
+            },
+            {
+                .uuid = &nordic_tx_uuid.u,      // 6E400003: 设备通知
+                .access_cb = gatt_cb,
+                .flags = BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &g_rx_handle,
+            },
+            {0}
+        },
+    },
+    {0}
+};
+#endif
 
 static void start_adv(void);
 
@@ -129,7 +175,11 @@ static void start_adv(void)
     };
     struct ble_hs_adv_fields f = {0};
     f.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+#ifdef BPUPPY_BLE_HIWONDER
     f.uuids16 = (ble_uuid16_t[]){BLE_UUID16_INIT(0xFFE0)};
+#else
+    f.uuids16 = (ble_uuid16_t[]){BLE_UUID16_INIT(0x6E40)};
+#endif
     f.num_uuids16 = 1;
     f.uuids16_is_complete = 1;
     f.name = (uint8_t*)g_device_name;
@@ -175,10 +225,14 @@ static void host_task(void *p) {
 void ble_driver_start(void) {
     if (!g_ble_started) {
         int rc;
-        // 读取 MAC 地址, 生成 mechdog_{:02X} 设备名
+        // 读取 MAC 地址, 生成设备名
         uint8_t mac[6];
         esp_read_mac(mac, ESP_MAC_BT);
+#ifdef BPUPPY_BLE_HIWONDER
         snprintf(g_device_name, sizeof(g_device_name), "mechdog_%02X", mac[5]);
+#else
+        snprintf(g_device_name, sizeof(g_device_name), "bPuppy_%02X", mac[5]);
+#endif
 
         g_rx_mutex = xSemaphoreCreateMutex();
         esp_nimble_hci_init();
@@ -231,10 +285,25 @@ int ble_recv_command(char *buf, int max) {
     return n;
 }
 
-// MechDog 协议: 设备通过 FFE2 (g_rx_handle) 发通知给 App
+// 接收缓冲中可读字节数 (BLE REPL 流 poll 用)
+int ble_available(void) {
+    if (!g_rx_mutex) return 0;
+    int n;
+    xSemaphoreTake(g_rx_mutex, pdMS_TO_TICKS(50));
+    n = (g_rx_head - g_rx_tail + RX_BUF_SIZE) % RX_BUF_SIZE;
+    xSemaphoreGive(g_rx_mutex);
+    return n;
+}
+
+// 设备通过 TX 特征 (Hiwonder: FFE2 / KittenBlock: 6E400003) 发通知给 PC
 void ble_send(const char *data) {
-    if (!g_connected || !g_rx_handle || !data) return;
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, strlen(data));
+    if (!data) return;
+    ble_send_len(data, strlen(data));
+}
+
+void ble_send_len(const char *data, int len) {
+    if (!g_connected || !g_rx_handle || !data || len <= 0) return;
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
     if (om) ble_gattc_notify_custom(g_conn_handle, g_rx_handle, om);
 }
 

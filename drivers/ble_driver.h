@@ -17,8 +17,14 @@ bool ble_is_connected(void);
 // 收指令: 返回长度, 0=无数据. buf 至少 128 字节
 int  ble_recv_command(char *buf, int max_len);
 
-// 发通知 (TX characteristic)
+// 接收缓冲中可读字节数 (BLE REPL 流 poll 用)
+int  ble_available(void);
+
+// 发通知 (TX characteristic, 字符串版, 兼容 ble_hiwonder.py)
 void ble_send(const char *data);
+
+// 发通知 (TX characteristic, 带长度, BLE REPL 流用)
+void ble_send_len(const char *data, int len);
 
 // 电量 0-100
 void ble_set_battery(uint8_t pct);

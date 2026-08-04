@@ -6,8 +6,22 @@
 #include "py/obj.h"
 #include <string.h>
 
+#ifdef BPUPPY_BLE_KEBLOCK
+#include "extmod/misc.h"   // mp_os_dupterm_obj
+
+// 在 ble_stream.c 实现: 返回 BLE 流对象 (Nordic UART ↔ REPL)
+mp_obj_t mp_ble_get_stream(void);
+#endif
+
 STATIC mp_obj_t mp_ble_start(void) {
     ble_driver_start();
+#ifdef BPUPPY_BLE_KEBLOCK
+    // KittenBlock 模式: 自动把 BLE 注册为 dupterm REPL 通道
+    // (等效 os.dupterm(ble_stream), 在 C 层处理, main.py 无需知道模式)
+    mp_obj_t stream = mp_ble_get_stream();
+    mp_obj_t args[2] = { stream, MP_OBJ_NEW_SMALL_INT(0) };
+    mp_call_function_n_kw((mp_obj_t)&mp_os_dupterm_obj, 2, 0, args);
+#endif
     return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_ble_start_obj, mp_ble_start);

@@ -8,9 +8,10 @@ cmake_minimum_required(VERSION 3.16)
 # 2. include project.cmake + project() 标准 IDF 流程
 # =============================================================
 
-# 定位 micropython-helper（IDF 组件管理器下载到 managed_components）
+# 定位 micropython-helper
+# 原在 managed_components/, 因改了 mphalport.c (dupterm 输入) 移到 components/ 保留修改
 if(NOT MICROPY_HELPER_DIR)
-    set(MICROPY_HELPER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/managed_components/mr9you__micropython-helper)
+    set(MICROPY_HELPER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/components/mr9you__micropython-helper)
 endif()
 
 if(EXISTS ${MICROPY_HELPER_DIR})

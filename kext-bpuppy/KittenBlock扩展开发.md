@@ -558,7 +558,57 @@ esptool --chip esp32s3 --port COM3 --baud 921600 write-flash 0x10000 build/micro
 
 ---
 
-## 11. bPuppy 现有扩展积木清单
+## 11. 蓝牙（BLE）连接 — 编译互斥⚠
+
+KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 MicroPython REPL 通道（在线执行、上传 main.py 都走 raw REPL）。
+
+### 11.1 原理
+
+- KittenBlock 用 **Web Bluetooth**（Electron `navigator.bluetooth`），要求硬件实现 **Nordic UART 透传服务**：
+  - 服务 `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`
+  - `6E400002`（Nordic RX）= PC→设备 WRITE 通道
+  - `6E400003`（Nordic TX）= 设备→PC NOTIFY 通道
+- 广播须含服务 UUID `0x6E40`，否则 KittenBlock 扫不到
+- 连接后走 MicroPython REPL：bPuppy 把 BLE 用 `os.dupterm()` 注册为第二 REPL 通道
+
+### 11.2 ★编译互斥（必须遵守）
+
+**两个蓝牙功能不要同时编译，编译其中一个时保证另一个不编译。**
+
+`Kconfig.projbuild` 定义 `choice BPUPPY_BLE_MODE` 单选（构建系统强制互斥）：
+
+| 配置 | 编译的蓝牙 | 用途 |
+|------|-----------|------|
+| `CONFIG_BPUPPY_BLE_KEBLOCK=y` | Nordic UART + dupterm REPL | KittenBlock 蓝牙编程 |
+| `CONFIG_BPUPPY_BLE_HIWONDER=y` | FFE0 + ble_hiwonder.py | Wonderbot App 遥控 |
+
+- 切换：改 `sdkconfig.bpuppy` 的 `=y`（二选一），或 `idf.py menuconfig`，重编译
+- 同一固件**只能启用其一**，绝不共存编译
+- 相关 C 代码：`ble_driver.c`（GATT 服务 + 广播）、`ble_stream.c`（流对象，仅 KEBLOCK 编译）、`ble_driver_mpy.c`（dupterm 注册）
+
+### 11.3 固件改动点
+
+| 文件 | 改动 |
+|------|------|
+| `Kconfig.projbuild` | 定义 `choice BPUPPY_BLE_MODE`（编译互斥） |
+| `sdkconfig.bpuppy` | `CONFIG_BPUPPY_BLE_KEBLOCK=y`（当前默认） |
+| `drivers/ble_driver.c` | 按 CONFIG 隔离两套服务（Nordic / FFE0），广播 0x6E40 或 0xFFE0 |
+| `drivers/ble_stream.c` | BLE 流对象（read/write/ioctl），dupterm 桥接 |
+| `drivers/ble_driver_mpy.c` | `stream()` 函数 + `start()` 时自动 `os.dupterm()` |
+| `mphalport.c` | `mp_hal_stdin_rx_chr` 补 dupterm 输入分支（标准 MicroPython 行为，原移植漏了） |
+| `frozen/main.py` | 上电 `bpuppy_ble.start()`（C 层自动注册 dupterm） |
+
+> ⚠ `mphalport.c` 在 `managed_components/`（MicroPython 移植层）。版本固定 1.22.1，改后 `build.sh` 重编译生效；**升级组件会覆盖此改动**，需重打补丁。蓝牙连接时建议不用 USB REPL 同时输入（会抢 REPL 输入）。
+
+### 11.4 WiFi 与蓝牙共存
+
+- 上电 **WiFi 热点默认不开**（`main.py` 注释了 `camera_stream.start()`），把 RF 让给蓝牙
+- 需要 WiFi 时手动：`import camera_stream; camera_stream.start()`
+- ESP32-S3 硬件支持 WiFi+BLE 共存（时分），但上电全给 BLE 最稳
+
+---
+
+## 12. bPuppy 现有扩展积木清单
 
 | 分类 | 积木 | pycode 生成 |
 |------|------|------------|

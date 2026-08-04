@@ -4,9 +4,13 @@ bPuppy 机器狗 — MicroPython 启动脚本
 
 启动顺序:
   1. 挂载 VFS (Flash 文件系统)
-  2. 检查 /user_prog.py (KittenBlock 上传的用户程序)
-  3. 有 → 执行用户程序
-  4. 无 → 执行原厂默认逻辑 (站立 + WiFi 遥控)
+  2. 启动 BLE (KittenBlock 蓝牙 / Hiwonder, 由固件编译模式决定)
+  3. 检查 /main.py (KittenBlock 上传的用户程序)
+  4. 有 → 执行用户程序
+  5. 无 → 执行原厂默认逻辑 (站立)
+
+WiFi 热点: 上电默认不开 (KittenBlock 蓝牙优先)。需要时手动
+  import camera_stream; camera_stream.start()
 """
 
 import gc
@@ -38,6 +42,14 @@ try:
             uos.VfsFat.mkfs(_bdev[0])              # 首次使用, 先格式化
             uos.mount(uos.VfsFat(_bdev[0]), '/')
         _vfs_mounted = True
+except Exception:
+    pass
+
+# ---- 启动 BLE (固件编译模式决定: KittenBlock Nordic / Hiwonder FFE0) ----
+# KittenBlock 模式时 C 层 (ble_driver_mpy.c) 自动注册 dupterm REPL 通道
+try:
+    import bpuppy_ble
+    bpuppy_ble.start()
 except Exception:
     pass
 
@@ -101,12 +113,12 @@ try:
 except ImportError as e:
     modules_failed.append(("motion", e))
 
-# WiFi 遥控 — 上电自动开启 (纯遥控, 不开摄像头)
-# 图传可在网页点「图传 开」开启, 或 camera_stream.start(stream=True)
+# WiFi 遥控 — 上电默认不开 (KittenBlock 蓝牙优先, 避免 RF 争用)
+# 需要 WiFi 时手动: import camera_stream; camera_stream.start()
+# 图传: camera_stream.start(stream=True) 或网页点「图传 开」
 try:
-    import camera_stream
-    camera_stream.start()          # 默认 stream=False → 纯遥控
-    modules_loaded.append("wifi")
+    import camera_stream  # 仅 import, 不启动热点
+    modules_loaded.append("wifi_off")
 except Exception as e:
     modules_failed.append(("wifi", e))
 
