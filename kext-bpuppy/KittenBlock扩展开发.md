@@ -575,14 +575,14 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 **两个蓝牙功能不要同时编译，编译其中一个时保证另一个不编译。**
 
-`Kconfig.projbuild` 定义 `choice BPUPPY_BLE_MODE` 单选（构建系统强制互斥）：
+用 **CMake 编译宏**二选一（`drivers/micropython.cmake`）：
 
-| 配置 | 编译的蓝牙 | 用途 |
+| 宏 | 编译的蓝牙 | 用途 |
 |------|-----------|------|
-| `CONFIG_BPUPPY_BLE_KEBLOCK=y` | Nordic UART + dupterm REPL | KittenBlock 蓝牙编程 |
-| `CONFIG_BPUPPY_BLE_HIWONDER=y` | FFE0 + ble_hiwonder.py | Wonderbot App 遥控 |
+| `BPUPPY_BLE_KEBLOCK` | Nordic UART + dupterm REPL | KittenBlock 蓝牙编程 |
+| `BPUPPY_BLE_HIWONDER` | FFE0 + ble_hiwonder.py | Wonderbot App 遥控 |
 
-- 切换：改 `sdkconfig.bpuppy` 的 `=y`（二选一），或 `idf.py menuconfig`，重编译
+- 切换：注释/取消注释 `micropython.cmake` 里两行 `target_compile_definitions(usermod INTERFACE ...)`，重编译
 - 同一固件**只能启用其一**，绝不共存编译
 - 相关 C 代码：`ble_driver.c`（GATT 服务 + 广播）、`ble_stream.c`（流对象，仅 KEBLOCK 编译）、`ble_driver_mpy.c`（dupterm 注册）
 
@@ -590,17 +590,29 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 | 文件 | 改动 |
 |------|------|
-| `Kconfig.projbuild` | 定义 `choice BPUPPY_BLE_MODE`（编译互斥） |
-| `sdkconfig.bpuppy` | `CONFIG_BPUPPY_BLE_KEBLOCK=y`（当前默认） |
-| `drivers/ble_driver.c` | 按 CONFIG 隔离两套服务（Nordic / FFE0），广播 0x6E40 或 0xFFE0 |
+| `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏（互斥） |
+| `drivers/ble_driver.c` | 按宏隔离两套服务（Nordic / FFE0），广播 0x6E40 或 0xFFE0 + 扫描响应 128 位 Nordic UUID |
 | `drivers/ble_stream.c` | BLE 流对象（read/write/ioctl），dupterm 桥接 |
-| `drivers/ble_driver_mpy.c` | `stream()` 函数 + `start()` 时自动 `os.dupterm()` |
-| `mphalport.c` | `mp_hal_stdin_rx_chr` 补 dupterm 输入分支（标准 MicroPython 行为，原移植漏了） |
+| `drivers/ble_driver_mpy.c` | `start()` 时自动 `os.dupterm()`（C 层注册） |
+| `drivers/ble_driver.h` | `ble_available()` / `ble_send_len()` 供流对象用 |
+| `components/.../mphalport.c` | `mp_hal_stdin_rx_chr` 补 dupterm 输入分支（标准 MicroPython 行为，原移植漏了） |
 | `frozen/main.py` | 上电 `bpuppy_ble.start()`（C 层自动注册 dupterm） |
 
-> ⚠ `mphalport.c` 在 `managed_components/`（MicroPython 移植层）。版本固定 1.22.1，改后 `build.sh` 重编译生效；**升级组件会覆盖此改动**，需重打补丁。蓝牙连接时建议不用 USB REPL 同时输入（会抢 REPL 输入）。
+> ⚠ `mphalport.c` 在 `components/mr9you__micropython-helper/`（MicroPython 移植层，因改它从 managed_components 移到 components 保留修改）。版本固定 1.22.1，改后 `build.sh` 重编译生效。蓝牙连接时建议不用 USB REPL 同时输入（会抢 REPL 输入）。
 
-### 11.4 WiFi 与蓝牙共存
+### 11.4 平台支持（实测）
+
+| 平台 | 连接方式 | 实测 |
+|------|---------|:--:|
+| **安卓** | Chrome 打开 `kblock.kittenbot.cc` → Web Bluetooth | ✅ |
+| **iPad** | **Bluefy 浏览器**打开 kblock.kittenbot.cc | ✅ |
+| **PC 桌面版** | KittenBlock 桌面版 → 串口/蓝牙 | ✅ |
+| **iPad Safari/Chrome** | 原生 Web Bluetooth | ❌ Apple 限制 |
+| **iPad KittenBlock App** | App URL 导入自定义主板 | ❌ App 不支持 |
+
+> **关键**：iOS 的 Safari/Chrome（WebKit）Web Bluetooth 被 Apple 限制，无法连接。**必须用 Bluefy**（App Store 的 Web BLE 浏览器）才能绕过。iPad KittenBlock App 也无法加载 URL 导入的自定义主板扩展。
+
+### 11.5 WiFi 与蓝牙共存
 
 - 上电 **WiFi 热点默认不开**（`main.py` 注释了 `camera_stream.start()`），把 RF 让给蓝牙
 - 需要 WiFi 时手动：`import camera_stream; camera_stream.start()`

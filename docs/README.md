@@ -294,7 +294,18 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 - BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式 `HiwonderBLE()` 构造时启动
 - UART / ADC: 手动 `import` + `init()`
 
-> **蓝牙编译互斥**：两个蓝牙模式（KittenBlock Nordic / Hiwonder FFE0）**不要同时编译**，同一固件只能启用其一。由 `Kconfig.projbuild` 的 `choice BPUPPY_BLE_MODE` 单选（见 `sdkconfig.bpuppy`），详见 `kext-bpuppy/KittenBlock扩展开发.md` 第 11 节。
+> **蓝牙编译互斥**：两个蓝牙模式（KittenBlock Nordic / Hiwonder FFE0）**不要同时编译**，同一固件只能启用其一。由 `drivers/micropython.cmake` 的 `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 宏二选一，详见 `kext-bpuppy/KittenBlock扩展开发.md` 第 11 节。
+
+### KittenBlock 平台支持
+
+| 平台 | 方式 | 说明 |
+|------|------|------|
+| **安卓** | Chrome 打开 `https://kblock.kittenbot.cc/` | Web Bluetooth 原生支持 |
+| **iPad** | **Bluefy** 浏览器打开 kblock.kittenbot.cc | ⚠ iPad Safari/Chrome 的 Web Bluetooth 被 Apple 限制，必须用 Bluefy |
+| **PC 桌面版** | KittenBlock 桌面版 | 串口 (115200) 或蓝牙（PC 需蓝牙适配器） |
+| **iPad KittenBlock App** | 不推荐 | App 无法加载 URL 导入的自定义主板扩展 |
+
+> 蓝牙无线连接走 **Nordic UART + dupterm REPL**（固件内置），KittenBlock 把它当串口用。无线上传 main.py 到 VFS 同样支持。
 
 ---
 
