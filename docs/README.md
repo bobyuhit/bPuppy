@@ -148,7 +148,7 @@ C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_uart / bpuppy_adc /
 C 驱动层:
   servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode) + NVS 校准
   imu_driver.c      — I2C MPU9250 9轴 (Mahony 姿态融合 + 磁力计椭球校准)
-  uart_driver.c     — UART2 通信口 + UART1 摄像头复用口
+  uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 + I2C1 摄像头复用口
   adc_driver.c      — ADC1_CH2 (GPIO38) 电池电压测量
   ik.h / ik.c       — 2-DOF 逆运动学
   ble_driver.c      — NimBLE GATT (Hiwonder Wonderbot 协议)
@@ -168,7 +168,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/ik.c` | 2-DOF 逆运动学, L1/L2/髋距/限位 均运行时可变 + NVS 持久化 |
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
 | `drivers/imu_driver.c` | MPU9250 + AK8963 磁力计, Mahony 姿态融合, 校准存 NVS |
-| `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO17/18) 通信驱动 |
+| `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
 | `drivers/adc_driver.c` | ADC1_CH2 (GPIO38) 电池电压测量 |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 |
 | `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up (IMU/BLE/UART/ADC 手动或按需启动) |
@@ -414,7 +414,8 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 IMU: I2C0 (SDA=GPIO3, SCL=GPIO14, addr=0x68)。
 UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。
-UART1: GPIO17=TX, 18=RX (与摄像头 D6/D5 复用, 手动 init)。
+UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
+I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
 ADC: GPIO38 (ADC1_CH2) 电池电压。
 完整 GPIO 分配表见 `docs/硬件连接.md`。
 
