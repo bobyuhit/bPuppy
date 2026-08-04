@@ -1,16 +1,8 @@
 {
   libs:{
-    "*":{import:'import bpuppy_motion, bpuppy_servo, time\nfrom time import sleep'},
+    "*":{import:'import bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n# ===== bPuppy 自动初始化 =====\n_speed = 2.5\n_stride = 70\n_height = 70\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nbpuppy_servo.set_angle(0, 135); bpuppy_servo.set_angle(1, 45)\nbpuppy_servo.set_angle(2, 45); bpuppy_servo.set_angle(3, 135)\nbpuppy_servo.set_angle(4, 45); bpuppy_servo.set_angle(5, 135)\nbpuppy_servo.set_angle(6, 135); bpuppy_servo.set_angle(7, 45)\nbpuppy_motion.start()\nbpuppy_motion.stand_up()\ntime.sleep(1)'},
   },
   blocks: [
-    "## 初始化",
-    {
-      opcode: 'bpuppyInit',
-      blockType: 'command',
-      text: '初始化 bPuppy',
-      pycode: "_speed = 2.5; _stride = 70; _height = 70; bpuppy_servo.init_all(); bpuppy_servo.load_cal(); bpuppy_servo.set_angle(0, 135); bpuppy_servo.set_angle(1, 45); bpuppy_servo.set_angle(2, 45); bpuppy_servo.set_angle(3, 135); bpuppy_servo.set_angle(4, 45); bpuppy_servo.set_angle(5, 135); bpuppy_servo.set_angle(6, 135); bpuppy_servo.set_angle(7, 45); bpuppy_motion.start(); bpuppy_motion.stand_up(); time.sleep(1)"
-    },
-    "---",
     "## 运动",
     {
       opcode: 'forward',
