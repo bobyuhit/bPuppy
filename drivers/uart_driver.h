@@ -2,7 +2,7 @@
  * bPuppy UART 通信驱动 — 头文件
  *
  * UART2 (GPIO 19=RX, 20=TX) — 默认通信口 (CI-33T / micro:bit)
- * UART1 (GPIO 18=RX, 17=TX) — 摄像头复用口 (D5/Y7, D6/Y8)
+ * UART1 (GPIO 4=TX, 5=RX) — 摄像头复用口 (SCCB SDA/SCL)
  * UART0 (GPIO 43/44)         — 烧录 + REPL 控制台
  */
 
@@ -20,8 +20,8 @@ extern "C" {
 #define UART2_DEFAULT_TX   GPIO_NUM_20
 #define UART2_DEFAULT_BAUD 115200
 
-#define UART1_DEFAULT_RX   GPIO_NUM_18   // CAM D5/Y7
-#define UART1_DEFAULT_TX   GPIO_NUM_17   // CAM D6/Y8
+#define UART1_DEFAULT_RX   GPIO_NUM_5    // CAM SCCB SCL
+#define UART1_DEFAULT_TX   GPIO_NUM_4    // CAM SCCB SDA
 #define UART1_DEFAULT_BAUD 115200
 
 /* ---- 命令回调类型 ---- */

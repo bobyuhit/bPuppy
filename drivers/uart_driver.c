@@ -2,7 +2,7 @@
  * bPuppy UART 通信驱动
  *
  * UART2 (GPIO 19=RX, GPIO 20=TX) — 默认通信口 (CI-33T / micro:bit)
- * UART1 (GPIO 18=RX, GPIO 17=TX) — 摄像头复用口 (D5/Y7, D6/Y8)
+ * UART1 (GPIO 4=TX, GPIO 5=RX) — 摄像头复用口 (SCCB SDA/SCL)
  * UART0 (GPIO 43/44)          — 烧录 + REPL 控制台
  */
 
@@ -87,7 +87,7 @@ void uart_comm_stop(void)
 
 
 /* ================================================================
- * UART1 (摄像头复用口, GPIO 17=TX, 18=RX)
+ * UART1 (摄像头复用口, GPIO 4=TX, 5=RX)
  * ================================================================ */
 
 __attribute__((weak)) bool g_uart1_ready = false;
@@ -160,7 +160,7 @@ void uart1_comm_stop(void)
  *   data = bpuppy_uart.read(64)
  *
  *   # UART1 (摄像头复用)
- *   bpuppy_uart.u1_init(17, 18, 115200)   # TX=17, RX=18
+ *   bpuppy_uart.u1_init(4, 5, 115200)     # TX=4, RX=5
  *   bpuppy_uart.u1_send(b"hello")
  *   data = bpuppy_uart.u1_read(64)
  * ================================================================ */
