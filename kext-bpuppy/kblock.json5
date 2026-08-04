@@ -8,13 +8,13 @@
       opcode: 'forward',
       blockType: 'command',
       text: '前进',
-      pycode: "bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '后退',
-      pycode: "bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
+      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnLeft',
@@ -32,7 +32,7 @@
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "bpuppy_motion.set_gait('stand')"
+      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_gait('stand')"
     },
     "---",
     "## 参数",
@@ -97,7 +97,7 @@
           defaultValue: 'go'
         }
       },
-      pycode: "bpuppy_motion.set_gait('[GAIT]')"
+      pycode: "bpuppy_motion.set_gait([GAIT])"
     },
     "---",
     "## 姿态动作",

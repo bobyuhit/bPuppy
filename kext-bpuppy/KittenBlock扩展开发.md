@@ -230,8 +230,10 @@ menus: {
 ### 5.7 pycode 参数替换规则
 
 - `[参数名]` 会被实际值替换
-- 字符串参数要**手动加引号**：`pycode: "bpuppy_motion.set_gait('[GAIT]')"`（`[GAIT]` 外层是单引号）
+- **普通 string 文本框参数**（无 `menu`）：**手动加引号**。`pycode: "bpuppy_motion.set_gait('[GAIT]')"` → 生成 `set_gait('go')`
+- **menu 下拉参数**（有 `menu` 字段）：**不要手动加引号**！KittenBlock 自动加。`pycode: "bpuppy_motion.set_gait([GAIT])"` → 生成 `set_gait('go')`。若写了 `'[GAIT]'` 会生成 `set_gait(''go'')` 双层引号 → **SyntaxError**
 - 数字参数直接替换：`pycode: 'bpuppy_motion.set_lift([LIFT])'`
+- `value` 类型参数：直接替换变量引用，不加引号
 
 ### 5.8 完整积木示例（本项目 15 块）
 
@@ -499,7 +501,13 @@ machine.reset()
 **原因**：积木没有接在任何 hat 块下面，代码生成器找不到起点。
 **解法**：必须接在「当绿旗被点击」下面。
 
-### 9.8 积木加载了但 `pycode` 不翻译
+### 9.8 menu 参数被双层加引号 → SyntaxError
+
+**现象**：切换步态积木生成 `bpuppy_motion.set_gait(''go'')`，报语法错误。
+**原因**：`menu` 下拉参数替换时 KittenBlock **自动加引号**，pycode 里又手动写了 `'[GAIT]'` → 双层引号。
+**解法**：menu 参数 pycode 写 `[GAIT]`，**不加引号**。普通 string 文本框参数才需要手动加引号。详见 5.7。
+
+### 9.9 积木加载了但 `pycode` 不翻译
 
 **现象**：积木出现在面板，能拖，但生成的代码只有 import 没有积木代码。
 **原因**：多为格式问题（如 `pycode` 用了 `\\n` 字面量、`defaultValue` 类型不对、`gen` 字段误用）。
