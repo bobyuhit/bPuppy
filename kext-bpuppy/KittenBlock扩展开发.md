@@ -17,12 +17,12 @@ KittenBlock 有两类扩展，**能力完全不同，不可混用**：
 | `extension.json` 的 `type` | `scratch3` | `micropy`（MicroPython）/ `arduino` |
 | 代码翻译（积木→硬件代码） | ❌ 无 | ✅ `kblock.json5` 里 `pycode` 字段 |
 | 上传到硬件 | ❌ | ✅ 串口 raw REPL |
-| 加载方式 | URL 导入 / zip 导入 | **放扩展目录** 或 **zip 导入** |
+| 加载方式 | 放扩展目录 | **URL 导入 / zip 导入 / 放扩展目录** |
 | 典型扩展 | music、charts | futureboard-lite-mpy、otto@kext、mpython |
 
 **关键结论（实测）**：
 - bPuppy 扩展必须用 **`micropy` 硬件扩展**格式，否则无法「积木→MicroPython→上传」。
-- URL 导入**只支持单个 `index.js` 软件扩展**。硬件扩展多文件（json5+json+png），**无法用 URL 导入**。分发靠 zip 导入或直接放扩展目录。
+- **URL 导入支持 `micropy` 硬件扩展**（zip 顶层含 `extension.json` 即可）。单个 `index.js` 软件扩展**反而不能** URL 导入（无 extension.json，校验失败）。详见第 2.3 节。
 
 ---
 
@@ -47,10 +47,37 @@ KittenBlock 读取两个扩展目录（见用户数据 `kittenblock189.json`）�
 | `C:\Users\<用户>\AppData\Roaming\Kittenblock\local-ext\` | `extraext` | **zip 导入的落点** |
 
 KittenBlock 扫描 `extpath` 下**所有含 `extension.json` 的文件夹**，把每个文件夹当作一个扩展。
+- **URL 导入** = 下载 zip → 解压 → 落进 `local-ext\<zip名>\`（见 2.3）
 - **zip 导入** = 解压 zip → 落进 `local-ext\<zip名>\`
 - **手动放置** = 把 `kext-bpuppy` 文件夹整个拷进 `extpath`
 
 > ⚠ 同名扩展冲突：如果 `extpath` 和 `local-ext` 同时存在同 id 扩展，KittenBlock 加载哪个不确定。改扩展后必须**清干净旧的**再重新导入。
+
+### 2.3 URL 导入机制（实测源码确认）
+
+KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本质：
+
+1. **接受两种 URL**：
+   - `.zip` 地址（http/https，下载并解压）
+   - `.git` 仓库地址（git clone 到 `local-ext\<仓库名>\`）
+   - 其他形式 → 提示「无效链接」（`efficacy`）
+2. **校验**：zip 顶层 entry 必须含 `extension.json`，否则「无效 Zip 文件」（`error`）。这就是为什么单 index.js 软件扩展不能 URL 导入。
+3. **解压落点**：
+   - zip 顶层是文件（散在根）→ 解到 `local-ext\<zip名去扩展名>\`
+   - zip 顶层是目录 → 解到 `local-ext\` 保留目录名
+4. **刷新**：解压后 `reboot-web` 刷新编辑器，重新枚举扩展。
+
+**GitHub 发布方式**（本项目实测）：
+
+| 方式 | URL | 说明 |
+|------|-----|------|
+| **raw 链接（推荐）** | `https://raw.githubusercontent.com/<user>/<repo>/master/bpuppy-kittenblock.zip` | 把 zip 提交进仓库根目录，push 后立即可用。已验证成功 |
+| Release 附件 | `https://github.com/<user>/<repo>/releases/download/v1.0.0/bpuppy-kittenblock.zip` | URL 更短更稳定，需网页创建 Release |
+
+**注意事项**：
+- URL 必须以 `.zip` 结尾，短链服务会失败
+- raw URL 国内访问可能慢（GitHub 通病）
+- 不建议用整仓库 `.git` URL clone（大仓库慢，扩展在子目录非顶层）
 
 ---
 
