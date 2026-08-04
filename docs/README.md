@@ -151,7 +151,8 @@ C 驱动层:
   uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 + I2C1 摄像头复用口
   adc_driver.c      — ADC1_CH2 (GPIO38) 电池电压测量
   ik.h / ik.c       — 2-DOF 逆运动学
-  ble_driver.c      — NimBLE GATT (Hiwonder Wonderbot 协议)
+  ble_driver.c      — NimBLE GATT (编译互斥: KittenBlock Nordic / Hiwonder FFE0)
+  ble_stream.c      — BLE 流对象 (dupterm REPL 桥接, KittenBlock 模式)
   motion_task.cpp   — 50Hz FreeRTOS 步态控制 (core 0, priority 6)
   motion_task_mpy.c — motion 的 MicroPython 绑定
                        ↑
@@ -170,7 +171,11 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/imu_driver.c` | MPU9250 + AK8963 磁力计, Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
 | `drivers/adc_driver.c` | ADC1_CH2 (GPIO38) 电池电压测量 |
-| `drivers/ble_driver.c` | NimBLE GATT 服务 |
+| `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
+| `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
+| `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
+| `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
+| `kext-bpuppy/` | KittenBlock 硬件扩展 (15 积木 + 蓝牙配置 + 开发文档) |
 | `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up (IMU/BLE/UART/ADC 手动或按需启动) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
@@ -521,7 +526,9 @@ idf.py flash monitor       # 烧录并监控
 - [ ] 启动 banner 显示 "bPuppy Robot Dog - ESP32-S3"
 - [ ] 上电自动站立，无跳动
 - [ ] `import bpuppy; bpuppy.version()` 返回版本号
-- [ ] BLE 遥控正常 (Wonderbot App 可连接)
+- [ ] KittenBlock 模式 (`BPUPPY_BLE_KEBLOCK`): 广播 `bPuppy_XX`，KittenBlock 蓝牙可连（安卓/iPad Bluefy/PC）
+- [ ] Hiwonder 模式 (`BPUPPY_BLE_HIWONDER`): 广播 `mechdog_XX`，Wonderbot App 可连
+- [ ] 蓝牙 REPL：`os.dupterm(None)` 返回 BLE 流对象（C 层自动注册）
 
 ---
 
