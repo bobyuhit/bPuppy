@@ -20,7 +20,8 @@
     "tags": ["hardware"],
     "io": ["serial", "ble"],
     "connect": {
-        "no_reset": 1,
+        "baudrate": 115200,
+        "batch": 48,
         "wait": 5000
     },
     "afterConnect": [
