@@ -186,6 +186,15 @@ static void start_adv(void)
     f.name_len = strlen(g_device_name);
     f.name_is_complete = 1;
     ble_gap_adv_set_fields(&f);
+#ifndef BPUPPY_BLE_HIWONDER
+    // KittenBlock 模式: 扫描响应加 128 位 Nordic 服务 UUID (iOS 对 16 位广播不友好,
+    // 完整 128 位 UUID 让 iOS Web Bluetooth 更容易匹配到设备)
+    struct ble_hs_adv_fields rsp = {0};
+    rsp.uuids128 = &nordic_svc_uuid;
+    rsp.num_uuids128 = 1;
+    rsp.uuids128_is_complete = 1;
+    ble_gap_adv_rsp_set_fields(&rsp);
+#endif
     int rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
                                &p, gap_cb, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) {
