@@ -618,8 +618,16 @@ static bool ik_pos_check(float x, float z, int side, int leg_pair,
     float knee_deg = knee_angle * 180.0f / (float)M_PI;
     if (knee_mirror) knee_deg = 180.0f - knee_deg;
 
-    return (hip_deg < ik_hip_min || hip_deg > ik_hip_max ||
-            knee_deg < ik_knee_min || knee_deg > ik_knee_max);
+    bool bad = (hip_deg < ik_hip_min || hip_deg > ik_hip_max ||
+                knee_deg < ik_knee_min || knee_deg > ik_knee_max);
+    if (bad) {
+        const char *legn = (leg_pair == IK_LEG_FRONT) ? "前腿" : "后腿";
+        const char *siden = (side == IK_SIDE_LEFT) ? "左" : "右";
+        ESP_LOGW(TAG, "    %s%s: hip=%.1f°(限%.0f~%.0f) knee=%.1f°(限%.0f~%.0f)",
+                 siden, legn, hip_deg, ik_hip_min, ik_hip_max,
+                 knee_deg, ik_knee_min, ik_knee_max);
+    }
+    return bad;
 }
 
 // 返回 true = 有问题, 参数不应写入
