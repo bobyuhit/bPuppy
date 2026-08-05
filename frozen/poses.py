@@ -42,8 +42,7 @@ def go(speed=2.5, stride=70, height=70, turn=0):
     """快捷: 启动 motion + 自适应前进"""
     ensure_motion()
     bpuppy_motion.set_params(speed, stride, height)
-    if turn:
-        bpuppy_motion.set_turn(turn)
+    bpuppy_motion.set_turn(turn)
     bpuppy_motion.set_gait('go')
 
 
