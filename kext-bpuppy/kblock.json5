@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nposes.crouch()'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)'},
   },
   blocks: [
     "## 运动",
@@ -32,7 +32,7 @@
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "bpuppy_motion.emergency_stop()"
+      pycode: "bpuppy_motion.set_gait('stop')"
     },
     "---",
     "## 参数",
@@ -219,7 +219,7 @@
       { text: '自适应', value: 'go' },
       { text: '猫步',   value: 'walk' },
       { text: '小跑',   value: 'trot' },
-      { text: '站立',   value: 'stand' }
+      { text: '停止',   value: 'stop' }
     ],
     servoMenu: [
       { text: '左前大腿 LF_HIP',   value: '0' },

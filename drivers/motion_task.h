@@ -20,15 +20,22 @@ extern "C" {
 
 /* ---- 步态类型 ---- */
 typedef enum {
-    GAIT_STAND = 0,     // 站立
+    GAIT_STOP = 0,      // 停止站好 (运动模式, 高度随参数)
     GAIT_WALK,          // 猫步 (speed>0前进, speed<0后退)
     GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
     GAIT_GO,            // 自适应 (speed<5→walk, speed>10→trot, 之间插值)
     // 以下未暴露到 MicroPython
-    GAIT_STAND_UP,      // 蹲→站过渡（缓动插值, 自动切换 GAIT_STAND）
     GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
     GAIT_COUNT
 } gait_type_t;
+
+/* ---- 运行模式状态机 (自动切换) ---- */
+// IDLE  = 上电未初始化;  POSE = Python 接管舵机;  MOTION = motion task 控制
+typedef enum {
+    MODE_IDLE = 0,
+    MODE_POSE,
+    MODE_MOTION,
+} motion_mode_t;
 
 /* ---- 运动状态 ---- */
 typedef struct {
@@ -53,7 +60,7 @@ typedef struct {
     float       body_half_w;    // 左右髋半宽 (mm), 默认 59.0
     bool        emergency_stop; // 急停标志
     bool        enabled;        // 运动使能
-    float       stand_up_elapsed; // 站立过渡已用时间 (秒)
+    float       stand_up_elapsed; // 跳跃计时 (复用, 秒)
 
     /* ---- 姿态过渡 (预备位切换) ---- */
     // 0=无过渡  1=起步过渡 (站立→预备位→行走)
@@ -122,14 +129,12 @@ void motion_set_center(float offset);
 // 检查运动任务是否正在运行（enabled 且未急停）
 bool motion_is_running(void);
 
-// 急停
-void motion_emergency_stop(void);
+// 设置运行模式 (自动转换入口)
+void motion_set_mode(motion_mode_t mode);
+motion_mode_t motion_get_mode(void);
 
-// 恢复
-void motion_resume(void);
-
-// 站立过渡：蹲姿 → 缓动 → 站立
-void motion_stand_up(void);
+// MicroPython servo 绑定调用: Python 动舵机 → 自动切 POSE
+void motion_python_servo_write(void);
 
 // 跳跃：蹲→前腿弹→后腿弹→回蹲
 void motion_jump(void);

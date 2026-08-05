@@ -51,7 +51,7 @@ static bool  g_reverse = false;       // 换向过渡中 (停→stand→反向�
 static float g_stride_smooth = 0.0f;  // GO 平滑步长 (起步从 0 爬升)
 static bool  g_half_pulse = false;    // 半周期脉冲 (步长平滑触发)
 static bool  g_stop_decel = false;    // 减速停进行中 (运动步态下减速, 未收脚)
-static gait_type_t g_pending_gait = GAIT_STAND;  // 减速停完成后切换的静态步态
+static gait_type_t g_pending_gait = GAIT_STOP;   // 减速停完成后切换的静态步态
 static gait_type_t g_rev_gait = GAIT_GO;         // 换向前运动步态 (反向起步用)
 static int   g_decel_sign = 1;        // 换向减速停期间保持的原方向 (+1 前进 / -1 后退)
 
@@ -64,12 +64,14 @@ static float servo_step_toward(int ch, float target, float max_step) {
 }
 
 static bool is_static_gait(gait_type_t g) {
-    return g == GAIT_STAND;
+    return g == GAIT_STOP;
 }
 
 /* ---- 全局状态 ---- */
+static motion_mode_t g_mode = MODE_IDLE;   // 运行模式状态机
+
 __attribute__((weak)) motion_state_t g_motion = {
-    .gait           = GAIT_STAND,
+    .gait           = GAIT_STOP,
     .speed          = 0.0f,          // 实际速度静止为 0
     .target_speed   = SPEED_DEFAULT, // 目标速度默认 2.5
     .stride         = STRIDE_DEFAULT,
@@ -210,11 +212,10 @@ static void motion_task_main(void *pvParam)
             continue;
         }
 
-        bool is_stand    = (g_motion.gait == GAIT_STAND);
-        bool is_stand_up = (g_motion.gait == GAIT_STAND_UP);
+        bool is_stand    = (g_motion.gait == GAIT_STOP);
         bool is_jump     = (g_motion.gait == GAIT_JUMP);
 
-        if (is_stand_up || is_jump) {
+        if (is_jump) {
             g_motion.stand_up_elapsed += dt;
         }
 
@@ -243,7 +244,7 @@ static void motion_task_main(void *pvParam)
             g_motion.pose_trans = 2;
             g_motion.pose_timer = 0.0f;
             g_motion.speed = 0.0f;
-        } else if (!now_static && !is_stand_up && !g_was_moving) {
+        } else if (!now_static && !g_was_moving) {
             // 静止 → 行走: 启动起步过渡
             g_motion.pose_trans = 1;
             g_motion.pose_timer = 0.0f;
@@ -256,12 +257,13 @@ static void motion_task_main(void *pvParam)
         }
         g_was_moving = !now_static;
 
-        // 换向检测: 运动方向变化 → 减速停 → stand → 反向起步 (平滑换向)
+        // 换向检测: 运动方向变化 → 减速停 → 直接反向 (平滑换向, 不经过 GAIT_STOP)
         int cur_dir = (g_motion.stride < 0.0f) ? -1 : 1;
-        if (cur_dir != g_dir_last && !now_static && !is_stand_up) {
+        if (cur_dir != g_dir_last && !now_static) {
             if (!g_stop_decel && g_motion.pose_trans == 0) {
                 g_stop_decel = true;         // 先减速停 (每半步 -3 到 0)
-                g_pending_gait = GAIT_STAND; // 停稳后先到 stand
+                g_pending_gait = GAIT_STOP;  // 停稳后切静态步态 (真正停止才用)
+                g_reverse = true;
                 g_reverse = true;
                 g_rev_gait = g_motion.gait;  // 记住运动步态 (反向起步用)
                 g_decel_sign = g_dir_last;   // 记住原方向 (减速停期间保持, 防腿打架)
@@ -283,7 +285,7 @@ static void motion_task_main(void *pvParam)
          * 相位冻结 (speed=0) 时也触发, 防止锁死.
          */
         // 相位累加 + 半周期速度更新
-        if (!is_stand && !is_stand_up) {
+        if (!is_stand) {
             float omega = g_motion.omega_base * eff_speed;
             float prev_phase = g_phase;
             g_phase += omega * dt;
@@ -422,41 +424,6 @@ static void motion_task_main(void *pvParam)
                 servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
                 servo_group_add(leg_knee_ch[leg], ik.knee_deg);
                 continue;
-            } else if (is_stand_up) {
-                float t = g_motion.stand_up_elapsed;
-                float hold = 0.3f;
-                float ramp = 3.0f;
-
-                float sit_hip  = (leg_side[leg] == IK_SIDE_LEFT) ? 135.0f : 45.0f;
-                float sit_knee = (leg_side[leg] == IK_SIDE_LEFT) ? 45.0f : 135.0f;
-#if IK_KNEE_REAR_FORWARD
-                if (leg_pair[leg] == IK_LEG_REAR) {
-                    sit_hip  = 180.0f - sit_hip;
-                    sit_knee = 180.0f - sit_knee;
-                }
-#endif
-
-                ik_result_t ik = ik_solve_2dof(g_motion.center_offset, g_motion.height,
-                                    g_motion.ik_L1, g_motion.ik_L2,
-                                    leg_side[leg], leg_pair[leg]);
-
-                if (t < hold) {
-                    g_smooth_angles[leg_hip_ch[leg]]  = sit_hip;
-                    g_smooth_angles[leg_knee_ch[leg]] = sit_knee;
-                    servo_group_add(leg_hip_ch[leg],  sit_hip);
-                    servo_group_add(leg_knee_ch[leg], sit_knee);
-                } else {
-                    float raw = (t - hold) / ramp;
-                    if (raw > 1.0f) raw = 1.0f;
-                    float ease = raw * raw * (3.0f - 2.0f * raw);
-                    float out_hip  = sit_hip  + (ik.hip_deg  - sit_hip)  * ease;
-                    float out_knee = sit_knee + (ik.knee_deg - sit_knee) * ease;
-                    g_smooth_angles[leg_hip_ch[leg]]  = out_hip;
-                    g_smooth_angles[leg_knee_ch[leg]] = out_knee;
-                    servo_group_add(leg_hip_ch[leg],  out_hip);
-                    servo_group_add(leg_knee_ch[leg], out_knee);
-                }
-                continue;
             } else if (is_stand) {
                 if (g_motion.pose_trans == 2) {
                     // 停止过渡: 从上一帧位置缓动到站姿
@@ -549,22 +516,13 @@ static void motion_task_main(void *pvParam)
         servo_group_commit();
 
         if (is_jump && g_motion.stand_up_elapsed >= 1.5f) {
-            g_motion.gait = GAIT_STAND;
+            g_motion.gait = GAIT_STOP;
             g_was_moving = false;
             for (int i = 0; i < 4; i++) {
                 g_prev_fx[i] = 0.0f;
                 g_prev_fz[i] = g_motion.height;
             }
             ESP_LOGI(TAG, "Jump complete, now standing");
-        }
-        if (is_stand_up && g_motion.stand_up_elapsed >= 3.3f) {
-            g_motion.gait = GAIT_STAND;
-            g_was_moving = false;
-            for (int i = 0; i < 4; i++) {
-                g_prev_fx[i] = 0.0f;
-                g_prev_fz[i] = g_motion.height;
-            }
-            ESP_LOGI(TAG, "Stand-up complete, now standing");
         }
 
         vTaskDelayUntil(&last_wake, period);
@@ -586,6 +544,8 @@ const motion_state_t *motion_get_state(void) { return &g_motion; }
 void motion_set_gait(gait_type_t gait)
 {
     if (gait < GAIT_COUNT) {
+        // 任何步态指令 → 自动进入运动模式 (Python 无需显式切换)
+        motion_set_mode(MODE_MOTION);
         g_motion.enabled = true;
         // 运动步态 → 静态步态: 先减速停, 延迟切换 (统一减速停, 减到 0 再收脚)
         if (is_static_gait(gait) && !is_static_gait(g_motion.gait)) {
@@ -601,7 +561,7 @@ void motion_set_gait(gait_type_t gait)
             g_reverse = false;
         }
         g_motion.gait = gait;
-        if (gait != GAIT_STAND && gait != GAIT_STAND_UP)
+        if (gait != GAIT_STOP)
             motion_apply_gait_params(gait);
     }
 }
@@ -824,38 +784,46 @@ bool motion_is_running(void)
     return g_motion.enabled && !g_motion.emergency_stop;
 }
 
-void motion_emergency_stop(void)
+void motion_set_mode(motion_mode_t mode)
 {
-    g_motion.emergency_stop = true;
-    g_motion.enabled = false;
-    ESP_LOGW(TAG, "Emergency stop!");
-}
-
-void motion_resume(void)
-{
-    // 从舵机实际角度同步 g_smooth_angles，避免切换回 motion 时跳变
-    for (int i = 0; i < 8; i++) {
-        g_smooth_angles[i] = servo_get_angle(i);
+    g_mode = mode;
+    switch (mode) {
+    case MODE_MOTION:
+        // 从 POSE/IDLE 切回时同步 g_smooth_angles 到真实舵机角, 防跳变
+        for (int i = 0; i < 8; i++) {
+            g_smooth_angles[i] = servo_get_angle(i);
+        }
+        g_motion.enabled = true;
+        g_motion.emergency_stop = false;
+        break;
+    case MODE_POSE:
+        g_motion.enabled = false;
+        g_motion.emergency_stop = true;   // motion 停止输出, Python 接管
+        break;
+    case MODE_IDLE:
+    default:
+        g_motion.enabled = false;
+        break;
     }
-    g_motion.emergency_stop = false;
-    g_motion.enabled = true;
-    ESP_LOGI(TAG, "Resumed");
 }
 
-void motion_stand_up(void)
+motion_mode_t motion_get_mode(void)
 {
-    g_motion.gait = GAIT_STAND_UP;
-    g_motion.enabled = true;
-    g_motion.emergency_stop = false;
-    g_motion.stand_up_elapsed = 0.0f;
-    ESP_LOGI(TAG, "Stand-up sequence started (hold=0.3s ramp=3.0s)");
+    return g_mode;
+}
+
+// MicroPython servo 绑定调用: Python 动舵机 → 自动切 POSE
+void motion_python_servo_write(void)
+{
+    if (g_mode != MODE_POSE) {
+        motion_set_mode(MODE_POSE);
+    }
 }
 
 void motion_jump(void)
 {
+    motion_set_mode(MODE_MOTION);
     g_motion.gait = GAIT_JUMP;
-    g_motion.enabled = true;
-    g_motion.emergency_stop = false;
     g_motion.stand_up_elapsed = 0.0f;
     ESP_LOGI(TAG, "Jump sequence started");
 }

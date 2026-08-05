@@ -176,7 +176,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
 | `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
 | `kext-bpuppy/` | KittenBlock 硬件扩展 (15 积木 + 蓝牙配置 + 开发文档) |
-| `frozen/main.py` | 启动脚本 — 初始化舵机 → 自动 stand_up (IMU/BLE/UART/ADC 手动或按需启动) |
+| `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序从站姿切入 |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
 | `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~12 |
@@ -203,8 +203,9 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 
 ### 姿态过渡
 
-- **静态↔静态** (stand/crouch/sit/play): 每帧限速 3° smoothstep, 自然平滑
+- **静态↔静态** (GAIT_STOP ↔ 运动步态): 每帧限速 3° smoothstep, 自然平滑
 - **变速**: 每半周期 ±3.0 步进跟随 target_speed, 避免突变
+- **姿态模式 (crouch/sit/play/wave/stand)**: 由 Python `poses` 模块 `_move_to` 限速逼近, 与 C 层机制一致
 
 ---
 
@@ -267,13 +268,23 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 
 | gait | 说明 | 特点 |
 |------|------|------|
-| `"stand"` | 站姿 | IK 计算, 高度由 `set_params` 设定 |
-| `"crouch"` | 蹲伏 | 固定角度, 四腿折叠, 关机前放松舵机 |
-| `"sit"` | 猫坐 | 前腿撑地、后腿折藏身下 |
-| `"play"` | 邀玩 | 前低后高 + 4Hz 摇臀 8 次 ±10° |
-| `"wave"` | 挥手 | 坐下 + 右前膝 1Hz 摆动 3 次 ±10°, 完成后自动回 `sit` |
+| `"stop"` | 停止站好 (GAIT_STOP) | IK 计算, 高度由 `set_params` 设定, 留运动模式 |
+| `"walk"` | 猫步 | 持续步态 |
+| `"trot"` | 小跑 | 持续步态 |
+| `"go"` | 自适应 | 持续步态, 推荐 |
+
+**姿态模式 (Python `poses`):**
+
+| 调用 | 说明 |
+|------|------|
+| `poses.stand()` | 站姿 POSE_STAND, 固定高度, 留姿态模式 |
+| `poses.crouch()` | 蹲伏, 固定角度 |
+| `poses.sit()` | 猫坐 |
+| `poses.play()` | 邀玩 (前低后高 + 4Hz 摇臀 8 次) |
+| `poses.wave()` | 挥手 (坐下 + 右前膝摆动 3 次, 回坐) |
 
 > `play` / `wave` 属于"静态姿势 + 单次动态动作": 姿势先就位, 动作执行完回到静态。
+> 模式自动切换: `set_gait(go/walk/trot/stop)` → MOTION; Python 写舵机 (set_angle/group_commit/cal) → POSE。
 > 代码中二者归为 static gait (`is_static_gait`), 不应用行走参数。
 
 ### 足端轨迹 (smoothstep 摆线)
@@ -287,12 +298,13 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 
 ## 上电行为
 
-1. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值
-2. 舵机设到蹲姿 → `motion.start()` — 创建 50Hz FreeRTOS 任务
-3. `motion.stand_up()` — 蹲姿 → 3s smoothstep 站立
-4. `bpuppy_ble.start()` — 启动 BLE 广播 (模式由固件编译决定, KittenBlock 模式自动注册 dupterm REPL)
+1. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值 (保持 IDLE)
+2. `sleep(0.5)` — 初始化稳定
+3. 舵机设到蹲姿 (set_angle) — 触发 IDLE→POSE 自动进入姿态模式
+4. `poses.stand()` — POSE_STAND 站姿待命 (Python IK, 固定高度)
+5. `bpuppy_ble.start()` — 启动 BLE 广播 (模式由固件编译决定, KittenBlock 模式自动注册 dupterm REPL)
 
-上电自动站立 + **BLE 广播**（KittenBlock 蓝牙编程）。**WiFi / 摄像头 / IMU / UART / ADC 均手动或按需启动**:
+上电自动站姿待命 + **BLE 广播**（KittenBlock 蓝牙编程）。用户程序 (main.py) 从**站姿切入**。**WiFi / 摄像头 / IMU / UART / ADC 均手动或按需启动**:
 - WiFi 热点: 手动 `import camera_stream; camera_stream.start()`（上电默认不开, 把 RF 让给蓝牙）
 - WiFi 图传: 网页点「图传 开」或 `camera_stream.start(stream=True)`
 - IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
@@ -395,19 +407,17 @@ python tools/capture.py COM3   # 端口换成实际值 (设备管理器查看)
 
 三个参数始终直接写入，无哨兵。
 
-### 3. `stand_up` 完成后的 `pose_trans`
+### 3. 运动→静止的 `pose_trans`
 
-`stand_up` 结束切到 `GAIT_STAND` 时, 必须同时设 `g_was_moving = false` 并更新 `g_prev_fz` 为当前 height, 否则下一帧触发 `pose_trans=2` (停步过渡), 导致腿瞬间跳起再落下。
+运动步态切到 `GAIT_STOP` 时走减速停逻辑 (`g_stop_decel` → `g_pending_gait=GAIT_STOP`), 需保证 `g_was_moving` 状态正确, 否则触发 `pose_trans=2` (停步过渡) 导致跳变。
 
 ### 4. `servo_init` 初始 duty
 
-`servo_init` 设 `duty=0`, 导致初始化后舵机失能(随机位置)。如需上电即稳定, 应在 `init_all` 后立即用 `set_angle` 设定所有舵机到安全姿态, 或在 `servo_init` 中设非零初始 duty。
+`servo_init` 设 `duty=0`, 导致初始化后舵机失能(随机位置)。开机 `init_all` 后必须用 `set_angle` 设定蹲姿再进入姿态模式 (main.py 已处理)。
 
-### 5. `is_crouch` 与 `stand_up` 蹲姿一致性
+### 5. 蹲姿角度定义
 
-`is_crouch` 和 `stand_up` 起点的蹲姿必须使用相同舵机角:
-- 左腿: hip=135°, knee=45° (折叠)
-- 右腿: hip=45°, knee=135° (折叠)
+crouch 姿态角度在 Python `poses.py` 定义 (`CROUCH = [135,45,...]`)。若修改腿结构, 需同步 `poses.py` 的蹲姿角度 (且 `servo_init_all` 非幂等, 用户程序勿重复调用)。
 
 ### 6. 校准公式
 
@@ -420,7 +430,7 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 ### 8. BLE 停止
 
-停止时设 `speed=0, stride=0`。d=0 调 `set_params(0, 0, 70)` + `set_gait("stand")`。
+停止时设 `speed=0, stride=0`。d=0 调 `set_params(0, 0, 70)` + `set_gait("stop")`。
 
 ### 9. GPIO 引脚映射 (已确定)
 

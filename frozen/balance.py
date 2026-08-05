@@ -51,8 +51,7 @@ def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
     if not bpuppy_imu.is_ready():
         bpuppy_imu.init(0, 3, 14, 0x68)   # 自动启动 IMU
     bpuppy_imu.set_mag_fusion(False)      # 磁力计只修yaw, 不参与 roll/pitch (避免残差拉偏)
-    bpuppy_motion.emergency_stop()
-    time.sleep_ms(50)
+    time.sleep_ms(30)   # group 写舵机会自动切 POSE (C 层检测), motion 停止
 
     dt = 0.02
     br, bp = 0.0, 0.0
@@ -118,7 +117,6 @@ def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
 
 def stop():
     bpuppy_imu.set_mag_fusion(True)       # 恢复 磁力计参与 roll/pitch (9轴)
-    bpuppy_motion.resume()
-    bpuppy_motion.set_gait("stand")
+    bpuppy_motion.set_gait("stop")        # GAIT_STOP 站好 (自动进 MOTION)
     bpuppy_motion.set_body_pose(0, 0, 0)
     print("Balance OFF")

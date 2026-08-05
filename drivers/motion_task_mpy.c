@@ -17,8 +17,8 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_start_obj, mp_motion_start);
 
 STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
     const char *s = mp_obj_str_get_str(gait_obj);
-    gait_type_t g = GAIT_STAND;
-         if (strcmp(s, "stand") == 0)        g = GAIT_STAND;
+    gait_type_t g = GAIT_STOP;
+         if (strcmp(s, "stop") == 0)        g = GAIT_STOP;
     else if (strcmp(s, "walk") == 0)        g = GAIT_WALK;
     else if (strcmp(s, "walkfwd") == 0)     g = GAIT_WALK;
     else if (strcmp(s, "walkbck") == 0)     g = GAIT_WALK;
@@ -71,28 +71,15 @@ STATIC mp_obj_t mp_motion_set_body_pose(mp_obj_t roll_obj, mp_obj_t pitch_obj,
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_3(mp_motion_set_body_pose_obj, mp_motion_set_body_pose);
 
-STATIC mp_obj_t mp_motion_estop(void) {
-    motion_emergency_stop();
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_estop_obj, mp_motion_estop);
-
-STATIC mp_obj_t mp_motion_resume(void) {
-    motion_resume();
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_resume_obj, mp_motion_resume);
-
 STATIC mp_obj_t mp_motion_is_running(void) {
     return mp_obj_new_bool(motion_is_running());
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_is_running_obj, mp_motion_is_running);
 
-STATIC mp_obj_t mp_motion_stand_up(void) {
-    motion_stand_up();
-    return mp_const_none;
+STATIC mp_obj_t mp_motion_get_mode(void) {
+    return mp_obj_new_int((int)motion_get_mode());
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_stand_up_obj, mp_motion_stand_up);
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_get_mode_obj, mp_motion_get_mode);
 
 STATIC mp_obj_t mp_motion_set_turn(mp_obj_t turn_obj) {
     motion_set_turn(mp_obj_get_float(turn_obj));
@@ -181,10 +168,8 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_set_omega),      MP_ROM_PTR(&mp_motion_set_omega_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_lift),      MP_ROM_PTR(&mp_motion_set_lift_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_body_pose),  MP_ROM_PTR(&mp_motion_set_body_pose_obj) },
-    { MP_ROM_QSTR(MP_QSTR_emergency_stop), MP_ROM_PTR(&mp_motion_estop_obj) },
-    { MP_ROM_QSTR(MP_QSTR_resume),         MP_ROM_PTR(&mp_motion_resume_obj) },
     { MP_ROM_QSTR(MP_QSTR_is_running),    MP_ROM_PTR(&mp_motion_is_running_obj) },
-    { MP_ROM_QSTR(MP_QSTR_stand_up),      MP_ROM_PTR(&mp_motion_stand_up_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_mode),      MP_ROM_PTR(&mp_motion_get_mode_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_turn),     MP_ROM_PTR(&mp_motion_set_turn_obj) },
     { MP_ROM_QSTR(MP_QSTR_jump),         MP_ROM_PTR(&mp_motion_jump_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_center),  MP_ROM_PTR(&mp_motion_set_center_obj) },

@@ -312,9 +312,13 @@ STATIC mp_obj_t mp_servo_init(mp_obj_t ch_obj, mp_obj_t gpio_obj) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_servo_init_obj, mp_servo_init);
 
 // ---- servo_set_angle(channel, angle_deg) ----
+// Python 动舵机 → 自动切 POSE (见 motion_task.cpp)
+extern void motion_python_servo_write(void);
+
 STATIC mp_obj_t mp_servo_set_angle(mp_obj_t ch_obj, mp_obj_t angle_obj) {
     int ch = mp_obj_get_int(ch_obj);
     float angle = mp_obj_get_float(angle_obj);
+    motion_python_servo_write();   // Python 写舵机 → 自动切 POSE
     servo_set_angle((uint8_t)ch, angle);
     return mp_const_none;
 }
@@ -339,6 +343,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_servo_group_add_obj, mp_servo_group_add);
 
 // ---- servo_group_commit() ----
 STATIC mp_obj_t mp_servo_group_commit(void) {
+    motion_python_servo_write();   // Python 批量写舵机 → 自动切 POSE
     servo_group_commit();
     return mp_const_none;
 }
@@ -368,6 +373,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_servo_stop_obj, mp_servo_stop);
 // ---- 校准函数 MPY 包装 ----
 #define MAKE_SERVO_CAL(ch, name) \
     STATIC mp_obj_t mp_cal_##name(mp_obj_t deg_obj) { \
+        motion_python_servo_write();   /* 校准写参考角 → 自动切 POSE */ \
         servo_set_cal((ch), mp_obj_get_float(deg_obj)); \
         return mp_const_none; \
     } \
@@ -393,6 +399,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_servo_load_cal_obj, mp_servo_load_cal);
 STATIC mp_obj_t mp_servo_cal(mp_obj_t ch_obj, mp_obj_t deg_obj) {
     int ch = mp_obj_get_int(ch_obj);
     float deg = mp_obj_get_float(deg_obj);
+    motion_python_servo_write();   // 校准写参考角 → 自动切 POSE
     servo_set_cal((uint8_t)ch, deg);
     return mp_const_none;
 }

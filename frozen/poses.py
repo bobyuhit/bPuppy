@@ -17,10 +17,23 @@ poses.py — bPuppy 姿态与舵机编辑 (Python 层)
 
 import bpuppy_servo
 import bpuppy_motion
+import bpuppy_ik
 import time
 import math
 
 D2R = 0.0174533
+
+# ---- POSE_STAND 机械参数 (Python IK 站姿) ----
+L1 = float(bpuppy_ik.L1)
+L2 = float(bpuppy_ik.L2)
+CENTER = 0.0
+POSE_STAND_HEIGHT = 70.0   # 固定高度 (不随 set_params 运动高度变化)
+LEGS = [
+    (0, 1, bpuppy_ik.LEFT,  bpuppy_ik.FRONT),   # LF
+    (2, 3, bpuppy_ik.LEFT,  bpuppy_ik.REAR),    # LH
+    (4, 5, bpuppy_ik.RIGHT, bpuppy_ik.FRONT),   # RF
+    (6, 7, bpuppy_ik.RIGHT, bpuppy_ik.REAR),    # RH
+]
 
 # ---- 8 路舵机命名常量 ----
 LF_HIP, LF_KNEE = 0, 1
@@ -38,11 +51,11 @@ _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_F
 # ============================================================
 
 def ensure_motion():
-    """启动 motion task (幂等), 平滑站起。运动积木前调用。"""
+    """运动启动守卫: 从蹲姿/停止平滑站起, 然后可 set_gait 走"""
     if not bpuppy_motion.is_running():
         bpuppy_motion.start()
-        bpuppy_motion.stand_up()
-        time.sleep(1)
+        bpuppy_motion.set_gait('stop')   # GAIT_STOP 限速站起 ~0.3s
+        time.sleep(0.5)
 
 
 # ============================================================
@@ -104,21 +117,19 @@ def _move_to(targets, step=3.0):
 
 def commit():
     """
-    执行姿态: 先急停 motion task, 再从当前位置平滑逼近 _pose_buf。
+    执行姿态: 写舵机自动切 POSE (C 层检测), 再从当前位置平滑逼近 _pose_buf。
     没被 set_servo() 修改的通道保持原位。
     """
-    bpuppy_motion.emergency_stop()
-    time.sleep_ms(50)
+    time.sleep_ms(30)   # 等 C 层自动切 POSE 生效
     _move_to(_pose_buf, _pose_step)
 
 
 def go_to(targets, step=3.0):
     """
-    一步到位: 急停 → 直接逼近 targets（8 个浮点数列表）。
+    一步到位: 写舵机自动切 POSE, 直接逼近 targets（8 个浮点数列表）。
     不修改 _pose_buf，适合代码直调。
     """
-    bpuppy_motion.emergency_stop()
-    time.sleep_ms(50)
+    time.sleep_ms(30)
     _move_to(list(targets), step)
 
 
@@ -127,8 +138,7 @@ def go_to(targets, step=3.0):
 # ============================================================
 
 def oscillate(ch, amp, hz, cycles):
-    """单舵机正弦摆动: 先急停, 在当前位置 ±amp°, 频率 hz, 循环 cycles 次"""
-    bpuppy_motion.emergency_stop()
+    """单舵机正弦摆动: 写舵机自动切 POSE, 在当前位置 ±amp°, 频率 hz, 循环 cycles 次"""
     time.sleep_ms(30)
     center = bpuppy_servo.get_angle(ch)
     frames = int(round(50.0 * hz * cycles))  # 50帧/秒 × 秒数
@@ -143,9 +153,13 @@ def oscillate(ch, amp, hz, cycles):
 # ============================================================
 
 def stand():
-    """恢复站姿: 启动 motion (若未跑) + 切 IK 站姿"""
-    ensure_motion()
-    bpuppy_motion.set_gait("stand")
+    """POSE_STAND: Python IK 站姿 (固定高度 70), 留在姿态模式"""
+    targets = [None] * 8
+    for hip_ch, knee_ch, side, leg_pair in LEGS:
+        hip, knee = bpuppy_ik.solve(CENTER, POSE_STAND_HEIGHT, L1, L2, side, leg_pair)
+        targets[hip_ch] = hip
+        targets[knee_ch] = knee
+    go_to(targets)
 
 
 # ============================================================

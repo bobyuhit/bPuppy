@@ -25,7 +25,7 @@ _g_speed = 0
 _g_turn = 0.0
 _g_stride = 70
 _g_height = 70
-_g_gait = "stand"
+_g_gait = "stop"
 _speed_set = False   # 用户本会话是否拖过速度滑块
 _g_stream_client = None  # 当前唯一的流客户端
 _stream_on = False       # 图传是否开启 (可运行时切换)
@@ -157,7 +157,7 @@ a.btn:active{opacity:.75;transform:scale(.95)}
     </div>
     <div class="row">
       <a class="btn dir" href="/cmd?stride=0&turn=-0.8"  target="f">&#x25C0;</a>
-      <a class="btn stop" href="/cmd?gait=stand" target="f">停</a>
+      <a class="btn stop" href="/cmd?gait=stop" target="f">停</a>
       <a class="btn dir" href="/cmd?stride=0&turn=0.8"   target="f">&#x25B6;</a>
     </div>
     <div class="row">
@@ -170,7 +170,7 @@ a.btn:active{opacity:.75;transform:scale(.95)}
   <div class="card">
     <div class="title">姿态</div>
     <div class="row">
-      <a class="btn pose" href="/cmd?gait=stand"  target="f">站立</a>
+      <a class="btn pose" href="/cmd?pose=stand" target="f">站立</a>
       <a class="btn pose" href="/cmd?gait=sit"    target="f">坐下</a>
       <a class="btn pose" href="/cmd?gait=crouch" target="f">蹲下</a>
     </div>
@@ -332,14 +332,16 @@ def _parse_cmd(path):
         if "wave" in params:
             import poses
             poses.wave()
-            _g_gait = "stand"
+            _g_gait = "stop"
             return "OK:wave"
 
-        # === 急停 ===
-        if "stop" in params:
-            bpuppy_motion.emergency_stop()
-            _g_gait = "stand"
-            return "OK:stop"
+        # === 姿态操作 (姿态区按钮) ===
+        if "pose" in params:
+            import poses
+            if params["pose"] == "stand":
+                poses.stand()   # POSE_STAND (Python 站姿, 留在姿态模式)
+            _g_gait = "stop"
+            return "OK:pose"
 
         # === 滑块: 存值 + speed 直接写 g_motion ===
         if "set" in params:
@@ -365,12 +367,12 @@ def _parse_cmd(path):
             if g in ("crouch", "sit", "play"):
                 import poses
                 getattr(poses, g)()  # poses.crouch() / poses.sit() / poses.play()
-                _g_gait = "stand"
+                _g_gait = "stop"
             else:
                 import poses
                 poses.ensure_motion()
                 bpuppy_motion.set_turn(0)
-                bpuppy_motion.set_gait(g)
+                bpuppy_motion.set_gait(g)   # go/walk/trot/stop
                 _g_gait = g
             return "OK:gait"
 
@@ -439,28 +441,8 @@ def _send_stream(client):
         bpuppy_camera.capture()
         time.sleep_ms(30)
 
-    last_gait = None
-    last_speed = None
-    last_turn = None
-
     while _running:
-        try:
-            import bpuppy_motion
-            with _lock:
-                # 仅在 motion 运行时同步; pose 急停后不覆盖 (避免狗被流拉回站立)
-                if bpuppy_motion.is_running():
-                    if last_gait != _g_gait:
-                        bpuppy_motion.set_gait(_g_gait)
-                        last_gait = _g_gait
-                        last_speed = None
-                    if last_speed != _g_speed or last_turn != _g_turn:
-                        bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
-                        bpuppy_motion.set_turn(_g_turn)
-                        last_speed = _g_speed
-                        last_turn = _g_turn
-        except ImportError:
-            pass
-
+        # 纯图传: 运动状态完全由 _parse_cmd 驱动, 流循环不碰 gait/速度
         result = bpuppy_camera.capture()
         if result is None:
             time.sleep_ms(50)
