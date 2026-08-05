@@ -36,7 +36,7 @@ extern "C" {
 
 // 运行时参数默认值 (不进 NVS，掉电丢失)
 #define SPEED_DEFAULT   2.5f
-#define STRIDE_DEFAULT  0.0f
+#define STRIDE_DEFAULT  70.0f   // 默认步长, 开机直接 set_gait('go') 即前进
 #define HEIGHT_DEFAULT  70.0f
 #define LIFT_DEFAULT    30.0f
 #define OMEGA_DEFAULT   2.0f
