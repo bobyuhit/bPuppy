@@ -29,6 +29,8 @@ static const char *TAG = "motion";
 #define MOTION_CORE        0
 #define MOTION_LOOP_MS     20      // 50Hz (舵机 PWM 同频)
 
+#define MIN_HEIGHT        15.0f    // 最低站立高度 (mm), 过低腿折叠干涉
+
 #define TWO_PI             (2.0f * (float)M_PI)
 #define TURN_STRIDE_FACTOR 0.15f
 #define SPEED_FOLLOW_STEP 3.0f  // 每半周速度跟随最大变化量
@@ -317,7 +319,9 @@ static void motion_task_main(void *pvParam)
         // GAIT_GO: 速度自适应 duty/gap，stride/height 沿用 g_motion 默认
         float eff_duty   = g_motion.gait_duty;
         float eff_gap    = g_motion.gait_gap;
-        float eff_stride = g_motion.stride;
+        // eff_stride 取绝对值 (方向由下方 stride_sign 决定, 与 GO 一致;
+        // 否则 TROT/WALK 含符号 stride + 符号 stride_sign 双重符号 → 后退变前进)
+        float eff_stride = fabsf(g_motion.stride);
         float eff_height = g_motion.height;
         // GO: speed≤4=walk  speed≥6=trot  → duty/gap/stride/pitch 插值
         float eff_pitch = g_motion.body_pitch;
@@ -373,7 +377,9 @@ static void motion_task_main(void *pvParam)
         // 减速停完成: 步长渐收到 0
         // 换向: 直接反方向走 (步长=0 脚已在 stand, 不经过 stand 收脚+起步过渡)
         // 按停/滑块到0: 切静态步态, 收脚站定
-        if ((g_stop_decel || g_motion.target_speed <= 0.1f) && g_stride_smooth <= 0.1f) {
+        // ★ 非 GO 步态 (TROT/WALK) 无 g_stride_smooth, 减速停/换向立即完成
+        float stop_smooth = (g_motion.gait == GAIT_GO) ? g_stride_smooth : 0.0f;
+        if ((g_stop_decel || g_motion.target_speed <= 0.1f) && stop_smooth <= 0.1f) {
             g_stop_decel = false;
             if (g_reverse) {
                 g_reverse = false;              // 直接反向 (跳过 stand 中间态)
@@ -573,8 +579,51 @@ void motion_set_gait(gait_type_t gait)
 }
 
 /* ---- 参数校验 ---- */
+
+// 足端位置角度校验 (复制 ik.c 公式, 不钳位) — 返回 true = 髋/膝超限或不可达
+static bool ik_pos_check(float x, float z, int side, int leg_pair,
+                         float L1, float L2)
+{
+    float L1L2_max = L1 + L2;
+    float L2L1_min = fabsf(L2 - L1);
+    float d = sqrtf(x * x + z * z);
+    if (d > L1L2_max - 1.0f) return true;   // 超机械可达
+    if (d < L2L1_min + 1.0f) return true;   // 足端过近 (腿叠死)
+
+    float cos_knee = (L1 * L1 + L2 * L2 - d * d) / (2.0f * L1 * L2);
+    if (cos_knee > 1.0f) cos_knee = 1.0f;
+    if (cos_knee < -1.0f) cos_knee = -1.0f;
+    float knee_angle = acosf(cos_knee);
+
+    float alpha = atan2f(z, x);
+    float cos_beta = (L1 * L1 + d * d - L2 * L2) / (2.0f * L1 * d);
+    if (cos_beta > 1.0f) cos_beta = 1.0f;
+    if (cos_beta < -1.0f) cos_beta = -1.0f;
+    float beta = acosf(cos_beta);
+
+    float hip_angle;
+#if IK_KNEE_REAR_FORWARD
+    hip_angle = (leg_pair == IK_LEG_REAR) ? (alpha - beta) : (alpha + beta);
+#else
+    hip_angle = alpha + beta;
+#endif
+
+    float hip_deg = hip_angle * 180.0f / (float)M_PI;
+    if (side == IK_SIDE_RIGHT) hip_deg = 180.0f - hip_deg;
+
+    int knee_mirror = (side == IK_SIDE_RIGHT);
+#if IK_KNEE_REAR_FORWARD
+    if (leg_pair == IK_LEG_REAR) knee_mirror = !knee_mirror;
+#endif
+    float knee_deg = knee_angle * 180.0f / (float)M_PI;
+    if (knee_mirror) knee_deg = 180.0f - knee_deg;
+
+    return (hip_deg < ik_hip_min || hip_deg > ik_hip_max ||
+            knee_deg < ik_knee_min || knee_deg > ik_knee_max);
+}
+
 // 返回 true = 有问题, 参数不应写入
-static bool motion_validate_params(float stride, float height)
+static bool motion_validate_params(float stride, float height, float lift)
 {
     float L1 = g_motion.ik_L1;
     float L2 = g_motion.ik_L2;
@@ -590,49 +639,42 @@ static bool motion_validate_params(float stride, float height)
         bad = true;
     }
 
-    // IK 膝角检查 (使用 ik.h 中的 ik_knee_min / ik_knee_max)
-    float d_sq = x * x + z * z;
-    float d = sqrtf(d_sq);
-    float L_sum = L1 + L2 - 0.5f;
-
-    float cos_knee = (L1 * L1 + L2 * L2 - d * d) / (2.0f * L1 * L2);
-    if (cos_knee < -1.0f) cos_knee = -1.0f;
-    if (cos_knee > 1.0f)  cos_knee = 1.0f;
-    float knee_raw_deg = acosf(cos_knee) * 180.0f / (float)M_PI;
-
-    // 左膝 servo = knee, 右膝 servo = 180 - knee
-    float knee_left  = knee_raw_deg;
-    float knee_right = 180.0f - knee_raw_deg;
-
-    if (knee_left < ik_knee_min || knee_left > ik_knee_max ||
-        knee_right < ik_knee_min || knee_right > ik_knee_max) {
-
-        float worst = knee_left;
-        if (knee_right < ik_knee_min || knee_right > ik_knee_max)
-            worst = (knee_left < knee_right) ? knee_left : knee_right;
-
-        float cos_lim_min = cosf(ik_knee_min * (float)M_PI / 180.0f);
-        float cos_lim_max = cosf(ik_knee_max * (float)M_PI / 180.0f);
-        float d2_max = L1 * L1 + L2 * L2 - 2.0f * L1 * L2 * cos_lim_max;
-        float d2_min = L1 * L1 + L2 * L2 - 2.0f * L1 * L2 * cos_lim_min;
-        float d_max = sqrtf(d2_max);
-        float d_min = sqrtf(d2_min);
-
-        if (d > L_sum) {
-            ESP_LOGW(TAG, "⚠ 足端不可达! d=%.1f > L1+L2=%.0f, 参数未写入", d, L1+L2);
-        } else {
-            ESP_LOGW(TAG, "⚠ 膝角触限! stride=%.0f height=%.0f → 膝≈%.0f° (限 %.0f°~%.0f°), 参数未写入",
-                     stride, height, worst, ik_knee_min, ik_knee_max);
-            ESP_LOGW(TAG, "  建议: height %.0f~%.0fmm", d_min, d_max);
-        }
+    // 高度下限 (腿折叠干涉)
+    if (height < MIN_HEIGHT) {
+        ESP_LOGW(TAG, "⚠ 高度过低: height=%.0f < min=%.0fmm, 参数未写入", height, MIN_HEIGHT);
         bad = true;
+    }
+
+    // 遍历足端极端位置 (前后 x=±stride/2, 着地 z=height / 抬腿 z=height-lift)
+    // 检查每条腿髋/膝角是否超限 (含抬腿最高点)
+    if (stride != 0.0f) {
+        float zs[2] = { height, height - lift };
+        for (int i = 0; i < 2; i++) {
+            float xv = (i == 0) ? -x : x;
+            xv += g_motion.center_offset;
+            for (int j = 0; j < 2; j++) {
+                float zv = zs[j];
+                if (zv < 0.0f) {
+                    ESP_LOGW(TAG, "⚠ 抬腿过度: height-lift=%.0f < 0, 参数未写入", zv);
+                    bad = true;
+                    continue;
+                }
+                for (int k = 0; k < 4; k++) {
+                    if (ik_pos_check(xv, zv, leg_side[k], leg_pair[k], L1, L2)) {
+                        ESP_LOGW(TAG, "⚠ 足端 (x=%.0f z=%.0f) 髋/膝超限, 参数未写入 (stride=%.0f height=%.0f lift=%.0f)",
+                                 xv, zv, stride, height, lift);
+                        bad = true;
+                    }
+                }
+            }
+        }
     }
     return bad;
 }
 
 int motion_check_params(float stride, float height)
 {
-    return motion_validate_params(stride, height) ? 1 : 0;
+    return motion_validate_params(stride, height, g_motion.lift_height) ? 1 : 0;
 }
 
 void motion_set_params(float speed, float stride, float height)
@@ -645,8 +687,8 @@ void motion_set_params(float speed, float stride, float height)
         return;
     }
 
-    // 校验步幅/高度
-    if (stride != 0 && motion_validate_params(stride, height)) {
+    // 校验步幅/高度 (含抬腿, 髋/膝角)
+    if (stride != 0 && motion_validate_params(stride, height, g_motion.lift_height)) {
         ESP_LOGW(TAG, "→ 保持原值: speed=%.2f stride=%.0f height=%.0f",
                  g_motion.speed, g_motion.stride, g_motion.height);
         return;
@@ -760,6 +802,12 @@ void motion_set_omega(float omega)
 
 void motion_set_lift(float lift)
 {
+    // 抬腿校验: 用当前 stride/height 检查是否超限/干涉
+    if (motion_validate_params(g_motion.stride, g_motion.height, lift)) {
+        ESP_LOGW(TAG, "⚠ 抬腿超限: lift=%.0f (stride=%.0f height=%.0f), 保持原值 %.0f",
+                 lift, g_motion.stride, g_motion.height, g_motion.lift_height);
+        return;
+    }
     g_motion.lift_height = lift;
     ESP_LOGI(TAG, "Lift height: %.0f mm", lift);
 }
