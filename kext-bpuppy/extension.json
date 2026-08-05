@@ -25,7 +25,8 @@
         "wait": 5000
     },
     "afterConnect": [
-        "import bpuppy_motion"
+        "import bpuppy_motion",
+        "import poses"
     ],
     "ble": {
         "boardcast": "0x6e40",
