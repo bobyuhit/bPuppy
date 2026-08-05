@@ -46,7 +46,7 @@
           defaultValue: '2.5'
         }
       },
-      pycode: 'bpuppy_motion.set_params([SPEED], _stride, _height)'
+      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)'
     },
     {
       opcode: 'setStride',
@@ -58,7 +58,7 @@
           defaultValue: '70'
         }
       },
-      pycode: 'bpuppy_motion.set_params(_speed, [STRIDE], _height)'
+      pycode: '_stride = [STRIDE]; bpuppy_motion.set_params(_speed, _stride, _height)'
     },
     {
       opcode: 'setHeight',
@@ -70,7 +70,7 @@
           defaultValue: '70'
         }
       },
-      pycode: 'bpuppy_motion.set_params(_speed, _stride, [HEIGHT])'
+      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)'
     },
     {
       opcode: 'setLift',
