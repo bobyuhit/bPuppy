@@ -149,12 +149,10 @@ class HiwonderBLE:
             stride_dir = -70 if d in (6, 7, 8) else 70
 
             print("[BLE] 方向=%d speed=%.1f stride=%d turn=%.1f" % (d, s, stride_dir, turn))
-            import poses
             if d == 0:
                 bpuppy_motion.set_gait("stop")  # GAIT_STOP 站好 (自动进 MOTION)
                 self._moving = False
             else:
-                poses.ensure_motion()  # 运动启动守卫
                 bpuppy_motion.set_params(s, stride_dir, 70)
                 bpuppy_motion.set_turn(turn)
                 bpuppy_motion.set_gait("go")

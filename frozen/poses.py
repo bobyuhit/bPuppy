@@ -11,8 +11,7 @@ poses.py — bPuppy 姿态与舵机编辑 (Python 层)
     poses.crouch()              # 预定义: 蹲伏
     poses.sit()                 # 预定义: 猫坐
     poses.oscillate(3, 10, 4, 8)  # 舵机3 ±10° 4Hz 8次摆动
-    poses.ensure_motion()       # 运动前启动守卫 (配合 bpuppy_motion 使用)
-    poses.stand()               # 恢复 C 层 IK 站姿
+    poses.stand()               # POSE_STAND 站姿 (固定高度)
 """
 
 import bpuppy_servo
@@ -44,18 +43,6 @@ RH_HIP, RH_KNEE = 6, 7
 # ---- 全局状态 ----
 _pose_buf = [None] * 8      # 用户逐通道设置的目标角度，None=不修改
 _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_FRAME 一致
-
-
-# ============================================================
-# 运动启动守卫 (配合 bpuppy_motion 使用)
-# ============================================================
-
-def ensure_motion():
-    """运动启动守卫: 从蹲姿/停止平滑站起, 然后可 set_gait 走"""
-    if not bpuppy_motion.is_running():
-        bpuppy_motion.start()
-        bpuppy_motion.set_gait('stop')   # GAIT_STOP 限速站起 ~0.3s
-        time.sleep(0.5)
 
 
 # ============================================================
