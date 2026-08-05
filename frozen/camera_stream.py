@@ -338,7 +338,6 @@ def _parse_cmd(path):
         # === 急停 ===
         if "stop" in params:
             bpuppy_motion.emergency_stop()
-            bpuppy_motion.set_gait("stand")
             _g_gait = "stand"
             return "OK:stop"
 
@@ -368,7 +367,8 @@ def _parse_cmd(path):
                 getattr(poses, g)()  # poses.crouch() / poses.sit() / poses.play()
                 _g_gait = "stand"
             else:
-                bpuppy_motion.set_gait(g)
+                import poses
+                poses.gait(g)  # ensure_motion + set_gait
                 _g_gait = g
             return "OK:gait"
 
@@ -384,14 +384,10 @@ def _parse_cmd(path):
         if "height" in params:
             _g_height = float(params["height"])
 
-        # 切 go
-        if _g_gait not in ("go", "walk", "trot"):
-            _g_gait = "go"
-            bpuppy_motion.set_gait("go")
-
-        # 应用 (速度: 用户拖过滑块用 _g_speed, 否则用系统当前 target_speed)
-        bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
-        bpuppy_motion.set_turn(_g_turn)
+        # 切 go (poses.go 内部 ensure_motion + set_turn, 保证转弯状态被正确设置)
+        _g_gait = "go"
+        import poses
+        poses.go(abs(_effective_speed()), _g_stride, _g_height, _g_turn)
 
     return "OK"
 
@@ -446,15 +442,17 @@ def _send_stream(client):
         try:
             import bpuppy_motion
             with _lock:
-                if last_gait != _g_gait:
-                    bpuppy_motion.set_gait(_g_gait)
-                    last_gait = _g_gait
-                    last_speed = None
-                if last_speed != _g_speed or last_turn != _g_turn:
-                    bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
-                    bpuppy_motion.set_turn(_g_turn)
-                    last_speed = _g_speed
-                    last_turn = _g_turn
+                # 仅在 motion 运行时同步; pose 急停后不覆盖 (避免狗被流拉回站立)
+                if bpuppy_motion.is_running():
+                    if last_gait != _g_gait:
+                        bpuppy_motion.set_gait(_g_gait)
+                        last_gait = _g_gait
+                        last_speed = None
+                    if last_speed != _g_speed or last_turn != _g_turn:
+                        bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
+                        bpuppy_motion.set_turn(_g_turn)
+                        last_speed = _g_speed
+                        last_turn = _g_turn
         except ImportError:
             pass
 

@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n# ===== bPuppy 初始化 =====\n_speed = 2.5\n_stride = 70\n_height = 70\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nposes.set(0,135); poses.set(1,45)\nposes.set(2,45); poses.set(3,135)\nposes.set(4,45); poses.set(5,135)\nposes.set(6,135); poses.set(7,45)\nposes.commit()'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nposes.crouch()'},
   },
   blocks: [
     "## 运动",
@@ -8,31 +8,31 @@
       opcode: 'forward',
       blockType: 'command',
       text: '前进',
-      pycode: "poses.go(_speed,_stride,_height)"
+      pycode: "poses.fwd()"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '后退',
-      pycode: "poses.go(_speed,-abs(_stride),_height)"
+      pycode: "poses.bwd()"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
       text: '左转',
-      pycode: "poses.go(_speed,_stride,_height,-0.8)"
+      pycode: "poses.tl()"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
       text: '右转',
-      pycode: "poses.go(_speed,_stride,_height,0.8)"
+      pycode: "poses.tr()"
     },
     {
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "poses.stop_motion()"
+      pycode: "poses.stp()"
     },
     "---",
     "## 参数",
@@ -46,7 +46,7 @@
           defaultValue: '2.5'
         }
       },
-      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)'
+      pycode: 'poses.spd([SPEED])'
     },
     {
       opcode: 'setStride',
@@ -58,7 +58,7 @@
           defaultValue: '70'
         }
       },
-      pycode: '_stride = [STRIDE]'
+      pycode: 'poses.stride([STRIDE])'
     },
     {
       opcode: 'setHeight',
@@ -70,7 +70,7 @@
           defaultValue: '70'
         }
       },
-      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)'
+      pycode: 'poses.hgt([HEIGHT])'
     },
     {
       opcode: 'setLift',
@@ -82,7 +82,7 @@
           defaultValue: '30'
         }
       },
-      pycode: 'bpuppy_motion.set_lift([LIFT])'
+      pycode: 'poses.lift([LIFT])'
     },
     "---",
     "## 步态",
@@ -97,7 +97,7 @@
           defaultValue: 'go'
         }
       },
-      pycode: "poses.ensure_motion(); bpuppy_motion.set_gait([GAIT])"
+      pycode: "poses.gait([GAIT])"
     },
     "---",
     "## 姿态动作",
@@ -148,7 +148,7 @@
           defaultValue: '90'
         }
       },
-      pycode: 'poses.set([SERVO], [ANGLE])'
+      pycode: 'poses.set([SERVO],[ANGLE])'
     },
     {
       opcode: 'setStep',
@@ -160,7 +160,7 @@
           defaultValue: '3'
         }
       },
-      pycode: 'poses.set_step([STEP])'
+      pycode: 'poses.step([STEP])'
     },
     {
       opcode: 'commitPose',
@@ -172,7 +172,7 @@
       opcode: 'readPose',
       blockType: 'command',
       text: '读取当前姿态',
-      pycode: 'poses.read_pose()'
+      pycode: 'poses.pose()'
     },
     "---",
     "## 动作",
@@ -199,7 +199,7 @@
           defaultValue: '8'
         }
       },
-      pycode: 'poses.oscillate([SERVO2], [AMP], [HZ], [CYCLES])'
+      pycode: 'poses.osc([SERVO2],[AMP],[HZ],[CYCLES])'
     },
     {
       opcode: 'waitSec',

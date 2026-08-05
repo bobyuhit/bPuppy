@@ -4,12 +4,15 @@ poses.py — bPuppy 姿态与动态动作 (Python 层)
 用法:
     import poses
     poses.set(0, 135)           # 设置舵机 0 目标 135°
-    poses.set(1, 45)            # 设置舵机 1 目标 45°
     poses.commit()              # 平滑逼近并执行
     poses.crouch()              # 预定义: 蹲伏
     poses.sit()                 # 预定义: 猫坐
-    poses.oscillate(1, 10, 4, 8)  # 舵机1 ±10° 4Hz 8次摆动
+    poses.osc(3, 10, 4, 8)      # 舵机3 ±10° 4Hz 8次摆动
     poses.stand()               # 恢复 C 层 IK 站姿
+    poses.fwd()                 # 前进 (KittenBlock 极短接口)
+
+KittenBlock 在线 REPL 模式串口易丢字, 所有积木 pycode 必须 ≤15 字符,
+因此提供短名函数: fwd/bwd/tl/tr/stp/spd/stride/hgt/lift/gait/step/pose/osc/dly
 """
 
 import bpuppy_servo
@@ -28,7 +31,14 @@ RH_HIP, RH_KNEE = 6, 7
 # ---- 全局状态 ----
 _pose_buf = [None] * 8      # 用户逐通道设置的目标角度，None=不修改
 _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_FRAME 一致
+_speed = 2.5
+_stride = 70
+_height = 70
 
+
+# ============================================================
+# 运动控制 (KittenBlock 极短接口)
+# ============================================================
 
 def ensure_motion():
     """启动 motion task (幂等), 平滑站起"""
@@ -51,6 +61,36 @@ def stop_motion():
     bpuppy_motion.emergency_stop()
 
 
+# ---- KittenBlock 短名 ----
+def fwd():  go(_speed, _stride, _height, 0)
+def bwd():  go(_speed, -_stride, _height, 0)
+def tl():   go(_speed, _stride, _height, -0.8)
+def tr():   go(_speed, _stride, _height, 0.8)
+def stp():  bpuppy_motion.emergency_stop()
+def spd(n):
+    global _speed
+    _speed = float(n)
+def stride(n):
+    global _stride
+    _stride = float(n)
+def hgt(n):
+    global _height
+    _height = float(n)
+def lift(n):
+    bpuppy_motion.set_lift(float(n))
+def gait(name):
+    """切换步态: 统一重置 turn 和参数, 消除转弯状态残留"""
+    if name == 'stand':
+        stand()
+        return
+    ensure_motion()
+    bpuppy_motion.set_params(_speed, _stride, _height)
+    bpuppy_motion.set_turn(0)
+    bpuppy_motion.set_gait(name)
+def dly(n):
+    time.sleep(n)
+
+
 # ============================================================
 # 原子操作
 # ============================================================
@@ -66,10 +106,18 @@ def set_step(n):
     _pose_step = float(n)
 
 
+def step(n):
+    set_step(n)
+
+
 def read_pose():
     """读取所有舵机当前位置填入 buffer"""
     for ch in range(8):
         _pose_buf[ch] = bpuppy_servo.get_angle(ch)
+
+
+def pose():
+    read_pose()
 
 
 # ============================================================
@@ -133,20 +181,19 @@ def go_to(targets, step=3.0):
 # ============================================================
 
 def oscillate(ch, amp, hz, cycles):
-    """
-    单舵机正弦摆动: 在当前位置基础上 ±amp°, 频率 hz, 循环 cycles 次。
-    多次摆动之间不归零——起始值=当前舵机实际角度。
-    """
+    """单舵机正弦摆动: 先急停, 在当前位置 ±amp°, 频率 hz, 循环 cycles 次"""
+    bpuppy_motion.emergency_stop()
+    time.sleep_ms(30)
     center = bpuppy_servo.get_angle(ch)
-    period = 1.0 / hz
-    frames_per_cycle = int(period / 0.02)  # 50Hz
-    total_frames = frames_per_cycle * int(cycles)
-
-    for i in range(total_frames):
-        t = i / frames_per_cycle * 2.0 * math.pi * cycles / cycles
-        val = center + amp * math.sin(t * cycles / frames_per_cycle * 2.0 * math.pi)
+    frames = int(round(50.0 * hz * cycles))  # 50帧/秒 × 秒数
+    for i in range(frames):
+        val = center + amp * math.sin(2.0 * math.pi * hz * i / 50.0)
         bpuppy_servo.set_angle(ch, val)
         time.sleep_ms(20)
+
+
+def osc(ch, amp, hz, cycles):
+    oscillate(ch, amp, hz, cycles)
 
 
 # ============================================================
@@ -186,15 +233,11 @@ def play():
     go_to(PLAY)
     time.sleep_ms(100)
 
-    # 后腿双膝同步摆动: LH_KNEE=3, RH_KNEE=7
     cur_lh = bpuppy_servo.get_angle(LH_KNEE)
     cur_rh = bpuppy_servo.get_angle(RH_KNEE)
-    period = 1.0 / 4.0  # 4Hz
-    frames = int(period / 0.02) * 8  # 8 cycles
-
+    frames = int(round(50.0 * 4.0 * 2.0))  # 4Hz × 2s = 8 次
     for i in range(frames):
-        t = i / 50.0  # 秒
-        wiggle = math.sin(t * 4.0 * 2.0 * math.pi) * 10.0
+        wiggle = math.sin(2.0 * math.pi * 4.0 * i / 50.0) * 10.0
         bpuppy_servo.group_begin()
         bpuppy_servo.group_add(LH_KNEE, cur_lh + wiggle)
         bpuppy_servo.group_add(RH_KNEE, cur_rh + wiggle)
@@ -207,25 +250,18 @@ def wave():
     go_to(SIT)
     time.sleep_ms(300)
 
-    # 后腿到位 (sit 基底下调大腿)
-    go_to([None, None, 48, None, None, None, 132, None], step=3.0)
+    # 后腿大腿到位 + 右前腿抬起 (限速平滑)
+    # [LF_HIP, LF_KNEE, LH_HIP, LH_KNEE, RF_HIP, RF_KNEE, RH_HIP, RH_KNEE]
+    go_to([None, None, 48, None, 150, 45, 132, None], step=3.0)
     time.sleep_ms(600)
 
-    # 右前腿抬起 + 摆动 3 次
-    cur_rf = bpuppy_servo.get_angle(RF_KNEE)
-    bpuppy_servo.set_angle(RF_HIP, 150)
-    bpuppy_servo.set_angle(RF_KNEE, 45)
-
-    period = 1.0 / 1.0  # 1Hz
-    frames = int(period / 0.02) * 3  # 3 cycles
+    # RF_KNEE 1Hz 摆动 3 次 (从 45° 起)
+    frames = int(round(50.0 * 1.0 * 3.0))
     for i in range(frames):
-        t = i / 50.0
-        wave_knee = math.sin(t * 1.0 * 2.0 * math.pi) * 10.0
+        wave_knee = math.sin(2.0 * math.pi * 1.0 * i / 50.0) * 10.0
         bpuppy_servo.set_angle(RF_KNEE, 45 + wave_knee)
         time.sleep_ms(20)
 
-    # 后腿恢复
-    bpuppy_servo.set_angle(RF_KNEE, cur_rf)
-    time.sleep_ms(500)
-
+    # 回到 sit
+    time.sleep_ms(300)
     go_to(SIT)

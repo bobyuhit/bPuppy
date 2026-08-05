@@ -124,7 +124,8 @@ class HiwonderBLE:
                 return
             if a == 3:
                 print("[BLE] stand")
-                bpuppy_motion.stand_up()
+                import poses
+                poses.stand()
             elif a == 4:
                 print("[BLE] crouch")
                 import poses
@@ -143,19 +144,17 @@ class HiwonderBLE:
             self._last_dir = d
             turn = {1: 0.75, 2: 0.25, 4: -0.25, 5: -0.75,
                     6: -0.25, 8: 0.25}.get(d, 0)
-            bpuppy_motion.set_turn(turn)
 
             # stride 符号决定方向: 正=前, 负=后  (GO 忽略 stride 值，但后续会用到)
             stride_dir = -70 if d in (6, 7, 8) else 70
 
             print("[BLE] 方向=%d speed=%.1f stride=%d turn=%.1f" % (d, s, stride_dir, turn))
+            import poses
             if d == 0:
-                bpuppy_motion.set_params(0, 0, 70)  # speed=0, 保持站立高度
-                bpuppy_motion.set_gait("stand")
+                poses.stp()  # 停止 (急停, 保持当前位置)
                 self._moving = False
             else:
-                bpuppy_motion.set_params(s, stride_dir, 70)  # stride/height 由 GO 自适应
-                bpuppy_motion.set_gait("go")
+                poses.go(s, stride_dir, 70, turn)  # ensure_motion + 前进/转向
                 self._moving = True
 
         elif cmd_id == 4:
