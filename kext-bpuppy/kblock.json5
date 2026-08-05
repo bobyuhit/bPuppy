@@ -8,31 +8,31 @@
       opcode: 'forward',
       blockType: 'command',
       text: '前进',
-      pycode: "poses.go(_speed,_stride,_height)"
+      pycode: "poses.go(_speed,_stride,_height)\n"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '后退',
-      pycode: "poses.go(_speed,-abs(_stride),_height)"
+      pycode: "poses.go(_speed,-abs(_stride),_height)\n"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
       text: '左转',
-      pycode: "poses.go(_speed,_stride,_height,-0.8)"
+      pycode: "poses.go(_speed,_stride,_height,-0.8)\n"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
       text: '右转',
-      pycode: "poses.go(_speed,_stride,_height,0.8)"
+      pycode: "poses.go(_speed,_stride,_height,0.8)\n"
     },
     {
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "poses.stop_motion()"
+      pycode: "poses.stop_motion()\n"
     },
     "---",
     "## 参数",
@@ -46,7 +46,7 @@
           defaultValue: '2.5'
         }
       },
-      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)'
+      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)\n'
     },
     {
       opcode: 'setStride',
@@ -58,7 +58,7 @@
           defaultValue: '70'
         }
       },
-      pycode: '_stride = [STRIDE]'
+      pycode: '_stride = [STRIDE]\n'
     },
     {
       opcode: 'setHeight',
@@ -70,7 +70,7 @@
           defaultValue: '70'
         }
       },
-      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)'
+      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)\n'
     },
     {
       opcode: 'setLift',
@@ -82,7 +82,7 @@
           defaultValue: '30'
         }
       },
-      pycode: 'bpuppy_motion.set_lift([LIFT])'
+      pycode: 'bpuppy_motion.set_lift([LIFT])\n'
     },
     "---",
     "## 步态",
@@ -97,7 +97,7 @@
           defaultValue: 'go'
         }
       },
-      pycode: "poses.ensure_motion(); bpuppy_motion.set_gait([GAIT])"
+      pycode: "poses.ensure_motion(); bpuppy_motion.set_gait([GAIT])\n"
     },
     "---",
     "## 姿态动作",
@@ -105,31 +105,31 @@
       opcode: 'crouch',
       blockType: 'command',
       text: '蹲下',
-      pycode: "poses.crouch()"
+      pycode: "poses.crouch()\n"
     },
     {
       opcode: 'sit',
       blockType: 'command',
       text: '坐下',
-      pycode: "poses.sit()"
+      pycode: "poses.sit()\n"
     },
     {
       opcode: 'stand',
       blockType: 'command',
       text: '站立',
-      pycode: "poses.stand()"
+      pycode: "poses.stand()\n"
     },
     {
       opcode: 'playBow',
       blockType: 'command',
       text: '邀玩',
-      pycode: "poses.play()"
+      pycode: "poses.play()\n"
     },
     {
       opcode: 'waveBlock',
       blockType: 'command',
       text: '挥手',
-      pycode: "poses.wave()"
+      pycode: "poses.wave()\n"
     },
     "---",
     "## 舵机编辑",
@@ -148,7 +148,7 @@
           defaultValue: '90'
         }
       },
-      pycode: 'poses.set([SERVO], [ANGLE])'
+      pycode: 'poses.set([SERVO], [ANGLE])\n'
     },
     {
       opcode: 'setStep',
@@ -160,19 +160,19 @@
           defaultValue: '3'
         }
       },
-      pycode: 'poses.set_step([STEP])'
+      pycode: 'poses.set_step([STEP])\n'
     },
     {
       opcode: 'commitPose',
       blockType: 'command',
       text: '执行姿态',
-      pycode: 'poses.commit()'
+      pycode: 'poses.commit()\n'
     },
     {
       opcode: 'readPose',
       blockType: 'command',
       text: '读取当前姿态',
-      pycode: 'poses.read_pose()'
+      pycode: 'poses.read_pose()\n'
     },
     "---",
     "## 动作",
@@ -199,7 +199,7 @@
           defaultValue: '8'
         }
       },
-      pycode: 'poses.oscillate([SERVO2], [AMP], [HZ], [CYCLES])'
+      pycode: 'poses.oscillate([SERVO2], [AMP], [HZ], [CYCLES])\n'
     },
     {
       opcode: 'waitSec',
@@ -211,7 +211,7 @@
           defaultValue: '1'
         }
       },
-      pycode: 'sleep([SEC])'
+      pycode: 'sleep([SEC])\n'
     }
   ],
   menus: {
