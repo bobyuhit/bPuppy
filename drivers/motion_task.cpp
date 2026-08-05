@@ -547,12 +547,18 @@ void motion_set_gait(gait_type_t gait)
         // 任何步态指令 → 自动进入运动模式 (Python 无需显式切换)
         motion_set_mode(MODE_MOTION);
         g_motion.enabled = true;
-        // 运动步态 → 静态步态: 先减速停, 延迟切换 (统一减速停, 减到 0 再收脚)
+        // 运动步态 → 静态步态:
+        //   GO: 先减速停 (g_stride_smooth 平滑步长归零再切)
+        //   TROT/WALK: 无平滑步长, 立即切 GAIT_STOP (限速逼近站姿)
         if (is_static_gait(gait) && !is_static_gait(g_motion.gait)) {
-            if (!g_stop_decel) {
-                g_stop_decel = true;
-                g_pending_gait = gait;
+            if (g_motion.gait == GAIT_GO) {
+                if (!g_stop_decel) {
+                    g_stop_decel = true;
+                    g_pending_gait = gait;
+                }
+                return;
             }
+            g_motion.gait = gait;   // TROT/WALK → STOP 立即切
             return;
         }
         // 静态→运动 或 同态切换: 立即生效, 并取消挂起的减速停
