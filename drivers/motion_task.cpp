@@ -645,26 +645,26 @@ static bool motion_validate_params(float stride, float height, float lift)
         bad = true;
     }
 
-    // 遍历足端极端位置 (前后 x=±stride/2, 着地 z=height / 抬腿 z=height-lift)
-    // 检查每条腿髋/膝角是否超限 (含抬腿最高点)
+    // 遍历足端实际摆动轨迹采样点 (非笛卡尔积!)
+    // 摆动相: x=-S/2+S·ease, z=height-lift·sin(ease·π)
+    //   x 最远时 z=height(着地), 抬腿最高时 x 在中点 — 实际轨迹
     if (stride != 0.0f) {
-        float zs[2] = { height, height - lift };
-        for (int i = 0; i < 2; i++) {
-            float xv = (i == 0) ? -x : x;
+        float ease_pts[5] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+        for (int i = 0; i < 5; i++) {
+            float ease = ease_pts[i];
+            float xv = -x + 2.0f * x * ease;
             xv += g_motion.center_offset;
-            for (int j = 0; j < 2; j++) {
-                float zv = zs[j];
-                if (zv < 0.0f) {
-                    ESP_LOGW(TAG, "⚠ 抬腿过度: height-lift=%.0f < 0, 参数未写入", zv);
+            float zv = height - lift * sinf(ease * (float)M_PI);
+            if (zv < 0.0f) {
+                ESP_LOGW(TAG, "⚠ 抬腿过度: height-lift=%.0f < 0, 参数未写入", zv);
+                bad = true;
+                continue;
+            }
+            for (int k = 0; k < 4; k++) {
+                if (ik_pos_check(xv, zv, leg_side[k], leg_pair[k], L1, L2)) {
+                    ESP_LOGW(TAG, "⚠ 足端 (x=%.0f z=%.0f) 髋/膝超限, 参数未写入 (stride=%.0f height=%.0f lift=%.0f)",
+                             xv, zv, stride, height, lift);
                     bad = true;
-                    continue;
-                }
-                for (int k = 0; k < 4; k++) {
-                    if (ik_pos_check(xv, zv, leg_side[k], leg_pair[k], L1, L2)) {
-                        ESP_LOGW(TAG, "⚠ 足端 (x=%.0f z=%.0f) 髋/膝超限, 参数未写入 (stride=%.0f height=%.0f lift=%.0f)",
-                                 xv, zv, stride, height, lift);
-                        bad = true;
-                    }
                 }
             }
         }
