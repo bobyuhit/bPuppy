@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n# ===== bPuppy 自动初始化 =====\n_speed = 2.5\n_stride = 70\n_height = 70\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nbpuppy_servo.set_angle(0, 135); bpuppy_servo.set_angle(1, 45)\nbpuppy_servo.set_angle(2, 45); bpuppy_servo.set_angle(3, 135)\nbpuppy_servo.set_angle(4, 45); bpuppy_servo.set_angle(5, 135)\nbpuppy_servo.set_angle(6, 135); bpuppy_servo.set_angle(7, 45)\nbpuppy_motion.start()\nbpuppy_motion.stand_up()\ntime.sleep(1)'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n# ===== bPuppy 自动初始化 =====\n_speed = 2.5\n_stride = 70\n_height = 70\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\n# 舵机初始蹲姿, 不启动 motion\nposes.set(0,135); poses.set(1,45)\nposes.set(2,45); poses.set(3,135)\nposes.set(4,45); poses.set(5,135)\nposes.set(6,135); poses.set(7,45)\nposes.commit()\n\ndef _ensure_motion():\n    if not bpuppy_motion.is_running():\n        bpuppy_motion.start()\n        bpuppy_motion.stand_up()\n        sleep(1)'},
   },
   blocks: [
     "## 运动",
@@ -8,31 +8,31 @@
       opcode: 'forward',
       blockType: 'command',
       text: '前进',
-      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "_ensure_motion(); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '后退',
-      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
+      pycode: "_ensure_motion(); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
       text: '左转',
-      pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "_ensure_motion(); bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
       text: '右转',
-      pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "_ensure_motion(); bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_gait('stand')"
+      pycode: "bpuppy_motion.emergency_stop()"
     },
     "---",
     "## 参数",
@@ -97,7 +97,7 @@
           defaultValue: 'go'
         }
       },
-      pycode: "bpuppy_motion.set_gait([GAIT])"
+      pycode: "_ensure_motion(); bpuppy_motion.set_gait([GAIT])"
     },
     "---",
     "## 姿态动作",
@@ -105,31 +105,113 @@
       opcode: 'crouch',
       blockType: 'command',
       text: '蹲下',
-      pycode: "bpuppy_motion.set_gait('crouch')"
+      pycode: "poses.crouch()"
     },
     {
       opcode: 'sit',
       blockType: 'command',
       text: '坐下',
-      pycode: "bpuppy_motion.set_gait('sit')"
+      pycode: "poses.sit()"
     },
     {
       opcode: 'stand',
       blockType: 'command',
       text: '站立',
-      pycode: "bpuppy_motion.set_gait('stand')"
+      pycode: "poses.stand()"
     },
     {
       opcode: 'playBow',
       blockType: 'command',
       text: '邀玩',
-      pycode: "bpuppy_motion.set_gait('play')"
+      pycode: "poses.play()"
     },
     {
       opcode: 'waveBlock',
       blockType: 'command',
       text: '挥手',
-      pycode: "bpuppy_motion.set_gait('wave')"
+      pycode: "poses.wave()"
+    },
+    "---",
+    "## 舵机编辑",
+    {
+      opcode: 'setServo',
+      blockType: 'command',
+      text: '舵机 [SERVO] 设为 [ANGLE]°',
+      arguments: {
+        SERVO: {
+          type: 'string',
+          menu: 'servoMenu',
+          defaultValue: '0'
+        },
+        ANGLE: {
+          type: 'number',
+          defaultValue: '90'
+        }
+      },
+      pycode: 'poses.set([SERVO], [ANGLE])'
+    },
+    {
+      opcode: 'setStep',
+      blockType: 'command',
+      text: '过渡速度 [STEP]°/帧',
+      arguments: {
+        STEP: {
+          type: 'number',
+          defaultValue: '3'
+        }
+      },
+      pycode: 'poses.set_step([STEP])'
+    },
+    {
+      opcode: 'commitPose',
+      blockType: 'command',
+      text: '执行姿态',
+      pycode: 'poses.commit()'
+    },
+    {
+      opcode: 'readPose',
+      blockType: 'command',
+      text: '读取当前姿态',
+      pycode: 'poses.read_pose()'
+    },
+    "---",
+    "## 动作",
+    {
+      opcode: 'oscillate',
+      blockType: 'command',
+      text: '摆动 [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]次',
+      arguments: {
+        SERVO2: {
+          type: 'string',
+          menu: 'servoMenu',
+          defaultValue: '1'
+        },
+        AMP: {
+          type: 'number',
+          defaultValue: '10'
+        },
+        HZ: {
+          type: 'number',
+          defaultValue: '4'
+        },
+        CYCLES: {
+          type: 'number',
+          defaultValue: '8'
+        }
+      },
+      pycode: 'poses.oscillate([SERVO2], [AMP], [HZ], [CYCLES])'
+    },
+    {
+      opcode: 'waitSec',
+      blockType: 'command',
+      text: '等待 [SEC] 秒',
+      arguments: {
+        SEC: {
+          type: 'number',
+          defaultValue: '1'
+        }
+      },
+      pycode: 'sleep([SEC])'
     }
   ],
   menus: {
@@ -137,8 +219,17 @@
       { text: '自适应', value: 'go' },
       { text: '猫步',   value: 'walk' },
       { text: '小跑',   value: 'trot' },
-      { text: '站立',   value: 'stand' },
-      { text: '蹲下',   value: 'crouch' }
+      { text: '站立',   value: 'stand' }
+    ],
+    servoMenu: [
+      { text: '左前大腿 LF_HIP',   value: '0' },
+      { text: '左前小腿 LF_KNEE',  value: '1' },
+      { text: '左后大腿 LH_HIP',   value: '2' },
+      { text: '左后小腿 LH_KNEE',  value: '3' },
+      { text: '右前大腿 RF_HIP',   value: '4' },
+      { text: '右前小腿 RF_KNEE',  value: '5' },
+      { text: '右后大腿 RH_HIP',   value: '6' },
+      { text: '右后小腿 RH_KNEE',  value: '7' }
     ]
   }
 }

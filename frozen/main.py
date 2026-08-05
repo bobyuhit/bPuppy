@@ -92,24 +92,18 @@ except ImportError as e:
 #   BLE         由 ble_hiwonder.HiwonderBLE() 构造时自动启动
 #   WiFi 遥控   上电自动开启 (见下), 纯遥控不开摄像头
 
-# 运动控制 — 上电自动站立
+# 运动控制 — 蹲姿待命 (不自动启动 motion, 由用户/KittenBlock 控制)
 try:
     import bpuppy_motion
-    # 先将舵机设到蹲姿，避免 start() 瞬间跳变
-    # 注意: 改 ik.h IK_KNEE_REAR_FORWARD 后需同时切换下面两行
-    # 四腿后弯 (IK_KNEE_REAR_FORWARD=0):
-    # bpuppy_servo.set_angle(0, 135);  bpuppy_servo.set_angle(1, 45)   # LF
-    # bpuppy_servo.set_angle(2, 135);  bpuppy_servo.set_angle(3, 45)   # LH
-    # bpuppy_servo.set_angle(4, 45);   bpuppy_servo.set_angle(5, 135)  # RF
-    # bpuppy_servo.set_angle(6, 45);   bpuppy_servo.set_angle(7, 135)  # RH
+    import poses
+    # 先将舵机设到蹲姿
     # 后腿前弯 (IK_KNEE_REAR_FORWARD=1):
     bpuppy_servo.set_angle(0, 135);  bpuppy_servo.set_angle(1, 45)   # LF: hip后指 knee后折
     bpuppy_servo.set_angle(2, 45);   bpuppy_servo.set_angle(3, 135)  # LH: hip前指 knee前凸
     bpuppy_servo.set_angle(4, 45);   bpuppy_servo.set_angle(5, 135)  # RF: hip前指 knee后折
     bpuppy_servo.set_angle(6, 135);  bpuppy_servo.set_angle(7, 45)   # RH: hip后指 knee前凸
-    bpuppy_motion.start()
-    bpuppy_motion.stand_up()
     modules_loaded.append("motion")
+    modules_loaded.append("poses")
 except ImportError as e:
     modules_failed.append(("motion", e))
 
@@ -137,6 +131,7 @@ except Exception:
     pass
 
 print("Ready.")
-print(">>> bpuppy_motion.set_gait('go')   # 自适应前进")
-print(">>> bpuppy_motion.set_gait('sit')  # 蹲下")
+print(">>> import poses; poses.crouch()  # 蹲伏姿态")
+print(">>> poses.stand(); bpuppy_motion.set_gait('go')  # 站起 → 自适应前进")
+print(">>> import camera_stream; camera_stream.start()  # WiFi 遥控")
 print()

@@ -330,8 +330,9 @@ def _parse_cmd(path):
 
         # === 挥手 ===
         if "wave" in params:
-            bpuppy_motion.set_gait("wave")
-            _g_gait = "wave"
+            import poses
+            poses.wave()
+            _g_gait = "stand"
             return "OK:wave"
 
         # === 急停 ===
@@ -362,8 +363,13 @@ def _parse_cmd(path):
         # === 步态切换 ===
         if "gait" in params:
             g = params["gait"]
-            bpuppy_motion.set_gait(g)
-            _g_gait = g
+            if g in ("crouch", "sit", "play"):
+                import poses
+                getattr(poses, g)()  # poses.crouch() / poses.sit() / poses.play()
+                _g_gait = "stand"
+            else:
+                bpuppy_motion.set_gait(g)
+                _g_gait = g
             return "OK:gait"
 
         # === 方向/移动指令：应用所有已存值 ===
@@ -639,6 +645,6 @@ def state():
 
 def wave():
     """挥手: 坐下 → 右前膝摆动 3 次 → 回坐"""
-    import bpuppy_motion
-    bpuppy_motion.set_gait("wave")
+    import poses
+    poses.wave()
     print("wave done")

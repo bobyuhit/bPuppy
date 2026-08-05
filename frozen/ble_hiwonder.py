@@ -127,7 +127,8 @@ class HiwonderBLE:
                 bpuppy_motion.stand_up()
             elif a == 4:
                 print("[BLE] crouch")
-                bpuppy_motion.set_gait("crouch")
+                import poses
+                poses.crouch()
 
         elif cmd_id == 3:
             try:

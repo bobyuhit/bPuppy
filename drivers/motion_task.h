@@ -24,14 +24,9 @@ typedef enum {
     GAIT_WALK,          // 猫步 (speed>0前进, speed<0后退)
     GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
     GAIT_GO,            // 自适应 (speed<5→walk, speed>10→trot, 之间插值)
-    GAIT_CRAWL,         // 爬行
-    GAIT_BOUND,         // 跳跃
-    GAIT_CROUCH,           // 蹲伏
-    GAIT_SIT,           // 猫坐 (前腿撑, 后腿折)
-    GAIT_PLAY_BOW,      // 邀玩 (前低后高, 前腿趴后腿站)
+    // 以下未暴露到 MicroPython
     GAIT_STAND_UP,      // 蹲→站过渡（缓动插值, 自动切换 GAIT_STAND）
     GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
-    GAIT_WAVE,          // 挥手：坐下→右前膝 ±10 摆动 3 次→回坐
     GAIT_COUNT
 } gait_type_t;
 
@@ -123,6 +118,9 @@ void motion_set_turn(float turn);
 
 // 设置脚中位偏移 (正=前移, 负=后移)
 void motion_set_center(float offset);
+
+// 检查运动任务是否正在运行（enabled 且未急停）
+bool motion_is_running(void);
 
 // 急停
 void motion_emergency_stop(void);
