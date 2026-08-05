@@ -46,6 +46,36 @@ _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_F
 
 
 # ============================================================
+# KittenBlock 共享参数 (在线执行时 libs 不注入, 由 poses 维护)
+# ============================================================
+
+_speed = 2.5
+_stride = 70
+_height = 70
+
+
+def speed(n=None):
+    global _speed
+    if n is not None:
+        _speed = float(n)
+    return _speed
+
+
+def stride(n=None):
+    global _stride
+    if n is not None:
+        _stride = float(n)
+    return _stride
+
+
+def height(n=None):
+    global _height
+    if n is not None:
+        _height = float(n)
+    return _height
+
+
+# ============================================================
 # 舵机编辑 (姿态)
 # ============================================================
 
