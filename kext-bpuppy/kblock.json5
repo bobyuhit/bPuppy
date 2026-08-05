@@ -216,10 +216,10 @@
   ],
   menus: {
     gaitMenu: [
-      { text: '自适应', value: 'go' },
-      { text: '猫步',   value: 'walk' },
-      { text: '小跑',   value: 'trot' },
-      { text: '站立',   value: 'stand' }
+      { text: '自适应', value: '1' },
+      { text: '猫步',   value: '2' },
+      { text: '小跑',   value: '3' },
+      { text: '站立',   value: '4' }
     ],
     servoMenu: [
       { text: '左前大腿 LF_HIP',   value: '0' },

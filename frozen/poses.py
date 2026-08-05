@@ -78,8 +78,9 @@ def hgt(n):
     _height = float(n)
 def lift(n):
     bpuppy_motion.set_lift(float(n))
-def gait(name):
-    """切换步态: 统一重置 turn 和参数, 消除转弯状态残留"""
+def gait(n):
+    """切换步态: 数字参数 (1=go 2=walk 3=trot 4=stand), 统一重置 turn"""
+    name = {1: 'go', 2: 'walk', 3: 'trot', 4: 'stand'}.get(int(float(n)), 'go')
     if name == 'stand':
         stand()
         return

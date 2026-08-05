@@ -67,7 +67,7 @@ static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ct
                     g_rx_head = (g_rx_head + 1) % RX_BUF_SIZE;
                 }
                 xSemaphoreGive(g_rx_mutex);
-                ESP_LOGI(TAG, "RX: %s", buf);
+                // 注意: 不打日志! 蓝牙 REPL 模式下每条命令都会打印, 刷屏并干扰 USB CDC 输出
             }
         }
     }
