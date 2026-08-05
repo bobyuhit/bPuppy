@@ -789,6 +789,7 @@ void motion_set_mode(motion_mode_t mode)
     g_mode = mode;
     switch (mode) {
     case MODE_MOTION:
+        if (g_task_handle == NULL) motion_task_start();   // 幂等: 确保 task 已创建
         // 从 POSE/IDLE 切回时同步 g_smooth_angles 到真实舵机角, 防跳变
         for (int i = 0; i < 8; i++) {
             g_smooth_angles[i] = servo_get_angle(i);

@@ -141,7 +141,8 @@ def oscillate(ch, amp, hz, cycles):
     """单舵机正弦摆动: 写舵机自动切 POSE, 在当前位置 ±amp°, 频率 hz, 循环 cycles 次"""
     time.sleep_ms(30)
     center = bpuppy_servo.get_angle(ch)
-    frames = int(round(50.0 * hz * cycles))  # 50帧/秒 × 秒数
+    # 帧数 = 50帧/秒 × 次数 / 频率 (每周期 50/hz 帧)
+    frames = int(round(50.0 * cycles / hz))
     for i in range(frames):
         val = center + amp * math.sin(2.0 * math.pi * hz * i / 50.0)
         bpuppy_servo.set_angle(ch, val)
@@ -191,7 +192,7 @@ def play():
 
     cur_lh = bpuppy_servo.get_angle(LH_KNEE)
     cur_rh = bpuppy_servo.get_angle(RH_KNEE)
-    frames = int(round(50.0 * 4.0 * 2.0))  # 4Hz × 2s = 8 次
+    frames = int(round(50.0 * 8.0 / 4.0))  # 8次 @ 4Hz = 100帧 = 2秒
     for i in range(frames):
         wiggle = math.sin(2.0 * math.pi * 4.0 * i / 50.0) * 10.0
         bpuppy_servo.group_begin()
@@ -212,7 +213,7 @@ def wave():
     time.sleep_ms(600)
 
     # RF_KNEE 1Hz 摆动 3 次 (从 45° 起)
-    frames = int(round(50.0 * 1.0 * 3.0))
+    frames = int(round(50.0 * 3.0 / 1.0))  # 3次 @ 1Hz = 150帧 = 3秒
     for i in range(frames):
         wave_knee = math.sin(2.0 * math.pi * 1.0 * i / 50.0) * 10.0
         bpuppy_servo.set_angle(RF_KNEE, 45 + wave_knee)
