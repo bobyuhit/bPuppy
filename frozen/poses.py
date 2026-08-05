@@ -1,18 +1,19 @@
 """
 poses.py — bPuppy 姿态与动态动作 (Python 层)
 
+函数名是唯一接口: PC 串口 REPL、KittenBlock 积木、上层调用 (camera_stream/
+ble_hiwonder) 都调用同一套名字, 完全一致。
+
 用法:
     import poses
-    poses.set(0, 135)           # 设置舵机 0 目标 135°
+    poses.set_servo(0, 135)     # 设置舵机 0 目标 135°
     poses.commit()              # 平滑逼近并执行
     poses.crouch()              # 预定义: 蹲伏
     poses.sit()                 # 预定义: 猫坐
-    poses.osc(3, 10, 4, 8)      # 舵机3 ±10° 4Hz 8次摆动
+    poses.oscillate(3, 10, 4, 8)  # 舵机3 ±10° 4Hz 8次摆动
+    poses.forward()             # 前进
+    poses.gait('walk')          # 切换步态
     poses.stand()               # 恢复 C 层 IK 站姿
-    poses.fwd()                 # 前进 (KittenBlock 极短接口)
-
-KittenBlock 在线 REPL 模式串口易丢字, 所有积木 pycode 必须 ≤15 字符,
-因此提供短名函数: fwd/bwd/tl/tr/stp/spd/stride/hgt/lift/gait/step/pose/osc/dly
 """
 
 import bpuppy_servo
@@ -37,7 +38,7 @@ _height = 70
 
 
 # ============================================================
-# 运动控制 (KittenBlock 极短接口)
+# 运动控制
 # ============================================================
 
 def ensure_motion():
@@ -49,38 +50,54 @@ def ensure_motion():
 
 
 def go(speed=2.5, stride=70, height=70, turn=0):
-    """快捷: 启动 motion + 自适应前进"""
+    """核心运动: 启动 motion + 设参数 + 转弯 + 自适应前进"""
     ensure_motion()
     bpuppy_motion.set_params(speed, stride, height)
     bpuppy_motion.set_turn(turn)
     bpuppy_motion.set_gait('go')
 
 
-def stop_motion():
-    """快捷: 停止 motion"""
+def forward():
+    go(_speed, _stride, _height, 0)
+
+
+def backward():
+    go(_speed, -_stride, _height, 0)
+
+
+def turn_left():
+    go(_speed, _stride, _height, -0.8)
+
+
+def turn_right():
+    go(_speed, _stride, _height, 0.8)
+
+
+def stop():
     bpuppy_motion.emergency_stop()
 
 
-# ---- KittenBlock 短名 ----
-def fwd():  go(_speed, _stride, _height, 0)
-def bwd():  go(_speed, -_stride, _height, 0)
-def tl():   go(_speed, _stride, _height, -0.8)
-def tr():   go(_speed, _stride, _height, 0.8)
-def stp():  bpuppy_motion.emergency_stop()
-def spd(n):
+def speed(n):
     global _speed
     _speed = float(n)
+
+
 def stride(n):
     global _stride
     _stride = float(n)
-def hgt(n):
+
+
+def height(n):
     global _height
     _height = float(n)
+
+
 def lift(n):
     bpuppy_motion.set_lift(float(n))
-def gait(n):
-    """切换步态: 数字参数 (1=go 2=walk 3=trot 4=stand), 统一重置 turn"""
-    name = {1: 'go', 2: 'walk', 3: 'trot', 4: 'stand'}.get(int(float(n)), 'go')
+
+
+def gait(name):
+    """切换步态: 字符串参数 ('go'/'walk'/'trot'/'stand'), 统一重置 turn"""
     if name == 'stand':
         stand()
         return
@@ -88,15 +105,17 @@ def gait(n):
     bpuppy_motion.set_params(_speed, _stride, _height)
     bpuppy_motion.set_turn(0)
     bpuppy_motion.set_gait(name)
-def dly(n):
+
+
+def wait(n):
     time.sleep(n)
 
 
 # ============================================================
-# 原子操作
+# 舵机编辑 (姿态)
 # ============================================================
 
-def set(ch, deg):
+def set_servo(ch, deg):
     """设置某路舵机的目标角度（不立即执行，等 commit）"""
     _pose_buf[ch] = float(deg)
 
@@ -107,18 +126,10 @@ def set_step(n):
     _pose_step = float(n)
 
 
-def step(n):
-    set_step(n)
-
-
 def read_pose():
     """读取所有舵机当前位置填入 buffer"""
     for ch in range(8):
         _pose_buf[ch] = bpuppy_servo.get_angle(ch)
-
-
-def pose():
-    read_pose()
 
 
 # ============================================================
@@ -160,7 +171,7 @@ def _move_to(targets, step=3.0):
 def commit():
     """
     执行姿态: 先急停 motion task, 再从当前位置平滑逼近 _pose_buf。
-    没被 set() 修改的通道保持原位。
+    没被 set_servo() 修改的通道保持原位。
     """
     bpuppy_motion.emergency_stop()
     time.sleep_ms(50)
@@ -191,10 +202,6 @@ def oscillate(ch, amp, hz, cycles):
         val = center + amp * math.sin(2.0 * math.pi * hz * i / 50.0)
         bpuppy_servo.set_angle(ch, val)
         time.sleep_ms(20)
-
-
-def osc(ch, amp, hz, cycles):
-    oscillate(ch, amp, hz, cycles)
 
 
 # ============================================================

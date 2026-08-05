@@ -8,31 +8,31 @@
       opcode: 'forward',
       blockType: 'command',
       text: '前进',
-      pycode: "poses.fwd()"
+      pycode: "poses.forward()"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '后退',
-      pycode: "poses.bwd()"
+      pycode: "poses.backward()"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
       text: '左转',
-      pycode: "poses.tl()"
+      pycode: "poses.turn_left()"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
       text: '右转',
-      pycode: "poses.tr()"
+      pycode: "poses.turn_right()"
     },
     {
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "poses.stp()"
+      pycode: "poses.stop()"
     },
     "---",
     "## 参数",
@@ -46,7 +46,7 @@
           defaultValue: '2.5'
         }
       },
-      pycode: 'poses.spd([SPEED])'
+      pycode: 'poses.speed([SPEED])'
     },
     {
       opcode: 'setStride',
@@ -70,7 +70,7 @@
           defaultValue: '70'
         }
       },
-      pycode: 'poses.hgt([HEIGHT])'
+      pycode: 'poses.height([HEIGHT])'
     },
     {
       opcode: 'setLift',
@@ -148,7 +148,7 @@
           defaultValue: '90'
         }
       },
-      pycode: 'poses.set([SERVO],[ANGLE])'
+      pycode: 'poses.set_servo([SERVO],[ANGLE])'
     },
     {
       opcode: 'setStep',
@@ -160,7 +160,7 @@
           defaultValue: '3'
         }
       },
-      pycode: 'poses.step([STEP])'
+      pycode: 'poses.set_step([STEP])'
     },
     {
       opcode: 'commitPose',
@@ -172,7 +172,7 @@
       opcode: 'readPose',
       blockType: 'command',
       text: '读取当前姿态',
-      pycode: 'poses.pose()'
+      pycode: 'poses.read_pose()'
     },
     "---",
     "## 动作",
@@ -199,7 +199,7 @@
           defaultValue: '8'
         }
       },
-      pycode: 'poses.osc([SERVO2],[AMP],[HZ],[CYCLES])'
+      pycode: 'poses.oscillate([SERVO2],[AMP],[HZ],[CYCLES])'
     },
     {
       opcode: 'waitSec',
@@ -216,10 +216,10 @@
   ],
   menus: {
     gaitMenu: [
-      { text: '自适应', value: '1' },
-      { text: '猫步',   value: '2' },
-      { text: '小跑',   value: '3' },
-      { text: '站立',   value: '4' }
+      { text: '自适应', value: 'go' },
+      { text: '猫步',   value: 'walk' },
+      { text: '小跑',   value: 'trot' },
+      { text: '站立',   value: 'stand' }
     ],
     servoMenu: [
       { text: '左前大腿 LF_HIP',   value: '0' },

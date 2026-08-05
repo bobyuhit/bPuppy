@@ -151,7 +151,7 @@ class HiwonderBLE:
             print("[BLE] 方向=%d speed=%.1f stride=%d turn=%.1f" % (d, s, stride_dir, turn))
             import poses
             if d == 0:
-                poses.stp()  # 停止 (急停, 保持当前位置)
+                poses.stop()  # 停止 (急停, 保持当前位置)
                 self._moving = False
             else:
                 poses.go(s, stride_dir, 70, turn)  # ensure_motion + 前进/转向
