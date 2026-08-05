@@ -1,8 +1,8 @@
 """
-poses.py — bPuppy 姿态与动态动作 (Python 层)
+poses.py — bPuppy 姿态与舵机编辑 (Python 层)
 
-函数名是唯一接口: PC 串口 REPL、KittenBlock 积木、上层调用 (camera_stream/
-ble_hiwonder) 都调用同一套名字, 完全一致。
+分工: 运动/参数/步态用 bpuppy_motion 原语句 (与操作指南一致);
+      姿态 (C 层已删) + 舵机编辑 + 动态动作由本模块实现。
 
 用法:
     import poses
@@ -11,8 +11,7 @@ ble_hiwonder) 都调用同一套名字, 完全一致。
     poses.crouch()              # 预定义: 蹲伏
     poses.sit()                 # 预定义: 猫坐
     poses.oscillate(3, 10, 4, 8)  # 舵机3 ±10° 4Hz 8次摆动
-    poses.forward()             # 前进
-    poses.gait('walk')          # 切换步态
+    poses.ensure_motion()       # 运动前启动守卫 (配合 bpuppy_motion 使用)
     poses.stand()               # 恢复 C 层 IK 站姿
 """
 
@@ -32,83 +31,18 @@ RH_HIP, RH_KNEE = 6, 7
 # ---- 全局状态 ----
 _pose_buf = [None] * 8      # 用户逐通道设置的目标角度，None=不修改
 _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_FRAME 一致
-_speed = 2.5
-_stride = 70
-_height = 70
 
 
 # ============================================================
-# 运动控制
+# 运动启动守卫 (配合 bpuppy_motion 使用)
 # ============================================================
 
 def ensure_motion():
-    """启动 motion task (幂等), 平滑站起"""
+    """启动 motion task (幂等), 平滑站起。运动积木前调用。"""
     if not bpuppy_motion.is_running():
         bpuppy_motion.start()
         bpuppy_motion.stand_up()
         time.sleep(1)
-
-
-def go(speed=2.5, stride=70, height=70, turn=0):
-    """核心运动: 启动 motion + 设参数 + 转弯 + 自适应前进"""
-    ensure_motion()
-    bpuppy_motion.set_params(speed, stride, height)
-    bpuppy_motion.set_turn(turn)
-    bpuppy_motion.set_gait('go')
-
-
-def forward():
-    go(_speed, _stride, _height, 0)
-
-
-def backward():
-    go(_speed, -_stride, _height, 0)
-
-
-def turn_left():
-    go(_speed, _stride, _height, -0.8)
-
-
-def turn_right():
-    go(_speed, _stride, _height, 0.8)
-
-
-def stop():
-    bpuppy_motion.emergency_stop()
-
-
-def speed(n):
-    global _speed
-    _speed = float(n)
-
-
-def stride(n):
-    global _stride
-    _stride = float(n)
-
-
-def height(n):
-    global _height
-    _height = float(n)
-
-
-def lift(n):
-    bpuppy_motion.set_lift(float(n))
-
-
-def gait(name):
-    """切换步态: 字符串参数 ('go'/'walk'/'trot'/'stand'), 统一重置 turn"""
-    if name == 'stand':
-        stand()
-        return
-    ensure_motion()
-    bpuppy_motion.set_params(_speed, _stride, _height)
-    bpuppy_motion.set_turn(0)
-    bpuppy_motion.set_gait(name)
-
-
-def wait(n):
-    time.sleep(n)
 
 
 # ============================================================
@@ -209,8 +143,8 @@ def oscillate(ch, amp, hz, cycles):
 # ============================================================
 
 def stand():
-    """恢复 C 层 motion task，平滑过渡到 IK 站姿"""
-    bpuppy_motion.resume()
+    """恢复站姿: 启动 motion (若未跑) + 切 IK 站姿"""
+    ensure_motion()
     bpuppy_motion.set_gait("stand")
 
 

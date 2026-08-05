@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nposes.crouch()'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\nbpuppy_servo.init_all()\nbpuppy_servo.load_cal()\nposes.crouch()'},
   },
   blocks: [
     "## 运动",
@@ -8,31 +8,31 @@
       opcode: 'forward',
       blockType: 'command',
       text: '前进',
-      pycode: "poses.forward()"
+      pycode: "poses.ensure_motion(); bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '后退',
-      pycode: "poses.backward()"
+      pycode: "poses.ensure_motion(); bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
       text: '左转',
-      pycode: "poses.turn_left()"
+      pycode: "poses.ensure_motion(); bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
       text: '右转',
-      pycode: "poses.turn_right()"
+      pycode: "poses.ensure_motion(); bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'stop',
       blockType: 'command',
       text: '停止',
-      pycode: "poses.stop()"
+      pycode: "bpuppy_motion.emergency_stop()"
     },
     "---",
     "## 参数",
@@ -46,7 +46,7 @@
           defaultValue: '2.5'
         }
       },
-      pycode: 'poses.speed([SPEED])'
+      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)'
     },
     {
       opcode: 'setStride',
@@ -58,7 +58,7 @@
           defaultValue: '70'
         }
       },
-      pycode: 'poses.stride([STRIDE])'
+      pycode: '_stride = [STRIDE]'
     },
     {
       opcode: 'setHeight',
@@ -70,7 +70,7 @@
           defaultValue: '70'
         }
       },
-      pycode: 'poses.height([HEIGHT])'
+      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)'
     },
     {
       opcode: 'setLift',
@@ -82,7 +82,7 @@
           defaultValue: '30'
         }
       },
-      pycode: 'poses.lift([LIFT])'
+      pycode: 'bpuppy_motion.set_lift([LIFT])'
     },
     "---",
     "## 步态",
@@ -97,7 +97,7 @@
           defaultValue: 'go'
         }
       },
-      pycode: "poses.gait([GAIT])"
+      pycode: "poses.ensure_motion(); bpuppy_motion.set_turn(0); bpuppy_motion.set_gait([GAIT])"
     },
     "---",
     "## 姿态动作",

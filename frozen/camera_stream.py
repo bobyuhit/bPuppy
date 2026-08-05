@@ -368,7 +368,9 @@ def _parse_cmd(path):
                 _g_gait = "stand"
             else:
                 import poses
-                poses.gait(g)  # ensure_motion + set_gait
+                poses.ensure_motion()
+                bpuppy_motion.set_turn(0)
+                bpuppy_motion.set_gait(g)
                 _g_gait = g
             return "OK:gait"
 
@@ -384,10 +386,13 @@ def _parse_cmd(path):
         if "height" in params:
             _g_height = float(params["height"])
 
-        # 切 go (poses.go 内部 ensure_motion + set_turn, 保证转弯状态被正确设置)
+        # 切 go (ensure_motion 守卫 + 显式 set_turn, 保证转弯状态被正确设置)
         _g_gait = "go"
         import poses
-        poses.go(abs(_effective_speed()), _g_stride, _g_height, _g_turn)
+        poses.ensure_motion()
+        bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
+        bpuppy_motion.set_turn(_g_turn)
+        bpuppy_motion.set_gait("go")
 
     return "OK"
 

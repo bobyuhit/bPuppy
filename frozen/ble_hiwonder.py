@@ -151,10 +151,13 @@ class HiwonderBLE:
             print("[BLE] 方向=%d speed=%.1f stride=%d turn=%.1f" % (d, s, stride_dir, turn))
             import poses
             if d == 0:
-                poses.stop()  # 停止 (急停, 保持当前位置)
+                bpuppy_motion.emergency_stop()  # 停止 (急停, 保持当前位置)
                 self._moving = False
             else:
-                poses.go(s, stride_dir, 70, turn)  # ensure_motion + 前进/转向
+                poses.ensure_motion()  # 运动启动守卫
+                bpuppy_motion.set_params(s, stride_dir, 70)
+                bpuppy_motion.set_turn(turn)
+                bpuppy_motion.set_gait("go")
                 self._moving = True
 
         elif cmd_id == 4:
