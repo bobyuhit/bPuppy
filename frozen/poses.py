@@ -30,6 +30,28 @@ _pose_buf = [None] * 8      # 用户逐通道设置的目标角度，None=不修
 _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_FRAME 一致
 
 
+def ensure_motion():
+    """启动 motion task (幂等), 平滑站起"""
+    if not bpuppy_motion.is_running():
+        bpuppy_motion.start()
+        bpuppy_motion.stand_up()
+        time.sleep(1)
+
+
+def go(speed=2.5, stride=70, height=70, turn=0):
+    """快捷: 启动 motion + 自适应前进"""
+    ensure_motion()
+    bpuppy_motion.set_params(speed, stride, height)
+    if turn:
+        bpuppy_motion.set_turn(turn)
+    bpuppy_motion.set_gait('go')
+
+
+def stop_motion():
+    """快捷: 停止 motion"""
+    bpuppy_motion.emergency_stop()
+
+
 # ============================================================
 # 原子操作
 # ============================================================
