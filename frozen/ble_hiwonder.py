@@ -40,7 +40,7 @@ class HiwonderBLE:
 
     def __init__(self):
         self._on_cmd = None
-        self._speed = 0.0       # 当前速度 0-12
+        self._speed = 0.0       # 当前速度 0-10 (上限 10, motion 校验)
         self._moving = False    # 当前是否运动中
         self._last_dir = 0      # 上一方向
         self._balance = False   # 自稳开关
@@ -167,8 +167,9 @@ class HiwonderBLE:
             except ValueError:
                 return
             h = _rgb_to_hue(r, g, b)
-            # hue 两端都是 0°, 用 G 区分: 左端 G=0→speed=0, 右端 G>0→speed=12
-            self._speed = 12.0 if (h < 5.0 and g > 0) else ((360.0 - h) % 360.0) / 360.0 * 12.0
+            # hue 两端都是 0°, 用 G 区分: 左端 G=0→speed=0, 右端 G>0→speed=10
+            # speed 上限 10 (motion_set_params 校验 0~10, 超限被拒)
+            self._speed = 10.0 if (h < 5.0 and g > 0) else ((360.0 - h) % 360.0) / 360.0 * 10.0
 
             if self._moving:
                 stride_dir = -70 if self._last_dir in (6, 7, 8) else 70

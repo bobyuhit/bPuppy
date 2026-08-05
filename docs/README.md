@@ -179,7 +179,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序从站姿切入 |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
-| `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~12 |
+| `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~10 |
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
