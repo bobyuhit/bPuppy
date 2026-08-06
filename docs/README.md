@@ -402,7 +402,7 @@ python tools/capture.py COM3   # 端口换成实际值 (设备管理器查看)
 ### 2. `motion_set_params` 的参数语义
 
 - `speed` = 步频 (0~10, 0=停), 纯 magnitude
-- `stride` = 步幅+方向 (正=前, 零=原地踏步, 负=后)
+- `stride` = 步长+方向 (正=前, 零=原地踏步, 负=后)
 - `height` = 站立高度 (mm)
 
 三个参数始终直接写入，无哨兵。

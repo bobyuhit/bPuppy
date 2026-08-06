@@ -42,7 +42,7 @@ typedef struct {
     gait_type_t gait;           // 当前步态
     float       speed;          // 速度 (当前, 平滑后)
     float       target_speed;   // 速度 (目标)
-    float       stride;         // 步幅 (mm)
+    float       stride;         // 步长 (mm)
     float       height;         // 站立高度 (mm)
     float       lift_height;    // 抬腿高度 (mm)
     float       body_roll;      // 身体目标横滚角 (deg)

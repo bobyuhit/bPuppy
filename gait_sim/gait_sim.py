@@ -56,7 +56,7 @@ class GaitParams:
     """步态参数 — 对应 motion_state_t 中的核心字段"""
     duty: float       # 摆动相占比 [0~1]
     gap: float        # 同侧相位间隙
-    stride: float     # 步幅 mm
+    stride: float     # 步长 mm
     height: float     # 站立高度 mm
     lift: float       # 抬腿高度 mm
     direction: int = 1  # 1=前进, -1=后退
@@ -645,7 +645,7 @@ Examples:
     parser.add_argument("--gap", type=float, default=None,
                         help="同侧相位间隙 (walk=0.04, trot=0.10)")
     parser.add_argument("--stride", type=float, default=None,
-                        help="步幅 mm (walk=80, trot=60)")
+                        help="步长 mm (walk=80, trot=60)")
     parser.add_argument("--height", type=float, default=None,
                         help="站立高度 mm (walk=100, trot=80)")
     parser.add_argument("--lift", type=float, default=None,

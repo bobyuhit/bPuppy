@@ -311,7 +311,7 @@ blocks: [
   {
     opcode: 'setStride',
     blockType: 'command',
-    text: '步幅设为 [STRIDE]',
+    text: '步长设为 [STRIDE]',
     arguments: {
       STRIDE: { type: 'number', defaultValue: '70' }
     },
@@ -621,7 +621,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 分类 | 积木 | pycode 生成 |
 |------|------|------------|
 | 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
-| 参数 | 速度设为 / 步幅设为 / 高度设为 / 抬腿高度 | `_speed = [SPEED]; set_params(...)` / `set_lift` |
+| 参数 | 速度设为 / 步长设为 / 高度设为 / 抬腿高度 | `_speed = [SPEED]; set_params(...)` / `set_lift` |
 | 步态 | 切换步态 [下拉] | `set_turn(0); set_gait('[GAIT]')` |
 | 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
