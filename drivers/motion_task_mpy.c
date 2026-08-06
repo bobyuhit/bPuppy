@@ -36,8 +36,10 @@ STATIC mp_obj_t mp_motion_set_params(mp_obj_t speed_obj, mp_obj_t stride_obj,
     float stride = mp_obj_get_float(stride_obj);
     float height = mp_obj_get_float(height_obj);
     if ((stride > 0 || height > 0) && motion_check_params(stride, height)) {
-        mp_printf(&mp_plat_print, "⚠ 参数超限! stride=%.0f height=%.0f 被拒，保持原值\n",
-                  stride, height);
+        const motion_state_t *m = motion_get_state();
+        mp_printf(&mp_plat_print, "⚠ 参数超限! stride=%.0f height=%.0f 被拒, "
+                  "保持原值 speed=%.1f stride=%.0f height=%.0f\n",
+                  stride, height, m->target_speed, m->stride, m->height);
     }
     motion_set_params(mp_obj_get_float(speed_obj), stride, height);
     return mp_const_none;
