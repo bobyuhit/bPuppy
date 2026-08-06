@@ -4,7 +4,7 @@
  * 两种模式（编译互斥，见 micropython.cmake 编译宏）:
  *   BPUPPY_BLE_KEBLOCK  — KittenBlock 蓝牙 (Nordic UART + dupterm REPL)
  *       服务 6E400001: 6E400002 WRITE (PC→设备) / 6E400003 NOTIFY (设备→PC)
- *       广播含 0x6E40, 设备名 bPuppy_XX
+ *       广播含 0x6E40, 设备名 bPuppy_XXXX
  *   BPUPPY_BLE_HIWONDER — Hiwonder Wonderbot App (MechDog 协议)
  *       服务 0xFFE0: FFE1 WRITE (App→设备) / FFE2 NOTIFY (设备→App)
  *       广播含 0xFFE0, 设备名 mechdog_XX
@@ -240,7 +240,7 @@ void ble_driver_start(void) {
 #ifdef BPUPPY_BLE_HIWONDER
         snprintf(g_device_name, sizeof(g_device_name), "mechdog_%02X", mac[5]);
 #else
-        snprintf(g_device_name, sizeof(g_device_name), "bPuppy_%02X", mac[5]);
+        snprintf(g_device_name, sizeof(g_device_name), "bPuppy_%02X%02X", mac[4], mac[5]);
 #endif
 
         g_rx_mutex = xSemaphoreCreateMutex();

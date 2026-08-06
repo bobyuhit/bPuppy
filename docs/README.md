@@ -536,7 +536,7 @@ idf.py flash monitor       # 烧录并监控
 - [ ] 启动 banner 显示 "bPuppy Robot Dog - ESP32-S3"
 - [ ] 上电自动站立，无跳动
 - [ ] `import bpuppy; bpuppy.version()` 返回版本号
-- [ ] KittenBlock 模式 (`BPUPPY_BLE_KEBLOCK`): 广播 `bPuppy_XX`，KittenBlock 蓝牙可连（安卓/iPad Bluefy/PC）
+- [ ] KittenBlock 模式 (`BPUPPY_BLE_KEBLOCK`): 广播 `bPuppy_XXXX`，KittenBlock 蓝牙可连（安卓/iPad Bluefy/PC）
 - [ ] Hiwonder 模式 (`BPUPPY_BLE_HIWONDER`): 广播 `mechdog_XX`，Wonderbot App 可连
 - [ ] 蓝牙 REPL：`os.dupterm(None)` 返回 BLE 流对象（C 层自动注册）
 
