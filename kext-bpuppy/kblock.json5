@@ -64,7 +64,7 @@
     {
       opcode: 'setStride',
       blockType: 'command',
-      text: '步幅设为 [STRIDE]',
+      text: '步长设为 [STRIDE]',
       arguments: {
         STRIDE: {
           type: 'number',
@@ -118,7 +118,7 @@
     {
       opcode: 'getStride',
       blockType: 'reporter',
-      text: '步幅',
+      text: '步长',
       pycode: 'bpuppy_motion.get_params()[1]'
     },
     {
