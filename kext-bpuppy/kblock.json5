@@ -100,7 +100,7 @@
     {
       opcode: 'setTurn',
       blockType: 'command',
-      text: '转弯设为 [TURN]',
+      text: '转弯率设为 [TURN]',
       arguments: {
         TURN: {
           type: 'number',
@@ -136,7 +136,7 @@
     {
       opcode: 'getTurn',
       blockType: 'reporter',
-      text: '转弯',
+      text: '转弯率',
       pycode: 'bpuppy_motion.get_params()[5]'
     },
     "---",
