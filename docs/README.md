@@ -2,7 +2,7 @@
 
 ## 产品概述
 
-bPuppy 是基于 ESP32-S3 的 12 自由度四足机器狗，运行 MicroPython v1.22.1 + ESP-IDF v5.1.2。
+bPuppy 是基于 ESP32-S3 的 8 自由度四足机器狗（4腿 × 2DOF：髋+膝），运行 MicroPython v1.22.1 + ESP-IDF v5.1.2。
 底层 C 驱动（舵机、IMU、BLE、IK、步态），上层 Python 应用，兼容 Hiwonder Wonderbot App 蓝牙遥控。
 
 | 项目 | 规格 |
