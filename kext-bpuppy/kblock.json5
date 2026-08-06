@@ -7,31 +7,31 @@
     {
       opcode: 'forward',
       blockType: 'command',
-      text: '前进',
+      text: '$$forward',
       pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'backward',
       blockType: 'command',
-      text: '后退',
+      text: '$$backward',
       pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
-      text: '左转',
+      text: '$$turnLeft',
       pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
-      text: '右转',
+      text: '$$turnRight',
       pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'stop',
       blockType: 'command',
-      text: '停止',
+      text: '$$stop',
       pycode: "bpuppy_motion.set_gait('stop')"
     },
     "---",
@@ -39,7 +39,7 @@
     {
       opcode: 'setGait',
       blockType: 'command',
-      text: '切换步态 [GAIT]',
+      text: '$$setGait',
       arguments: {
         GAIT: {
           type: 'string',
@@ -52,7 +52,7 @@
     {
       opcode: 'setSpeed',
       blockType: 'command',
-      text: '速度设为 [SPEED]',
+      text: '$$setSpeed',
       arguments: {
         SPEED: {
           type: 'number',
@@ -64,7 +64,7 @@
     {
       opcode: 'setStride',
       blockType: 'command',
-      text: '步长设为 [STRIDE]',
+      text: '$$setStride',
       arguments: {
         STRIDE: {
           type: 'number',
@@ -76,7 +76,7 @@
     {
       opcode: 'setHeight',
       blockType: 'command',
-      text: '身体高度设为 [HEIGHT] mm',
+      text: '$$setHeight',
       arguments: {
         HEIGHT: {
           type: 'number',
@@ -88,7 +88,7 @@
     {
       opcode: 'setLift',
       blockType: 'command',
-      text: '抬脚高度设为 [LIFT] mm',
+      text: '$$setLift',
       arguments: {
         LIFT: {
           type: 'number',
@@ -100,7 +100,7 @@
     {
       opcode: 'setTurn',
       blockType: 'command',
-      text: '转弯率设为 [TURN]',
+      text: '$$setTurn',
       arguments: {
         TURN: {
           type: 'number',
@@ -111,32 +111,32 @@
     },
     {
       opcode: 'getSpeed',
-      blockType: 'reporter',
-      text: '速度',
+      blockType: 'command',
+      text: '$$getSpeed',
       pycode: 'bpuppy_motion.get_params()[0]'
     },
     {
       opcode: 'getStride',
-      blockType: 'reporter',
-      text: '步长',
+      blockType: 'command',
+      text: '$$getStride',
       pycode: 'bpuppy_motion.get_params()[1]'
     },
     {
       opcode: 'getHeight',
-      blockType: 'reporter',
-      text: '身体高度',
+      blockType: 'command',
+      text: '$$getHeight',
       pycode: 'bpuppy_motion.get_params()[2]'
     },
     {
       opcode: 'getLift',
-      blockType: 'reporter',
-      text: '抬脚高度',
+      blockType: 'command',
+      text: '$$getLift',
       pycode: 'bpuppy_motion.get_params()[3]'
     },
     {
       opcode: 'getTurn',
-      blockType: 'reporter',
-      text: '转弯率',
+      blockType: 'command',
+      text: '$$getTurn',
       pycode: 'bpuppy_motion.get_params()[5]'
     },
     "---",
@@ -144,31 +144,31 @@
     {
       opcode: 'stand',
       blockType: 'command',
-      text: '站立',
+      text: '$$stand',
       pycode: "poses.stand()"
     },
     {
       opcode: 'crouch',
       blockType: 'command',
-      text: '蹲下',
+      text: '$$crouch',
       pycode: "poses.crouch()"
     },
     {
       opcode: 'sit',
       blockType: 'command',
-      text: '坐下',
+      text: '$$sit',
       pycode: "poses.sit()"
     },
     {
       opcode: 'playBow',
       blockType: 'command',
-      text: '邀玩',
+      text: '$$playBow',
       pycode: "poses.play()"
     },
     {
       opcode: 'waveBlock',
       blockType: 'command',
-      text: '挥手',
+      text: '$$waveBlock',
       pycode: "poses.wave()"
     },
     "---",
@@ -176,7 +176,7 @@
     {
       opcode: 'setServo',
       blockType: 'command',
-      text: '舵机 [SERVO] 设为 [ANGLE]°',
+      text: '$$setServo',
       arguments: {
         SERVO: {
           type: 'string',
@@ -193,7 +193,7 @@
     {
       opcode: 'setStep',
       blockType: 'command',
-      text: '过渡速度 [STEP]°/帧',
+      text: '$$setStep',
       arguments: {
         STEP: {
           type: 'number',
@@ -205,13 +205,13 @@
     {
       opcode: 'commitPose',
       blockType: 'command',
-      text: '执行姿态',
+      text: '$$commitPose',
       pycode: 'poses.commit()'
     },
     {
       opcode: 'getServoAngle',
-      blockType: 'reporter',
-      text: '舵机 [SERVO] 的角度',
+      blockType: 'command',
+      text: '$$getServoAngle',
       arguments: {
         SERVO: {
           type: 'string',
@@ -226,7 +226,7 @@
     {
       opcode: 'oscillate',
       blockType: 'command',
-      text: '摆动 [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]次',
+      text: '$$oscillate',
       arguments: {
         SERVO2: {
           type: 'string',
@@ -251,7 +251,7 @@
     {
       opcode: 'waitSec',
       blockType: 'command',
-      text: '等待 [SEC] 秒',
+      text: '$$waitSec',
       arguments: {
         SEC: {
           type: 'number',
@@ -265,44 +265,44 @@
     {
       opcode: 'initImu',
       blockType: 'command',
-      text: '初始化 IMU',
+      text: '$$initImu',
       pycode: 'bpuppy_imu.init(0, 3, 14, 0x68)'
     },
     {
       opcode: 'getRoll',
-      blockType: 'reporter',
-      text: '横滚角',
+      blockType: 'command',
+      text: '$$getRoll',
       pycode: 'bpuppy_imu.read_angles()[0]'
     },
     {
       opcode: 'getPitch',
-      blockType: 'reporter',
-      text: '俯仰角',
+      blockType: 'command',
+      text: '$$getPitch',
       pycode: 'bpuppy_imu.read_angles()[1]'
     },
     {
       opcode: 'getYaw',
-      blockType: 'reporter',
-      text: '偏航角',
+      blockType: 'command',
+      text: '$$getYaw',
       pycode: 'bpuppy_imu.read_angles()[2]'
     }
   ],
   menus: {
     gaitMenu: [
-      { text: '自适应', value: 'go' },
-      { text: '猫步',   value: 'walk' },
-      { text: '小跑',   value: 'trot' },
-      { text: '停止',   value: 'stop' }
+      { text: '$$go', value: 'go' },
+      { text: '$$walk',   value: 'walk' },
+      { text: '$$trot',   value: 'trot' },
+      { text: '$$stop',   value: 'stop' }
     ],
     servoMenu: [
-      { text: '左前大腿 LF_HIP',   value: '0' },
-      { text: '左前小腿 LF_KNEE',  value: '1' },
-      { text: '左后大腿 LH_HIP',   value: '2' },
-      { text: '左后小腿 LH_KNEE',  value: '3' },
-      { text: '右前大腿 RF_HIP',   value: '4' },
-      { text: '右前小腿 RF_KNEE',  value: '5' },
-      { text: '右后大腿 RH_HIP',   value: '6' },
-      { text: '右后小腿 RH_KNEE',  value: '7' }
+      { text: '$$LF_HIP',   value: '0' },
+      { text: '$$LF_KNEE',  value: '1' },
+      { text: '$$LH_HIP',   value: '2' },
+      { text: '$$LH_KNEE',  value: '3' },
+      { text: '$$RF_HIP',   value: '4' },
+      { text: '$$RF_KNEE',  value: '5' },
+      { text: '$$RH_HIP',   value: '6' },
+      { text: '$$RH_KNEE',  value: '7' }
     ]
   }
 }
