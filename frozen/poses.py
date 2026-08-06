@@ -139,6 +139,7 @@ def oscillate(ch, amp, hz, cycles):
         val = center + amp * math.sin(2.0 * math.pi * hz * i / 50.0)
         bpuppy_servo.set_angle(ch, val)
         time.sleep_ms(20)
+    bpuppy_servo.set_angle(ch, center)   # 结束精确回到原位
 
 
 # ============================================================
