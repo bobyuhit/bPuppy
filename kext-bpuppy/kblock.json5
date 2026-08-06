@@ -98,6 +98,18 @@
       pycode: 'bpuppy_motion.set_lift([LIFT])'
     },
     {
+      opcode: 'setTurn',
+      blockType: 'command',
+      text: '转弯设为 [TURN]',
+      arguments: {
+        TURN: {
+          type: 'number',
+          defaultValue: '0'
+        }
+      },
+      pycode: 'bpuppy_motion.set_turn([TURN])'
+    },
+    {
       opcode: 'getSpeed',
       blockType: 'reporter',
       text: '速度',
@@ -120,6 +132,12 @@
       blockType: 'reporter',
       text: '抬脚高度',
       pycode: 'bpuppy_motion.get_params()[3]'
+    },
+    {
+      opcode: 'getTurn',
+      blockType: 'reporter',
+      text: '转弯',
+      pycode: 'bpuppy_motion.get_params()[5]'
     },
     "---",
     "## 姿态动作",
