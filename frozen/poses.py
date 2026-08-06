@@ -111,6 +111,9 @@ def commit():
     """
     time.sleep_ms(30)   # 等 C 层自动切 POSE 生效
     _move_to(_pose_buf, _pose_step)
+    # ★ 执行后清空 buffer, 防止残留污染下次 (否则之前设过的通道会被意外写入)
+    for ch in range(8):
+        _pose_buf[ch] = None
 
 
 def go_to(targets, step=3.0):
