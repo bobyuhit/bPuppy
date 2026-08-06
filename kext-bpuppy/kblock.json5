@@ -102,6 +102,12 @@
     "---",
     "## 姿态动作",
     {
+      opcode: 'stand',
+      blockType: 'command',
+      text: '站立',
+      pycode: "poses.stand()"
+    },
+    {
       opcode: 'crouch',
       blockType: 'command',
       text: '蹲下',
@@ -112,12 +118,6 @@
       blockType: 'command',
       text: '坐下',
       pycode: "poses.sit()"
-    },
-    {
-      opcode: 'stand',
-      blockType: 'command',
-      text: '站立',
-      pycode: "poses.stand()"
     },
     {
       opcode: 'playBow',
