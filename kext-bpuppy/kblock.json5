@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)'},
   },
   blocks: [
     "## 运动",
@@ -219,6 +219,32 @@
         }
       },
       pycode: 'sleep([SEC])'
+    },
+    "---",
+    "## 传感器",
+    {
+      opcode: 'initImu',
+      blockType: 'command',
+      text: '初始化 IMU',
+      pycode: 'bpuppy_imu.init(0, 3, 14, 0x68)'
+    },
+    {
+      opcode: 'getRoll',
+      blockType: 'reporter',
+      text: '横滚角',
+      pycode: 'bpuppy_imu.read_angles()[0]'
+    },
+    {
+      opcode: 'getPitch',
+      blockType: 'reporter',
+      text: '俯仰角',
+      pycode: 'bpuppy_imu.read_angles()[1]'
+    },
+    {
+      opcode: 'getYaw',
+      blockType: 'reporter',
+      text: '偏航角',
+      pycode: 'bpuppy_imu.read_angles()[2]'
     }
   ],
   menus: {

@@ -27,6 +27,7 @@
     "afterConnect": [
         "import bpuppy_motion",
         "import poses",
+        "import bpuppy_imu",
         "_speed = 2.5; _stride = 70; _height = 70"
     ],
     "ble": {
