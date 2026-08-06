@@ -186,7 +186,7 @@ libs: {
 ```json5
 // ✅ 推荐：初始化放 libs（自动注入一次）
 libs: {
-  "*": { import: 'import bpuppy_motion, bpuppy_servo, time\nfrom time import sleep\n\n_speed = 2.5\n...\nbpuppy_motion.stand_up()\ntime.sleep(1)' }
+  "*": { import: 'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不重复初始化' }
 }
 
 // ❌ 不推荐：初始化放积木 pycode（多条链会重复）
@@ -295,7 +295,7 @@ blocks: [
     opcode: 'stop',
     blockType: 'command',
     text: '停止',
-    pycode: "bpuppy_motion.set_gait('stand')"
+    pycode: "bpuppy_motion.set_gait('stop')"
   },
   "---",
   "## 参数",
@@ -358,7 +358,7 @@ blocks: [
   },
   {
     opcode: 'stand', blockType: 'command', text: '站立',
-    pycode: "bpuppy_motion.set_gait('stand')"
+    pycode: "bpuppy_motion.set_gait('stop')"
   },
   {
     opcode: 'playBow', blockType: 'command', text: '邀玩',
@@ -404,11 +404,7 @@ from time import sleep
 _speed = 2.5
 _stride = 70
 _height = 70
-bpuppy_servo.init_all()
-...
-bpuppy_motion.stand_up()
-time.sleep(1)
-
+# 原厂已 init_all + 站姿待命 (不重复初始化)
 # ===== 用户积木 =====
 bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')
 ```
@@ -624,13 +620,13 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 | 分类 | 积木 | pycode 生成 |
 |------|------|------------|
-| 运动 | 前进 / 后退 | `set_params(_speed, ±_stride, _height); set_gait('go')` |
-| 运动 | 左转 / 右转 | `set_turn(±0.8); set_params(...); set_gait('go')` |
-| 运动 | 停止 | `set_gait('stand')` |
-| 参数 | 速度设为 / 步幅设为 / 高度设为 / 抬腿高度 | 更新变量 + `set_params` / `set_lift` |
-| 步态 | 切换步态 [下拉] | `set_gait('[GAIT]')` |
-| 姿态 | 蹲下 / 坐下 / 站立 | `set_gait('crouch'/'sit'/'stand')` |
-| 动作 | 邀玩 / 挥手 | `set_gait('play'/'wave')` |
+| 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
+| 参数 | 速度设为 / 步幅设为 / 高度设为 / 抬腿高度 | `_speed = [SPEED]; set_params(...)` / `set_lift` |
+| 步态 | 切换步态 [下拉] | `set_turn(0); set_gait('[GAIT]')` |
+| 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
+| 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
+| 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |
+| 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
 
 底层 API（固件 C 模块，MicroPython 可调）：
 - `bpuppy_motion.set_params(speed, stride, height)` — speed 0~10, stride 正前负后, height mm
