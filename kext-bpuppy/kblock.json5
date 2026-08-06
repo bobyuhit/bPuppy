@@ -35,7 +35,20 @@
       pycode: "bpuppy_motion.set_gait('stop')"
     },
     "---",
-    "## 参数",
+    "## 步态参数",
+    {
+      opcode: 'setGait',
+      blockType: 'command',
+      text: '切换步态 [GAIT]',
+      arguments: {
+        GAIT: {
+          type: 'string',
+          menu: 'gaitMenu',
+          defaultValue: 'go'
+        }
+      },
+      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_gait([GAIT])"
+    },
     {
       opcode: 'setSpeed',
       blockType: 'command',
@@ -63,7 +76,7 @@
     {
       opcode: 'setHeight',
       blockType: 'command',
-      text: '高度设为 [HEIGHT] mm',
+      text: '身体高度设为 [HEIGHT] mm',
       arguments: {
         HEIGHT: {
           type: 'number',
@@ -75,7 +88,7 @@
     {
       opcode: 'setLift',
       blockType: 'command',
-      text: '抬腿高度 [LIFT] mm',
+      text: '抬脚高度设为 [LIFT] mm',
       arguments: {
         LIFT: {
           type: 'number',
@@ -93,13 +106,13 @@
     {
       opcode: 'getStride',
       blockType: 'reporter',
-      text: '步长',
+      text: '步幅',
       pycode: 'bpuppy_motion.get_params()[1]'
     },
     {
       opcode: 'getHeight',
       blockType: 'reporter',
-      text: '高度',
+      text: '身体高度',
       pycode: 'bpuppy_motion.get_params()[2]'
     },
     {
@@ -107,21 +120,6 @@
       blockType: 'reporter',
       text: '抬脚高度',
       pycode: 'bpuppy_motion.get_params()[3]'
-    },
-    "---",
-    "## 步态",
-    {
-      opcode: 'setGait',
-      blockType: 'command',
-      text: '切换步态 [GAIT]',
-      arguments: {
-        GAIT: {
-          type: 'string',
-          menu: 'gaitMenu',
-          defaultValue: 'go'
-        }
-      },
-      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_gait([GAIT])"
     },
     "---",
     "## 姿态动作",
