@@ -2,6 +2,7 @@
     "id": "bpuppy",
     "name": {
         "zh-CN": "bPuppy 机器狗",
+        "zh-TW": "bPuppy 機器狗",
         "en": "bPuppy Robot Dog"
     },
     "version": "1.0.0",
