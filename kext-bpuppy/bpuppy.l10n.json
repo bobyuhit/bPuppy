@@ -41,7 +41,13 @@
     "RF_HIP": "右前大腿",
     "RF_KNEE": "右前小腿",
     "RH_HIP": "右后大腿",
-    "RH_KNEE": "右后小腿"
+    "RH_KNEE": "右后小腿",
+    "cat_motion": "运动",
+    "cat_gait": "步态参数",
+    "cat_pose": "姿态动作",
+    "cat_servo": "舵机编辑",
+    "cat_action": "动作",
+    "cat_sensor": "传感器"
   },
   "en": {
     "forward": "Forward",
@@ -85,7 +91,13 @@
     "RF_HIP": "RF Hip",
     "RF_KNEE": "RF Knee",
     "RH_HIP": "RH Hip",
-    "RH_KNEE": "RH Knee"
+    "RH_KNEE": "RH Knee",
+    "cat_motion": "Motion",
+    "cat_gait": "Gait Parameters",
+    "cat_pose": "Pose Actions",
+    "cat_servo": "Servo Edit",
+    "cat_action": "Actions",
+    "cat_sensor": "Sensors"
   },
   "zh-tw": {
     "forward": "前進",
@@ -129,6 +141,12 @@
     "RF_HIP": "右前大腿",
     "RF_KNEE": "右前小腿",
     "RH_HIP": "右后大腿",
-    "RH_KNEE": "右后小腿"
+    "RH_KNEE": "右后小腿",
+    "cat_motion": "運動",
+    "cat_gait": "步態參數",
+    "cat_pose": "姿態動作",
+    "cat_servo": "舵機編輯",
+    "cat_action": "動作",
+    "cat_sensor": "感測器"
   }
 }
