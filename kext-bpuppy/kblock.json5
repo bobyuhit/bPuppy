@@ -169,10 +169,17 @@
       pycode: 'poses.commit()'
     },
     {
-      opcode: 'readPose',
-      blockType: 'command',
-      text: '读取当前姿态',
-      pycode: 'poses.read_pose()'
+      opcode: 'getServoAngle',
+      blockType: 'reporter',
+      text: '舵机 [SERVO] 的角度',
+      arguments: {
+        SERVO: {
+          type: 'string',
+          menu: 'servoMenu',
+          defaultValue: '0'
+        }
+      },
+      pycode: 'bpuppy_servo.get_angle([SERVO])'
     },
     "---",
     "## 动作",

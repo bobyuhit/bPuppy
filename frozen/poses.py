@@ -61,9 +61,11 @@ def set_step(n):
 
 
 def read_pose():
-    """读取所有舵机当前位置填入 buffer"""
+    """读取所有舵机当前位置填入 buffer, 并打印显示"""
     for ch in range(8):
         _pose_buf[ch] = bpuppy_servo.get_angle(ch)
+    print("Pose: [" + ", ".join("%.1f" % (a if a is not None else 0.0)
+          for a in _pose_buf) + "]")
 
 
 # ============================================================
