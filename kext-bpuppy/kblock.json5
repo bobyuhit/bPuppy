@@ -111,31 +111,31 @@
     },
     {
       opcode: 'getSpeed',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getSpeed',
       pycode: 'bpuppy_motion.get_params()[0]'
     },
     {
       opcode: 'getStride',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getStride',
       pycode: 'bpuppy_motion.get_params()[1]'
     },
     {
       opcode: 'getHeight',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getHeight',
       pycode: 'bpuppy_motion.get_params()[2]'
     },
     {
       opcode: 'getLift',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getLift',
       pycode: 'bpuppy_motion.get_params()[3]'
     },
     {
       opcode: 'getTurn',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getTurn',
       pycode: 'bpuppy_motion.get_params()[5]'
     },
@@ -210,7 +210,7 @@
     },
     {
       opcode: 'getServoAngle',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getServoAngle',
       arguments: {
         SERVO: {
@@ -270,19 +270,19 @@
     },
     {
       opcode: 'getRoll',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getRoll',
       pycode: 'bpuppy_imu.read_angles()[0]'
     },
     {
       opcode: 'getPitch',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getPitch',
       pycode: 'bpuppy_imu.read_angles()[1]'
     },
     {
       opcode: 'getYaw',
-      blockType: 'command',
+      blockType: 'reporter',
       text: '$$getYaw',
       pycode: 'bpuppy_imu.read_angles()[2]'
     }
