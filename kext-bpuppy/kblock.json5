@@ -7,31 +7,31 @@
     {
       opcode: 'forward',
       blockType: 'command',
-      text: '前进',
+      text: {zh-CN: '前进', en: 'Forward', zh-TW: '前進'},
       pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'backward',
       blockType: 'command',
-      text: '后退',
+      text: {zh-CN: '后退', en: 'Backward', zh-TW: '後退'},
       pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
-      text: '左转',
+      text: {zh-CN: '左转', en: 'Turn Left', zh-TW: '左轉'},
       pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
-      text: '右转',
+      text: {zh-CN: '右转', en: 'Turn Right', zh-TW: '右轉'},
       pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'stop',
       blockType: 'command',
-      text: '停止',
+      text: {zh-CN: '停止', en: 'Stop', zh-TW: '停止'},
       pycode: "bpuppy_motion.set_gait('stop')"
     },
     "---",
@@ -39,7 +39,7 @@
     {
       opcode: 'setGait',
       blockType: 'command',
-      text: '切换步态 [GAIT]',
+      text: {zh-CN: '切换步态 [GAIT]', en: 'Switch Gait [GAIT]', zh-TW: '切換步態 [GAIT]'},
       arguments: {
         GAIT: {
           type: 'string',
@@ -52,7 +52,7 @@
     {
       opcode: 'setSpeed',
       blockType: 'command',
-      text: '速度设为 [SPEED]',
+      text: {zh-CN: '速度设为 [SPEED]', en: 'Set Speed [SPEED]', zh-TW: '速度設為 [SPEED]'},
       arguments: {
         SPEED: {
           type: 'number',
@@ -64,7 +64,7 @@
     {
       opcode: 'setStride',
       blockType: 'command',
-      text: '步长设为 [STRIDE]',
+      text: {zh-CN: '步长设为 [STRIDE]', en: 'Set Stride [STRIDE]', zh-TW: '步長設為 [STRIDE]'},
       arguments: {
         STRIDE: {
           type: 'number',
@@ -76,7 +76,7 @@
     {
       opcode: 'setHeight',
       blockType: 'command',
-      text: '身体高度设为 [HEIGHT] mm',
+      text: {zh-CN: '身体高度设为 [HEIGHT] mm', en: 'Set Height [HEIGHT] mm', zh-TW: '身體高度設為 [HEIGHT] mm'},
       arguments: {
         HEIGHT: {
           type: 'number',
@@ -88,7 +88,7 @@
     {
       opcode: 'setLift',
       blockType: 'command',
-      text: '抬脚高度设为 [LIFT] mm',
+      text: {zh-CN: '抬脚高度设为 [LIFT] mm', en: 'Set Lift [LIFT] mm', zh-TW: '抬腳高度設為 [LIFT] mm'},
       arguments: {
         LIFT: {
           type: 'number',
@@ -100,7 +100,7 @@
     {
       opcode: 'setTurn',
       blockType: 'command',
-      text: '转弯率设为 [TURN]',
+      text: {zh-CN: '转弯率设为 [TURN]', en: 'Set Turn [TURN]', zh-TW: '轉彎率設為 [TURN]'},
       arguments: {
         TURN: {
           type: 'number',
@@ -112,31 +112,31 @@
     {
       opcode: 'getSpeed',
       blockType: 'reporter',
-      text: '速度',
+      text: {zh-CN: '速度', en: 'Speed', zh-TW: '速度'},
       pycode: 'bpuppy_motion.get_params()[0]'
     },
     {
       opcode: 'getStride',
       blockType: 'reporter',
-      text: '步长',
+      text: {zh-CN: '步长', en: 'Stride', zh-TW: '步長'},
       pycode: 'bpuppy_motion.get_params()[1]'
     },
     {
       opcode: 'getHeight',
       blockType: 'reporter',
-      text: '身体高度',
+      text: {zh-CN: '身体高度', en: 'Height', zh-TW: '身體高度'},
       pycode: 'bpuppy_motion.get_params()[2]'
     },
     {
       opcode: 'getLift',
       blockType: 'reporter',
-      text: '抬脚高度',
+      text: {zh-CN: '抬脚高度', en: 'Lift', zh-TW: '抬腳高度'},
       pycode: 'bpuppy_motion.get_params()[3]'
     },
     {
       opcode: 'getTurn',
       blockType: 'reporter',
-      text: '转弯率',
+      text: {zh-CN: '转弯率', en: 'Turn', zh-TW: '轉彎率'},
       pycode: 'bpuppy_motion.get_params()[5]'
     },
     "---",
@@ -144,31 +144,31 @@
     {
       opcode: 'stand',
       blockType: 'command',
-      text: '站立',
+      text: {zh-CN: '站立', en: 'Stand', zh-TW: '站立'},
       pycode: "poses.stand()"
     },
     {
       opcode: 'crouch',
       blockType: 'command',
-      text: '蹲下',
+      text: {zh-CN: '蹲下', en: 'Crouch', zh-TW: '蹲下'},
       pycode: "poses.crouch()"
     },
     {
       opcode: 'sit',
       blockType: 'command',
-      text: '坐下',
+      text: {zh-CN: '坐下', en: 'Sit', zh-TW: '坐下'},
       pycode: "poses.sit()"
     },
     {
       opcode: 'playBow',
       blockType: 'command',
-      text: '邀玩',
+      text: {zh-CN: '邀玩', en: 'Play', zh-TW: '邀玩'},
       pycode: "poses.play()"
     },
     {
       opcode: 'waveBlock',
       blockType: 'command',
-      text: '挥手',
+      text: {zh-CN: '挥手', en: 'Wave', zh-TW: '揮手'},
       pycode: "poses.wave()"
     },
     "---",
@@ -176,7 +176,7 @@
     {
       opcode: 'setServo',
       blockType: 'command',
-      text: '舵机 [SERVO] 设为 [ANGLE]°',
+      text: {zh-CN: '舵机 [SERVO] 设为 [ANGLE]°', en: 'Set Servo [SERVO] to [ANGLE]°', zh-TW: '舵機 [SERVO] 設為 [ANGLE]°'},
       arguments: {
         SERVO: {
           type: 'string',
@@ -193,7 +193,7 @@
     {
       opcode: 'setStep',
       blockType: 'command',
-      text: '过渡速度 [STEP]°/帧',
+      text: {zh-CN: '过渡速度 [STEP]°/帧', en: 'Transition Speed [STEP]°/frame', zh-TW: '過渡速度 [STEP]°/幀'},
       arguments: {
         STEP: {
           type: 'number',
@@ -205,13 +205,13 @@
     {
       opcode: 'commitPose',
       blockType: 'command',
-      text: '执行姿态',
+      text: {zh-CN: '执行姿态', en: 'Execute Pose', zh-TW: '執行姿態'},
       pycode: 'poses.commit()'
     },
     {
       opcode: 'getServoAngle',
       blockType: 'reporter',
-      text: '舵机 [SERVO] 的角度',
+      text: {zh-CN: '舵机 [SERVO] 的角度', en: 'Servo [SERVO] Angle', zh-TW: '舵機 [SERVO] 的角度'},
       arguments: {
         SERVO: {
           type: 'string',
@@ -226,7 +226,7 @@
     {
       opcode: 'oscillate',
       blockType: 'command',
-      text: '摆动 [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]次',
+      text: {zh-CN: '摆动 [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]次', en: 'Oscillate [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]', zh-TW: '擺動 [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]次'},
       arguments: {
         SERVO2: {
           type: 'string',
@@ -251,7 +251,7 @@
     {
       opcode: 'waitSec',
       blockType: 'command',
-      text: '等待 [SEC] 秒',
+      text: {zh-CN: '等待 [SEC] 秒', en: 'Wait [SEC] s', zh-TW: '等待 [SEC] 秒'},
       arguments: {
         SEC: {
           type: 'number',
@@ -265,44 +265,44 @@
     {
       opcode: 'initImu',
       blockType: 'command',
-      text: '初始化 IMU',
+      text: {zh-CN: '初始化 IMU', en: 'Init IMU', zh-TW: '初始化 IMU'},
       pycode: 'bpuppy_imu.init(0, 3, 14, 0x68)'
     },
     {
       opcode: 'getRoll',
       blockType: 'reporter',
-      text: '横滚角',
+      text: {zh-CN: '横滚角', en: 'Roll', zh-TW: '橫滾角'},
       pycode: 'bpuppy_imu.read_angles()[0]'
     },
     {
       opcode: 'getPitch',
       blockType: 'reporter',
-      text: '俯仰角',
+      text: {zh-CN: '俯仰角', en: 'Pitch', zh-TW: '俯仰角'},
       pycode: 'bpuppy_imu.read_angles()[1]'
     },
     {
       opcode: 'getYaw',
       blockType: 'reporter',
-      text: '偏航角',
+      text: {zh-CN: '偏航角', en: 'Yaw', zh-TW: '偏航角'},
       pycode: 'bpuppy_imu.read_angles()[2]'
     }
   ],
   menus: {
     gaitMenu: [
-      { text: '自适应', value: 'go' },
-      { text: '猫步',   value: 'walk' },
-      { text: '小跑',   value: 'trot' },
-      { text: '停止',   value: 'stop' }
+      { text: {zh-CN: '自适应', en: 'Auto', zh-TW: '自適應'}, value: 'go' },
+      { text: {zh-CN: '猫步', en: 'Walk', zh-TW: '貓步'},   value: 'walk' },
+      { text: {zh-CN: '小跑', en: 'Trot', zh-TW: '小跑'},   value: 'trot' },
+      { text: {zh-CN: '停止', en: 'Stop', zh-TW: '停止'},   value: 'stop' }
     ],
     servoMenu: [
-      { text: '左前大腿 LF_HIP',   value: '0' },
-      { text: '左前小腿 LF_KNEE',  value: '1' },
-      { text: '左后大腿 LH_HIP',   value: '2' },
-      { text: '左后小腿 LH_KNEE',  value: '3' },
-      { text: '右前大腿 RF_HIP',   value: '4' },
-      { text: '右前小腿 RF_KNEE',  value: '5' },
-      { text: '右后大腿 RH_HIP',   value: '6' },
-      { text: '右后小腿 RH_KNEE',  value: '7' }
+      { text: {zh-CN: '左前大腿 LF_HIP', en: 'LF Hip', zh-TW: '左前大腿 LF_HIP'},   value: '0' },
+      { text: {zh-CN: '左前小腿 LF_KNEE', en: 'LF Knee', zh-TW: '左前小腿 LF_KNEE'},  value: '1' },
+      { text: {zh-CN: '左后大腿 LH_HIP', en: 'LH Hip', zh-TW: '左后大腿 LH_HIP'},   value: '2' },
+      { text: {zh-CN: '左后小腿 LH_KNEE', en: 'LH Knee', zh-TW: '左后小腿 LH_KNEE'},  value: '3' },
+      { text: {zh-CN: '右前大腿 RF_HIP', en: 'RF Hip', zh-TW: '右前大腿 RF_HIP'},   value: '4' },
+      { text: {zh-CN: '右前小腿 RF_KNEE', en: 'RF Knee', zh-TW: '右前小腿 RF_KNEE'},  value: '5' },
+      { text: {zh-CN: '右后大腿 RH_HIP', en: 'RH Hip', zh-TW: '右后大腿 RH_HIP'},   value: '6' },
+      { text: {zh-CN: '右后小腿 RH_KNEE', en: 'RH Knee', zh-TW: '右后小腿 RH_KNEE'},  value: '7' }
     ]
   }
 }
