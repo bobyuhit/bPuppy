@@ -84,6 +84,30 @@
       },
       pycode: 'bpuppy_motion.set_lift([LIFT])'
     },
+    {
+      opcode: 'getSpeed',
+      blockType: 'reporter',
+      text: '速度',
+      pycode: 'bpuppy_motion.get_params()[0]'
+    },
+    {
+      opcode: 'getStride',
+      blockType: 'reporter',
+      text: '步长',
+      pycode: 'bpuppy_motion.get_params()[1]'
+    },
+    {
+      opcode: 'getHeight',
+      blockType: 'reporter',
+      text: '高度',
+      pycode: 'bpuppy_motion.get_params()[2]'
+    },
+    {
+      opcode: 'getLift',
+      blockType: 'reporter',
+      text: '抬脚高度',
+      pycode: 'bpuppy_motion.get_params()[3]'
+    },
     "---",
     "## 步态",
     {
