@@ -60,7 +60,13 @@ STATIC mp_obj_t mp_motion_set_omega(mp_obj_t omega_obj) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_omega_obj, mp_motion_set_omega);
 
 STATIC mp_obj_t mp_motion_set_lift(mp_obj_t lift_obj) {
-    motion_set_lift(mp_obj_get_float(lift_obj));
+    float lift = mp_obj_get_float(lift_obj);
+    if (!motion_set_lift(lift)) {
+        const motion_state_t *m = motion_get_state();
+        mp_printf(&mp_plat_print, "⚠ 抬腿超限! lift=%.0f (stride=%.0f height=%.0f) 被拒, "
+                  "保持原值 lift=%.0f\n",
+                  lift, m->stride, m->height, m->lift_height);
+    }
     return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_lift_obj, mp_motion_set_lift);

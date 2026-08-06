@@ -808,16 +808,17 @@ void motion_set_omega(float omega)
     ESP_LOGI(TAG, "Omega base: %.2f rad/s", omega);
 }
 
-void motion_set_lift(float lift)
+bool motion_set_lift(float lift)
 {
     // 抬腿校验: 用当前 stride/height 检查是否超限/干涉
     if (motion_validate_params(g_motion.stride, g_motion.height, lift)) {
         ESP_LOGW(TAG, "⚠ 抬腿超限: lift=%.0f (stride=%.0f height=%.0f), 保持原值 %.0f",
                  lift, g_motion.stride, g_motion.height, g_motion.lift_height);
-        return;
+        return false;
     }
     g_motion.lift_height = lift;
     ESP_LOGI(TAG, "Lift height: %.0f mm", lift);
+    return true;
 }
 
 void motion_set_body_pose(float roll, float pitch, float yaw)

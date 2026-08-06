@@ -114,8 +114,8 @@ void motion_save_geometry(void);
 // 设置基准角频率 (rad/s)
 void motion_set_omega(float omega);
 
-// 设置抬腿高度 (mm)
-void motion_set_lift(float lift);
+// 设置抬腿高度 (mm), 返回是否写入成功 (false=超限被拒)
+bool motion_set_lift(float lift);
 
 // 设置身体姿态
 void motion_set_body_pose(float roll, float pitch, float yaw);
