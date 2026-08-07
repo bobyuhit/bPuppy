@@ -22,7 +22,8 @@ static const char *TAG = "servo";
 /* ---- 全局舵机数组 (weak 共享) ---- */
 __attribute__((weak)) servo_config_t g_servos[SERVO_MAX_CHANNELS];
 __attribute__((weak)) bool g_servo_initialized = false;
-__attribute__((weak)) float g_servo_cal[SERVO_MAX_CHANNELS];  // 每通道校准参考角
+// 三点校准 [ch][0/1/2] = 0°/90°/180° 点校准值 (命令该角度时舵机实际应转的角度)
+__attribute__((weak)) float g_servo_cal[SERVO_MAX_CHANNELS][3];
 
 /* ---- 定时器 + 速度模式分配 (S3 统一 LS) ---- */
 // ESP32-S3 LEDC: 8 通道, 全部 LOW_SPEED_MODE, 4 个定时器
@@ -97,12 +98,13 @@ void servo_init(uint8_t channel, uint8_t gpio)
 /* ---- 角度 → PWM 占空比 ---- */
 static uint32_t angle_to_duty(float angle_deg)
 {
-    // 钳位到 [0, 180]
-    if (angle_deg < 0.0f) angle_deg = 0.0f;
-    if (angle_deg > 180.0f) angle_deg = 180.0f;
+    // 钳位到 [SERVO_ANGLE_MIN, SERVO_ANGLE_MAX] = [-45, 225]
+    if (angle_deg < SERVO_ANGLE_MIN) angle_deg = SERVO_ANGLE_MIN;
+    if (angle_deg > SERVO_ANGLE_MAX) angle_deg = SERVO_ANGLE_MAX;
 
-    // 线性映射: 0°→500us, 180°→2500us
-    float pulse_us = PULSE_MIN_US + (angle_deg / 180.0f) * (PULSE_MAX_US - PULSE_MIN_US);
+    // 线性映射: -45°→500us, 90°→1500us, 225°→2500us
+    float pulse_us = PULSE_MIN_US +
+        (angle_deg - SERVO_ANGLE_MIN) / SERVO_RANGE_DEG * (PULSE_MAX_US - PULSE_MIN_US);
 
     // 脉宽 → LEDC duty (14-bit: 0-16383)
     uint32_t max_duty = (1 << 14) - 1;
@@ -141,23 +143,34 @@ static void cal_save_to_nvs(uint8_t channel)
     if (nvs_open(CAL_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
 
     char key[8];
-    snprintf(key, sizeof(key), "ch%d", channel);
-    nvs_set_i32(handle, key, (int32_t)(g_servo_cal[channel] * 100.0f));
+    for (int p = 0; p < 3; p++) {
+        snprintf(key, sizeof(key), "ch%d_%d", channel, p);
+        nvs_set_i32(handle, key, (int32_t)(g_servo_cal[channel][p] * 100.0f));
+    }
     nvs_commit(handle);
     nvs_close(handle);
 }
 
 static void cal_load_from_nvs(void)
 {
+    // 默认值: 无校准时恒等 (0°→0, 90°→90, 180°→180)
+    for (int ch = 0; ch < SERVO_MAX_CHANNELS; ch++) {
+        g_servo_cal[ch][0] = 0.0f;
+        g_servo_cal[ch][1] = 90.0f;
+        g_servo_cal[ch][2] = 180.0f;
+    }
+
     nvs_handle_t handle;
     if (nvs_open(CAL_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) return;
 
     for (int ch = 0; ch < SERVO_MAX_CHANNELS; ch++) {
         char key[8];
-        snprintf(key, sizeof(key), "ch%d", ch);
-        int32_t val = 0;
-        if (nvs_get_i32(handle, key, &val) == ESP_OK) {
-            g_servo_cal[ch] = val / 100.0f;
+        for (int p = 0; p < 3; p++) {
+            snprintf(key, sizeof(key), "ch%d_%d", ch, p);
+            int32_t val = 0;
+            if (nvs_get_i32(handle, key, &val) == ESP_OK) {
+                g_servo_cal[ch][p] = val / 100.0f;
+            }
         }
     }
     nvs_close(handle);
@@ -172,18 +185,25 @@ void servo_load_cal(void)
 
 float servo_get_cal(uint8_t channel)
 {
-    if (channel >= SERVO_MAX_CHANNELS) return 90.0f;
-    return g_servo_cal[channel] + 90.0f;  // offset → ref_angle
+    // 兼容旧接口: 返回 90° 点校准参考角
+    return servo_get_cal_point(channel, 1);
 }
 
 void servo_set_cal(uint8_t channel, float ref_angle_deg)
 {
-    if (channel >= SERVO_MAX_CHANNELS) return;
+    // 兼容旧接口: 校准 90° 点
+    servo_set_cal_point(channel, 1, ref_angle_deg);
+}
+
+// 设置指定校准点参考角 (point: 0/1/2 = 0°/90°/180°)
+void servo_set_cal_point(uint8_t channel, uint8_t point, float ref_angle_deg)
+{
+    if (channel >= SERVO_MAX_CHANNELS || point > 2) return;
     cal_init_nvs();
-    // offset = ref - 90: cal(ch,95) → offset=+5 → set_angle(90) 发 95° → 腿垂直
-    g_servo_cal[channel] = ref_angle_deg - 90.0f;
+    g_servo_cal[channel][point] = ref_angle_deg;
     cal_save_to_nvs(channel);
-    ESP_LOGI(TAG, "ch%d cal: %.1f (offset=%+.1f)", channel, ref_angle_deg, g_servo_cal[channel]);
+    static const char *pn[3] = { "0°", "90°", "180°" };
+    ESP_LOGI(TAG, "ch%d %s点 cal: %.1f", channel, pn[point], ref_angle_deg);
 
     // 立即驱动舵机到参考角 (不经过校准), 让用户当场验证
     if (g_servos[channel].initialized) {
@@ -192,10 +212,24 @@ void servo_set_cal(uint8_t channel, float ref_angle_deg)
     }
 }
 
-// 应用校准：把"理论角度"映射到"实际舵机值"
+// 读取指定校准点参考角
+float servo_get_cal_point(uint8_t channel, uint8_t point)
+{
+    if (channel >= SERVO_MAX_CHANNELS || point > 2) return -1.0f;
+    return g_servo_cal[channel][point];
+}
+
+// 应用校准: 三点分段线性插值 (把"理论角度"映射到"实际舵机值")
 static float servo_apply_cal(uint8_t channel, float angle_deg)
 {
-    return angle_deg + g_servo_cal[channel];
+    const float *c = g_servo_cal[channel];  // [0°点, 90°点, 180°点]
+    if (angle_deg <= 90.0f) {
+        float t = angle_deg / 90.0f;        // 0~1
+        return c[0] + (c[1] - c[0]) * t;
+    } else {
+        float t = (angle_deg - 90.0f) / 90.0f;  // 0~1
+        return c[1] + (c[2] - c[1]) * t;
+    }
 }
 
 
@@ -212,13 +246,24 @@ void servo_set_angle(uint8_t channel, float angle_deg)
     servo_update_duty(channel);
 }
 
-/* ---- 获取当前角度 ---- */
+/* ---- 获取当前角度 (三点逆插值 → 命令角度) ---- */
 float servo_get_angle(uint8_t channel)
 {
     if (channel >= SERVO_MAX_CHANNELS || !g_servos[channel].initialized) {
         return -1.0f;
     }
-    return g_servos[channel].current_angle - g_servo_cal[channel];
+    float cur = g_servos[channel].current_angle;   // 校准后的实际角度
+    const float *c = g_servo_cal[channel];
+    float span0 = c[1] - c[0];                     // 0°~90° 段
+    float span1 = c[2] - c[1];                     // 90°~180° 段
+    if (cur <= c[1] && span0 != 0.0f) {
+        float t = (cur - c[0]) / span0;            // 0~1
+        return 90.0f * t;
+    } else if (span1 != 0.0f) {
+        float t = (cur - c[1]) / span1;            // 0~1
+        return 90.0f + 90.0f * t;
+    }
+    return 90.0f;
 }
 
 /* ---- 批量同步更新 ---- */
@@ -268,15 +313,18 @@ void servo_group_commit(void)
 /* ---- 自动初始化所有舵机（GPIO 待用户指定）---- */
 void servo_init_all(void)
 {
-    // TODO: 用户根据 PCB 设计指定 GPIO 引脚
-    servo_init(0, 1);    // LF_HIP
-    servo_init(1, 2);    // LF_KNEE
-    servo_init(2, 47);   // LH_HIP
-    servo_init(3, 21);   // LH_KNEE
-    servo_init(4, 42);   // RF_HIP
-    servo_init(5, 41);   // RF_KNEE
-    servo_init(6, 45);   // RH_HIP
-    servo_init(7, 48);   // RH_KNEE
+    // GPIO 映射 (新接线):
+    //   左前: HIP=45, KNEE=38   左后: HIP=41, KNEE=42
+    //   右前: HIP=39, KNEE=40   右后: HIP=2,  KNEE=1
+    // ⚠ GPIO38 原为 ADC1_CH2 电池电压检测, 现复用为舵机 — 若需电池检测需换 ADC 管脚
+    servo_init(0, 45);   // LF_HIP  左前大腿
+    servo_init(1, 38);   // LF_KNEE 左前小腿
+    servo_init(2, 41);   // LH_HIP  左后大腿
+    servo_init(3, 42);   // LH_KNEE 左后小腿
+    servo_init(4, 39);   // RF_HIP  右前大腿
+    servo_init(5, 40);   // RF_KNEE 右前小腿
+    servo_init(6, 2);    // RH_HIP  右后大腿
+    servo_init(7, 1);    // RH_KNEE 右后小腿
     ESP_LOGI(TAG, "All 8 servos initialized");
 }
 
@@ -412,6 +460,25 @@ STATIC mp_obj_t mp_servo_get_cal(mp_obj_t ch_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_servo_get_cal_obj, mp_servo_get_cal);
 
+// ---- cal_point(channel, point, ref_deg) 三点校准 ----
+STATIC mp_obj_t mp_servo_cal_point(mp_obj_t ch_obj, mp_obj_t point_obj, mp_obj_t deg_obj) {
+    int ch = mp_obj_get_int(ch_obj);
+    int point = mp_obj_get_int(point_obj);
+    float deg = mp_obj_get_float(deg_obj);
+    motion_python_servo_write();   // 校准写参考角 → 自动切 POSE
+    servo_set_cal_point((uint8_t)ch, (uint8_t)point, deg);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_3(mp_servo_cal_point_obj, mp_servo_cal_point);
+
+// ---- get_cal_point(channel, point) → float ----
+STATIC mp_obj_t mp_servo_get_cal_point(mp_obj_t ch_obj, mp_obj_t point_obj) {
+    int ch = mp_obj_get_int(ch_obj);
+    int point = mp_obj_get_int(point_obj);
+    return mp_obj_new_float(servo_get_cal_point((uint8_t)ch, (uint8_t)point));
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_servo_get_cal_point_obj, mp_servo_get_cal_point);
+
 
 // ---- 模块定义 ----
 STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {
@@ -427,6 +494,8 @@ STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_load_cal),    MP_ROM_PTR(&mp_servo_load_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal),        MP_ROM_PTR(&mp_servo_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_cal),    MP_ROM_PTR(&mp_servo_get_cal_obj) },
+    { MP_ROM_QSTR(MP_QSTR_cal_point),  MP_ROM_PTR(&mp_servo_cal_point_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_cal_point), MP_ROM_PTR(&mp_servo_get_cal_point_obj) },
     // 校准 (兼容旧接口)
     { MP_ROM_QSTR(MP_QSTR_cal_LF_HIP),  MP_ROM_PTR(&mp_cal_LF_HIP_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal_LF_KNEE), MP_ROM_PTR(&mp_cal_LF_KNEE_obj) },

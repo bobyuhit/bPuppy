@@ -1,18 +1,26 @@
 /*
- * bPuppy ADC 电压测量 — GPIO 38 (ADC1_CH2)
+ * bPuppy ADC 电压测量 — ⚠ 已停用 (2026-08)
  *
- * MicroPython 接口:
+ * 原用 GPIO38 = ADC1_CH2 测电池电压, 但 GPIO38 已改作舵机(左前小腿)。
+ * 且该描述有误: ESP32-S3 的 ADC1_CH2 实际对应 GPIO3 (IMU I2C0 SDA),
+ *   GPIO38 本身不是 ADC 引脚 → 原电池测量本就不可靠。
+ *
+ * 可用 ADC 引脚只有 GPIO1~20 (ADC1: 1~10, ADC2: 11~20), 现全部被占用
+ *   (舵机/IMU/摄像头/UART2), ADC2 在 BLE/WiFi 下还会失败。
+ * 需要电池检测时: 复用摄像头 ADC1 脚 (如 GPIO4=ADC1_CH3), 不拍照时
+ *   deinit 摄像头 → init ADC; 同时把下方 BPUPPY_ADC_ENABLE 改 1。
+ *
+ * MicroPython 接口 (init 已无效, 见下):
  *   import bpuppy_adc
- *   bpuppy_adc.init()            # GPIO 38, 11dB 衰减 (~0-3.1V)
- *   mv = bpuppy_adc.read_mv()    # 读取电压 (毫伏)
- *   raw = bpuppy_adc.read_raw()  # 读取原始值 (0-4095)
- *
- * 电池测量: 7.4V LiPo → 分压 (33k+10k) → ADC ≈ 1.72V@7.4V → read_mv()×4.3
+ *   bpuppy_adc.init()            # ⚠ 停用: 打印警告, 不初始化
+ *   mv = bpuppy_adc.read_mv()    # 返回 -1
  *
  * ⚠ 必须用 legacy ADC API (adc1_*): MicroPython 的 machine.ADC 使用 legacy
  *   driver, ESP-IDF 5.x 中 legacy 与 driver_ng (adc_oneshot) 互斥,
  *   混用会触发 "CONFLICT! driver_ng is not allowed..." 断言重启。
  */
+
+#define BPUPPY_ADC_ENABLE  0   // 0=停用 (GPIO38 已给舵机); 1=启用(需改通道+复用引脚)
 
 #include "py/runtime.h"
 #include "py/obj.h"
@@ -21,35 +29,50 @@
 
 static const char *TAG = "adc";
 
-#define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // ADC1_CH2 (GPIO 38)
+#if BPUPPY_ADC_ENABLE
+#define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // 需按实际复用的引脚改通道
 #define ADC_DEFAULT_ATTEN    ADC_ATTEN_DB_11  // ~0-3.1V
+#endif
 
 static bool g_adc_ready = false;
 
 void adc_init(void)
 {
+#if BPUPPY_ADC_ENABLE
     if (g_adc_ready) return;
 
     ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_12));
     ESP_ERROR_CHECK(adc1_config_channel_atten(ADC_DEFAULT_CHANNEL, ADC_DEFAULT_ATTEN));
 
     g_adc_ready = true;
-    ESP_LOGI(TAG, "ADC ready  GPIO=38  ADC1_CH2  atten=11dB (legacy)");
+    ESP_LOGI(TAG, "ADC ready  atten=11dB (legacy)");
+#else
+    ESP_LOGW(TAG, "电池检测已停用 (GPIO38 已给舵机); 需复用摄像头 ADC1 脚 + BPUPPY_ADC_ENABLE=1 才可用");
+    return;
+#endif
 }
 
 int adc_read_raw(void)
 {
+#if BPUPPY_ADC_ENABLE
     if (!g_adc_ready) return -1;
     return adc1_get_raw(ADC_DEFAULT_CHANNEL);   // 失败返回 -1
+#else
+    return -1;   // 已停用
+#endif
 }
 
 int adc_read_mv(void)
 {
+#if BPUPPY_ADC_ENABLE
     if (!g_adc_ready) return -1;
     int raw = adc1_get_raw(ADC_DEFAULT_CHANNEL);
     if (raw < 0) return -1;
     // 11dB 衰减: ~0-3100mV → 0-4095 (12-bit)
     return (int)((int64_t)raw * 3100 / 4096);
+#else
+    return -1;   // 已停用
+#endif
 }
 
 void adc_stop(void)

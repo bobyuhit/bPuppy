@@ -149,7 +149,7 @@ C 驱动层:
   servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode) + NVS 校准
   imu_driver.c      — I2C MPU9250 9轴 (Mahony 姿态融合 + 磁力计椭球校准)
   uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 + I2C1 摄像头复用口
-  adc_driver.c      — ADC1_CH2 (GPIO38) 电池电压测量
+  adc_driver.c      — ADC 电池检测 (已停用: GPIO38 已给舵机)
   ik.h / ik.c       — 2-DOF 逆运动学
   ble_driver.c      — NimBLE GATT (编译互斥: KittenBlock Nordic / Hiwonder FFE0)
   ble_stream.c      — BLE 流对象 (dupterm REPL 桥接, KittenBlock 模式)
@@ -170,7 +170,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
 | `drivers/imu_driver.c` | MPU9250 + AK8963 磁力计, Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
-| `drivers/adc_driver.c` | ADC1_CH2 (GPIO38) 电池电压测量 |
+| `drivers/adc_driver.c` | ADC 电池检测 (已停用: GPIO38 已给舵机) |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
@@ -436,16 +436,16 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 | 舵机 | GPIO | 舵机 | GPIO |
 |------|------|------|------|
-| LF_HIP 左前大腿 | 1 | RF_HIP 右前大腿 | 42 |
-| LF_KNEE 左前小腿 | 2 | RF_KNEE 右前小腿 | 41 |
-| LH_HIP 左后大腿 | 47 | RH_HIP 右后大腿 | 45 |
-| LH_KNEE 左后小腿 | 21 | RH_KNEE 右后小腿 | 48 |
+| LF_HIP 左前大腿 | 45 | RF_HIP 右前大腿 | 39 |
+| LF_KNEE 左前小腿 | 38 | RF_KNEE 右前小腿 | 40 |
+| LH_HIP 左后大腿 | 41 | RH_HIP 右后大腿 | 2 |
+| LH_KNEE 左后小腿 | 42 | RH_KNEE 右后小腿 | 1 |
 
 IMU: I2C0 (SDA=GPIO3, SCL=GPIO14, addr=0x68)。
 UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
-ADC: GPIO38 (ADC1_CH2) 电池电压。
+ADC: 电池检测已停用 (GPIO38 已给舵机, 无空闲 ADC 引脚; 需要时复用摄像头 ADC1 脚)。
 完整 GPIO 分配表见 `docs/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)
