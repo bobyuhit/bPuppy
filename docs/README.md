@@ -170,7 +170,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
 | `drivers/imu_driver.c` | MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050 跳过磁力计), Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
-| `drivers/adc_driver.c` | ADC 电池检测 (V2.0 停用; V3.0: GPIO3=ADC1_CH2, 分压 47k/10k) |
+| `drivers/adc_driver.c` | ADC 电池检测 (V2.0 停用; V3.0: GPIO3=ADC1_CH2, 分压 51k/10k) |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
@@ -445,7 +445,7 @@ IMU: I2C0 (V2.0: SDA=GPIO3, SCL=GPIO21, addr=0x68; V3.0: SDA 改 GPIO14)。双�
 UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
-ADC: 电池检测 V2.0 停用 (电池=GPIO14/ADC2, BLE 下不可用); V3.0 改 GPIO3=ADC1_CH2 (分压 47k/10k, 软件 ×5.7)。
+ADC: 电池检测 V2.0 停用 (电池=GPIO14/ADC2, BLE 下不可用); V3.0 改 GPIO3=ADC1_CH2 (分压 51k/10k, 软件 ×6.1)。
 完整 GPIO 分配表见 `docs/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)

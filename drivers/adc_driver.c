@@ -7,18 +7,18 @@
  * V2.0 硬件 (历史): 电池分压接 GPIO14 = ADC2_CH3, ADC2 与 BLE/WiFi 射频共享,
  *   蓝牙一开读数即失败 (ESP_ERR_TIMEOUT) → 电池检测停用 (ENABLE=0)。
  *
- * 硬件分压 (见 docs/硬件连接.md, R4=47k/R5=10k):
- *   电池正 ──[R1 47kΩ]──┬── GPIO3 (V3.0)
+ * 硬件分压 (见 docs/硬件连接.md, R4=51k/R5=10k):
+ *   电池正 ──[R1 51kΩ]──┬── GPIO3 (V3.0)
  *                       │
  *   GND  ────[R2 10kΩ]──┤
- *   分压比 10/57 ≈ 0.175, 软件换算 ×5.7
- *   满电 8.4V → ADC ~1.47V; 标称 7.4V → ADC ~1.30V
+ *   分压比 10/61 ≈ 0.164, 软件换算 ×6.1
+ *   满电 8.4V → ADC ~1.38V; 标称 7.4V → ADC ~1.21V
  *
  * MicroPython 接口:
  *   import bpuppy_adc
  *   bpuppy_adc.init()            # 初始化 (11dB 衰减, ~0-3.1V)
  *   mv = bpuppy_adc.read_mv()    # ADC 引脚电压 (mV)
- *   volt = mv * 5.7 / 1000       # 电池电压 (V), 软件换算
+ *   volt = mv * 6.1 / 1000       # 电池电压 (V), 软件换算
  *
  * ⚠ 必须用 legacy ADC API (adc1_*): MicroPython 的 machine.ADC 使用 legacy
  *   driver, ESP-IDF 5.x 中 legacy 与 driver_ng (adc_oneshot) 互斥,
