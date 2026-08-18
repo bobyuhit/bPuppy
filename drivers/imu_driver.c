@@ -1,6 +1,6 @@
 /*
  * bPuppy IMU — MPU6050 / MPU9250 自适应驱动
- * SDA=GPIO3, SCL=GPIO21 (V2.0), I2C Master 模式, 100kHz
+ * SDA=GPIO14, SCL=GPIO21, I2C Master 模式, 100kHz
  * WHO_AM_I 自动识别: 0x68/0x69 = MPU6050 (6轴, 无磁力计), 0x71/0x73 = MPU9250 (9轴, 含 AK8963)
  * MPU6050 时跳过 I2C 主模式与 AK8963 初始化, 磁力计读数为 0, yaw 有漂移
  */

@@ -9,7 +9,7 @@ bPuppy 是基于 ESP32-S3 的 8 自由度四足机器狗（4腿 × 2DOF：髋+�
 |------|------|
 | 主控 | ESP32-S3 WROOM-1 N16R8 (16MB Flash, 8MB Octal PSRAM) |
 | 舵机 | 8× 模拟舵机 (每条腿 2DOF: 髋 + 膝) |
-| IMU | MPU6050/MPU9250 双芯片自适应 (V2.0: I2C0 SDA=GPIO3, SCL=GPIO21, addr=0x68; WHO_AM_I 自动识别: 6050=6轴无磁力计, 9250=9轴含 AK8963; Mahony 姿态) |
+| IMU | MPU6050/MPU9250 双芯片自适应 (I2C0 SDA=GPIO14, SCL=GPIO21, addr=0x68; WHO_AM_I 自动识别: 6050=6轴无磁力计, 9250=9轴含 AK8963; Mahony 姿态) |
 | 通信 | BLE (NimBLE, 编译互斥: KittenBlock Nordic UART 或 Hiwonder FFE0) + UART2 (GPIO19/20, CI-33T/micro:bit) |
 | 控制台 | USB-JTAG CDC (921600bps, 直连 USB) |
 | 供电 | 7.4V 2S LiPo |
@@ -149,7 +149,7 @@ C 驱动层:
   servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode) + NVS 校准
   imu_driver.c      — I2C MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050=6轴无磁力计, 9250=9轴 Mahony + 磁力计椭球校准)
   uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 + I2C1 摄像头复用口
-  adc_driver.c      — ADC 电池检测 (V2.0 停用: 电池=GPIO14/ADC2 BLE 下不可用; V3.0 改 GPIO3/ADC1_CH2)
+  adc_driver.c      — ADC 电池检测 (电池=GPIO3/ADC1_CH2, 分压 51k/10k)
   ik.h / ik.c       — 2-DOF 逆运动学
   ble_driver.c      — NimBLE GATT (编译互斥: KittenBlock Nordic / Hiwonder FFE0)
   ble_stream.c      — BLE 流对象 (dupterm REPL 桥接, KittenBlock 模式)
@@ -170,7 +170,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/servo_driver.c` | LEDC PWM + NVS 校准 (`cal(ch, ref_deg)`) |
 | `drivers/imu_driver.c` | MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050 跳过磁力计), Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
-| `drivers/adc_driver.c` | ADC 电池检测 (V2.0 停用; V3.0: GPIO3=ADC1_CH2, 分压 51k/10k) |
+| `drivers/adc_driver.c` | ADC 电池检测 (GPIO3=ADC1_CH2, 分压 51k/10k) |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
@@ -441,11 +441,11 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 | LH_HIP 左后大腿 | 2 | RH_HIP 右后大腿 | 39 |
 | LH_KNEE 左后小腿 | 41 | RH_KNEE 右后小腿 | 45 |
 
-IMU: I2C0 (V2.0: SDA=GPIO3, SCL=GPIO21, addr=0x68; V3.0: SDA 改 GPIO14)。双芯片自适应: WHO_AM_I 识别 MPU6050(6轴)/MPU9250(9轴), REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
+IMU: I2C0 (SDA=GPIO14, SCL=GPIO21, addr=0x68)。双芯片自适应: WHO_AM_I 识别 MPU6050(6轴)/MPU9250(9轴), REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
 UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
-ADC: 电池检测 V2.0 停用 (电池=GPIO14/ADC2, BLE 下不可用); V3.0 改 GPIO3=ADC1_CH2 (分压 51k/10k, 软件 ×6.1)。
+ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。
 完整 GPIO 分配表见 `docs/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)

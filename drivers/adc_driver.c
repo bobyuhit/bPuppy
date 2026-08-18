@@ -1,14 +1,10 @@
 /*
  * bPuppy ADC 电压测量 — 电池检测 (V3.0 硬件: 启用)
  *
- * V3.0 硬件 (当前在用): IMU SDA 改到 GPIO14, GPIO3=ADC1_CH2 腾出接电池分压。
- *   ADC1 在 BLE/WiFi 下可用 → 启用 (ENABLE=1)。
+ * 电池分压接 GPIO3 = ADC1_CH2, ADC1 在 BLE/WiFi 下可用 → 启用 (ENABLE=1)。
  *
- * V2.0 硬件 (历史): 电池分压接 GPIO14 = ADC2_CH3, ADC2 与 BLE/WiFi 射频共享,
- *   蓝牙一开读数即失败 (ESP_ERR_TIMEOUT) → 电池检测停用 (ENABLE=0)。
- *
- * 硬件分压 (见 docs/硬件连接.md, R4=51k/R5=10k):
- *   电池正 ──[R1 51kΩ]──┬── GPIO3 (V3.0)
+ * 硬件分压 (见 docs/硬件连接.md, R1=51k/R2=10k):
+ *   电池正 ──[R1 51kΩ]──┬── GPIO3 (ADC1_CH2)
  *                       │
  *   GND  ────[R2 10kΩ]──┤
  *   分压比 10/61 ≈ 0.164, 软件换算 ×6.1
@@ -52,7 +48,7 @@ void adc_init(void)
     g_adc_ready = true;
     ESP_LOGI(TAG, "ADC ready  atten=11dB (legacy)");
 #else
-    ESP_LOGW(TAG, "电池检测已停用 (V2.0 硬件: 电池=GPIO14/ADC2, BLE 下不可用); V3.0 板需 BPUPPY_ADC_ENABLE=1");
+    ESP_LOGW(TAG, "电池检测已停用 (BPUPPY_ADC_ENABLE=0): read_mv() 返回 -1");
     return;
 #endif
 }
