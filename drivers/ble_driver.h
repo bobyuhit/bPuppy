@@ -14,7 +14,7 @@ void ble_driver_start(void);
 void ble_driver_stop(void);
 bool ble_is_connected(void);
 
-// 收指令: 返回长度, 0=无数据. buf 至少 128 字节
+// 收指令: 返回长度, 0=无数据. 最多取 max_len-1 字节
 int  ble_recv_command(char *buf, int max_len);
 
 // 接收缓冲中可读字节数 (BLE REPL 流 poll 用)

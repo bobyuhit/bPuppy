@@ -43,8 +43,8 @@ static uint16_t  g_rx_handle = 0;
 static bool      g_ble_started = false;   // NimBLE 栈是否已初始化
 static bool      g_adv_enabled = false;   // 广播是否开启 (手动 stop 后关闭)
 
-// 接收缓冲
-#define RX_BUF_SIZE 512
+// 接收缓冲 (4096: 覆盖整段 main.py 粘贴 + 冗余; 旧 512 遇突发/大粘贴会写满)
+#define RX_BUF_SIZE 4096
 static char     g_rx_buf[RX_BUF_SIZE];
 static volatile int g_rx_head = 0;
 static volatile int g_rx_tail = 0;
@@ -56,15 +56,20 @@ static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ct
 {
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         if (ctxt->om) {
+            uint8_t buf[512];   // 单次写入上限 = 最大 ATT 载荷 (MTU 交换后 253B, 留余量)
             int len = OS_MBUF_PKTLEN(ctxt->om);
-            if (len > 0 && len < 128) {
-                uint8_t buf[128];
+            if (len > 0 && len < (int)sizeof(buf)) {
                 os_mbuf_copydata(ctxt->om, 0, len, buf);
                 buf[len] = 0;
                 xSemaphoreTake(g_rx_mutex, portMAX_DELAY);
                 for (int i = 0; i < len; i++) {
+                    int next = (g_rx_head + 1) % RX_BUF_SIZE;
+                    if (next == g_rx_tail) {
+                        // 缓冲满: 丢新字节, 保留未读数据 (旧代码覆盖 head 会静默错位)
+                        break;
+                    }
                     g_rx_buf[g_rx_head] = buf[i];
-                    g_rx_head = (g_rx_head + 1) % RX_BUF_SIZE;
+                    g_rx_head = next;
                 }
                 xSemaphoreGive(g_rx_mutex);
                 // 注意: 不打日志! 蓝牙 REPL 模式下每条命令都会打印, 刷屏并干扰 USB CDC 输出
@@ -139,6 +144,14 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
 
 static void start_adv(void);
 
+// ---- MTU 交换回调 ----
+static int mtu_change_cb(uint16_t conn_handle, const struct ble_gatt_error *err,
+                         uint16_t mtu, void *arg)
+{
+    ESP_LOGI(TAG, "MTU 交换完成: %d (status=%d)", mtu, err ? err->status : 0);
+    return 0;
+}
+
 // ---- GAP 事件 ----
 static int gap_cb(struct ble_gap_event *ev, void *arg)
 {
@@ -148,6 +161,12 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
             g_conn_handle = ev->connect.conn_handle;
             g_connected = true;
             ESP_LOGI(TAG, "连接");
+            // ★ 主动发起 MTU 交换 (KittenBlock 模式必需):
+            //   Web Bluetooth 不会自动协商 MTU, 默认 ATT MTU=23 → 每包载荷仅 20 字节,
+            //   长指令被切成多个包, 跨包在双向 echo 流量下易丢失 → "指令发送不全"。
+            //   交换后 MTU→256 (载荷 253 字节), 一条指令一个包, 不再跨包。
+            //   gap_cb 运行在 NimBLE host 任务上下文, 此处调用安全。
+            ble_gattc_exchange_mtu(ev->connect.conn_handle, mtu_change_cb, NULL);
         }
         break;
     case BLE_GAP_EVENT_DISCONNECT:

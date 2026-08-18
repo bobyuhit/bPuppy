@@ -92,8 +92,8 @@ esptool --chip esp32s3 --port COM3 --baud 921600 write-flash `
 
 ### 串口连接
 
-- 波特率: **921600**
-- 端口: 设备管理器查看 (USB-JTAG CDC，直连 USB 即可)
+- 波特率: **115200**（实测 REPL 必须用 115200 才能读到干净输出；旧文档误标 921600）
+- 端口: 设备管理器查看（板载外部 USB-UART 桥接, 接 UART0 GPIO43/44，非 USB-JTAG CDC）
 - 工具: PuTTY / Tera Term / VS Code Serial Monitor
 
 烧录后重启，应看到:
@@ -323,6 +323,8 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 | **iPad KittenBlock App** | 不推荐 | App 无法加载 URL 导入的自定义主板扩展 |
 
 > 蓝牙无线连接走 **Nordic UART + dupterm REPL**（固件内置），KittenBlock 把它当串口用。无线上传 main.py 到 VFS 同样支持。
+
+> ⚠ **指令发送不全的修复**（2026-08 实测确认）：KittenBlock 的 JS 库自身按 20 字节硬编码分包 + 设备侧逐字符 echo 通知洪峰饿死 NimBLE mbuf 池，导致长命令第二包被丢。修复为 `ble_stream.c` **echo 批量打包**（攒一行/超时 30ms 发一个通知）。详见 [硬件连接.md 蓝牙节](硬件连接.md)。
 
 ---
 

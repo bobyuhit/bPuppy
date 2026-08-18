@@ -614,6 +614,39 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 - 需要 WiFi 时手动：`import camera_stream; camera_stream.start()`
 - ESP32-S3 硬件支持 WiFi+BLE 共存（时分），但上电全给 BLE 最稳
 
+### 11.6 指令发送不全 — 根因与修复（2026-08 实测确认）⚠
+
+**现象**：KittenBlock 长指令/初始化命令**截断在 20 字节处**（如 afterConnect 的 `_speed = 2.5; _strid`，`_stride`/`_height` 未赋值 → 后续引用 `NameError`）。
+
+**排查链（为什么单修 MTU 不够）**：
+1. 固件已主动 `ble_gattc_exchange_mtu()` → MTU 256，日志确认 `MTU 交换完成: 256`，**仍截断** → 排除 ATT 层 20 字节载荷限制。
+2. 查 KittenBlock 源码：JS 库**硬编码 `MAX_CHUNK_SIZE=20`** 分包（Nordic UART 经典实现，**与链路 MTU 无关**）→ 长指令**仍是多个 20 字节独立 ATT 写**，MTU 修复管不到它。
+3. 串口实测 `print(_stride)` → `NameError: name '_stride' isn't defined` → 确认**接收路径真丢包**（非仅 echo 回显丢失）。
+
+**根因（真正的丢包点 = echo 洪峰饿死 mbuf 池）**：
+- MicroPython REPL 普通模式逐字符 echo，`ble_stream.c` 旧实现**每 echo 一个字符就发一个 NOTIFY**，每字符分配一块 NimBLE **MSYS_1 mbuf（池仅 12 块）**。
+- chunk1（20 字节）的 echo 洪峰瞬间吃光小包池 → **chunk2 到达时无 mbuf 可分配 → 在 NimBLE host 层被丢** → chunk3（`\n`）在池恢复后幸存。
+- 现象恰为「chunk1 + `\n` 到了，chunk2 丢了」→ 命令在 20 字节处截断。
+
+**修复（`ble_stream.c` echo 批量打包 = 核心）**：
+- 把逐字符通知改为**攒到一整行（遇 `\n`）或 30ms 超时再发一个 NOTIFY**（MTU 256 单包可装 253 字节）。
+- 一条命令的 echo 从几十个通知 → **1 个**；mbuf 分配从每字符 1 块 → 每行 1 块，洪峰消失，后续分包不再被饿死。
+- 超时兜底挂 `ble_stream_read`/`ioctl`（REPL 空闲时高频轮询），覆盖无换行输出（如 `>>> ` 提示符）。KittenBlock 是**命令级流控**（等 `>>>` 再发下一条，非 chunk 级），批量 echo 不影响时序。
+
+**验证（实测通过）**：
+- 临时 `RXW len=...` 诊断日志（验证后已删）确认 `_speed = 2.5; _strid` 的 chunk1（20B）+ chunk2 `e = 70; _height = 70`（20B）+ 换行（2B）**全部到达 GATT 写回调**。
+- 串口 `print(_stride)` → **`70`**（修复前 `NameError`）。
+
+**配套改动**：
+
+| 文件 | 改动 |
+|------|------|
+| `drivers/ble_stream.c` | echo 批量打包（`tx_buf` + 遇 `\n`/超时 flush）— **核心修复** |
+| `drivers/ble_driver.c` | 连接成功主动 `ble_gattc_exchange_mtu()`（MTU→256，单包不再跨包）；接收缓冲 512→4096；写满丢新字节而非覆盖未读数据 |
+| `drivers/ble_driver.h` | `ble_recv_command` 注释修正（最多取 max_len-1 字节） |
+
+**为什么换 MCU 前能跑、现在不能**：与 MCU 无关。git 历史里 `_speed = 2.5; _stride = 70; _height = 70` 这条 40 字节 afterConnect 是 2026-08 才加进 `extension.json`；此前命令都 ≤21 字节，**从不触发 20 字节分包边界**。20 字节分包隐患自 BLE 引入（NimBLE）起就存在，只是这次命令长度 + echo 并发时序共同触发了它。
+
 ---
 
 ## 12. bPuppy 现有扩展积木清单
