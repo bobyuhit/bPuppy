@@ -41,7 +41,13 @@ def _show_stats(ri, rx, ry, rz, count):
 
 def start():
     if not bpuppy_imu.is_ready():
-        bpuppy_imu.init(0, 3, 14, 0x68)   # 自动启动 IMU
+        bpuppy_imu.init(0, 14, 21, 0x68)  # V3.0 硬件: SDA=14, SCL=21 (电池检测走 GPIO3=ADC1)
+
+    # 无磁力计芯片 (MPU6050) 直接跳过, 否则 start_mag_cal 是空操作, 下面 while 会死循环
+    if bpuppy_imu.get_chip() != 'mpu9250':
+        print('\n⚠ 当前 IMU = %s, 无磁力计 → 磁力计校准跳过。' % bpuppy_imu.get_chip())
+        print('  MPU6050 只有 6 轴 (加速度+陀螺仪), yaw 会有漂移。')
+        return
 
     print('\n===== 磁力计 3D 椭球校准 =====\n')
     print('拿起机器狗，在空中自由旋转。')

@@ -49,7 +49,7 @@ def _clip(v, lim):
 
 def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
     if not bpuppy_imu.is_ready():
-        bpuppy_imu.init(0, 3, 14, 0x68)   # 自动启动 IMU
+        bpuppy_imu.init(0, 14, 21, 0x68)  # V3.0 硬件: SDA=14, SCL=21 (电池检测走 GPIO3=ADC1)
     bpuppy_imu.set_mag_fusion(False)      # 磁力计只修yaw, 不参与 roll/pitch (避免残差拉偏)
     time.sleep_ms(30)   # group 写舵机会自动切 POSE (C 层检测), motion 停止
 

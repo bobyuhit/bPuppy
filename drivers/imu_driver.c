@@ -1,6 +1,8 @@
 /*
- * bPuppy IMU — MPU9250 + AK8963, 最小可用版
- * SDA=GPIO3, SCL=GPIO14, I2C Master 模式, 100kHz
+ * bPuppy IMU — MPU6050 / MPU9250 自适应驱动
+ * SDA=GPIO3, SCL=GPIO21 (V2.0), I2C Master 模式, 100kHz
+ * WHO_AM_I 自动识别: 0x68/0x69 = MPU6050 (6轴, 无磁力计), 0x71/0x73 = MPU9250 (9轴, 含 AK8963)
+ * MPU6050 时跳过 I2C 主模式与 AK8963 初始化, 磁力计读数为 0, yaw 有漂移
  */
 #include "imu_driver.h"
 #include "py/runtime.h"
@@ -65,9 +67,12 @@
 #define MAG_SI_NVS_KEY   "mag_si"
 #define MAG_MIN_DIST2    (2.0f * 2.0f)   // 相邻样本最小距离² (μT²), 滤掉停留重复点
 
+typedef enum { IMU_CHIP_UNKNOWN=0, IMU_CHIP_6050, IMU_CHIP_9250 } imu_chip_t;
+
 static bool g_imu_ready, g_mag_ready, g_i2c_installed;
 static i2c_port_t g_i2c_port;
 static uint8_t g_mpu_addr;
+static imu_chip_t g_imu_chip = IMU_CHIP_UNKNOWN;
 static float g_bias_ax, g_bias_ay, g_bias_az;
 static float g_bias_gx, g_bias_gy, g_bias_gz;
 static float g_mag_hard_iron[3];
@@ -136,12 +141,23 @@ static esp_err_t ak8963_init(void) {
 
 bool imu_is_ready(void) { return g_imu_ready; }
 
+const char *imu_chip_name(void) {
+    switch (g_imu_chip) {
+        case IMU_CHIP_6050: return "mpu6050";
+        case IMU_CHIP_9250: return "mpu9250";
+        default:            return "unknown";
+    }
+}
+
+bool imu_has_mag(void) { return g_mag_ready; }
+
 void imu_stop(void) {
     if (!g_imu_ready) return;
     g_task_run = false;                                  // 让 AHRS 任务退出
     if (g_imu_task) vTaskDelay(pdMS_TO_TICKS(IMU_TASK_PERIOD * 3));
     g_imu_ready = false;
     g_mpu_addr = 0;                                      // 下次 init 重新扫描
+    g_imu_chip = IMU_CHIP_UNKNOWN;                       // 重新识别芯片
     mp_printf(&mp_plat_print, "[imu] stopped (可重新 init)\n");
 }
 
@@ -157,34 +173,43 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
         ESP_ERROR_CHECK(i2c_driver_install(g_i2c_port,c.mode,0,0,0));
         g_i2c_installed = true;
     }
-    // 扫描 MPU9250 — 上电初期传感器未稳定可能扫不到, 延时重试最多 3 次
+    // 扫描识别 MPU6050/MPU9250 — 上电初期传感器未稳定可能扫不到, 延时重试最多 3 次
+    // WHO_AM_I: 6050=0x68/0x69 (跟随 AD0), 9250=0x71/0x73
     for (int retry = 0; retry < 3 && !g_mpu_addr; retry++) {
         if (retry > 0) {
             mp_printf(&mp_plat_print, "[imu] retry %d...\n", retry);
             vTaskDelay(pdMS_TO_TICKS(300));
         }
         for (uint8_t a=0x68; a<=0x69; a++) {
-            uint8_t ww; if (r(a,MPU_WHO_AM_I,&ww,1)==ESP_OK&&(ww==0x71||ww==0x73))
-                {g_mpu_addr=a; mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X\n",a); break;}
+            uint8_t ww;
+            if (r(a,MPU_WHO_AM_I,&ww,1)!=ESP_OK) continue;
+            if (ww==0x71||ww==0x73) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_9250;
+                mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X\n",a); break;}
+            if (ww==0x68||ww==0x69) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_6050;
+                mp_printf(&mp_plat_print,"[imu] MPU6050@0x%02X\n",a); break;}
         }
     }
-    if (!g_mpu_addr) {mp_printf(&mp_plat_print,"[imu] NOT FOUND\n"); return;}
+    if (!g_mpu_addr) {g_imu_chip=IMU_CHIP_UNKNOWN; mp_printf(&mp_plat_print,"[imu] NOT FOUND\n"); return;}
 
     w(g_mpu_addr, MPU_PWR_MGMT_1, CLKSEL_PLL); vTaskDelay(pdMS_TO_TICKS(100));
-    w(g_mpu_addr, MPU_USER_CTRL, I2C_MST_EN); vTaskDelay(pdMS_TO_TICKS(5));
-    w(g_mpu_addr, MPU_USER_CTRL, I2C_MST_EN|I2C_MST_RST); vTaskDelay(pdMS_TO_TICKS(5));
-    w(g_mpu_addr, MPU_INT_PIN_CFG, 0x00);
-    w(g_mpu_addr, MPU_I2C_MST_CTRL, 0x04);
     w(g_mpu_addr, MPU_CONFIG, 0x03);
     w(g_mpu_addr, MPU_ACCEL_CONFIG2, 0x03);
     w(g_mpu_addr, MPU_GYRO_CONFIG, 0x08);
     w(g_mpu_addr, MPU_ACCEL_CONFIG, 0x10);
-    ak8963_init();
+    if (g_imu_chip == IMU_CHIP_9250) {
+        // 仅 9250: 使能 I2C 主模式 (AUX 总线) 桥接内部 AK8963 磁力计
+        w(g_mpu_addr, MPU_USER_CTRL, I2C_MST_EN); vTaskDelay(pdMS_TO_TICKS(5));
+        w(g_mpu_addr, MPU_USER_CTRL, I2C_MST_EN|I2C_MST_RST); vTaskDelay(pdMS_TO_TICKS(5));
+        w(g_mpu_addr, MPU_INT_PIN_CFG, 0x00);
+        w(g_mpu_addr, MPU_I2C_MST_CTRL, 0x04);
+        ak8963_init();
+    }
     imu_load_cal();
     g_task_run = true;
     xTaskCreatePinnedToCore(imu_task_main,"imu_ahrs",IMU_TASK_STACK,NULL,IMU_TASK_PRIO,&g_imu_task,1);
     g_imu_ready = true;
-    mp_printf(&mp_plat_print,"[imu] ready mag=%s\n",g_mag_ready?"OK":"NO");
+    mp_printf(&mp_plat_print,"[imu] ready %s mag=%s\n",
+              g_imu_chip==IMU_CHIP_9250?"MPU9250":"MPU6050", g_mag_ready?"OK":"NO");
 }
 
 static bool read_all(imu_raw_data_t *d) {
@@ -597,6 +622,12 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mi_init_o,4,4,mi_init);
 STATIC mp_obj_t mi_ready(void){return mp_obj_new_bool(imu_is_ready());}
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_ready_o,mi_ready);
 
+STATIC mp_obj_t mi_chip(void){const char *s=imu_chip_name(); return mp_obj_new_str(s, strlen(s));}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_chip_o,mi_chip);
+
+STATIC mp_obj_t mi_has_mag(void){return mp_obj_new_bool(imu_has_mag());}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_has_mag_o,mi_has_mag);
+
 STATIC mp_obj_t mi_stop(void){imu_stop();return mp_const_none;}
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_stop_o,mi_stop);
 
@@ -644,6 +675,8 @@ STATIC const mp_rom_map_elem_t table[]={
     {MP_ROM_QSTR(MP_QSTR___name__),MP_ROM_QSTR(MP_QSTR_bpuppy_imu)},
     {MP_ROM_QSTR(MP_QSTR_init),MP_ROM_PTR(&mi_init_o)},
     {MP_ROM_QSTR(MP_QSTR_is_ready),MP_ROM_PTR(&mi_ready_o)},
+    {MP_ROM_QSTR(MP_QSTR_get_chip),MP_ROM_PTR(&mi_chip_o)},
+    {MP_ROM_QSTR(MP_QSTR_has_mag),MP_ROM_PTR(&mi_has_mag_o)},
     {MP_ROM_QSTR(MP_QSTR_stop),MP_ROM_PTR(&mi_stop_o)},
     {MP_ROM_QSTR(MP_QSTR_set_mag_fusion),MP_ROM_PTR(&mi_mag_fusion_o)},
     {MP_ROM_QSTR(MP_QSTR_read_raw),MP_ROM_PTR(&mi_raw_o)},

@@ -1,26 +1,31 @@
 /*
- * bPuppy ADC 电压测量 — ⚠ 已停用 (2026-08)
+ * bPuppy ADC 电压测量 — 电池检测 (V3.0 硬件: 启用)
  *
- * 原用 GPIO38 = ADC1_CH2 测电池电压, 但 GPIO38 已改作舵机(左前小腿)。
- * 且该描述有误: ESP32-S3 的 ADC1_CH2 实际对应 GPIO3 (IMU I2C0 SDA),
- *   GPIO38 本身不是 ADC 引脚 → 原电池测量本就不可靠。
+ * V3.0 硬件 (当前在用): IMU SDA 改到 GPIO14, GPIO3=ADC1_CH2 腾出接电池分压。
+ *   ADC1 在 BLE/WiFi 下可用 → 启用 (ENABLE=1)。
  *
- * 可用 ADC 引脚只有 GPIO1~20 (ADC1: 1~10, ADC2: 11~20), 现全部被占用
- *   (舵机/IMU/摄像头/UART2), ADC2 在 BLE/WiFi 下还会失败。
- * 需要电池检测时: 复用摄像头 ADC1 脚 (如 GPIO4=ADC1_CH3), 不拍照时
- *   deinit 摄像头 → init ADC; 同时把下方 BPUPPY_ADC_ENABLE 改 1。
+ * V2.0 硬件 (历史): 电池分压接 GPIO14 = ADC2_CH3, ADC2 与 BLE/WiFi 射频共享,
+ *   蓝牙一开读数即失败 (ESP_ERR_TIMEOUT) → 电池检测停用 (ENABLE=0)。
  *
- * MicroPython 接口 (init 已无效, 见下):
+ * 硬件分压 (见 docs/硬件连接.md, R4=47k/R5=10k):
+ *   电池正 ──[R1 47kΩ]──┬── GPIO3 (V3.0)
+ *                       │
+ *   GND  ────[R2 10kΩ]──┤
+ *   分压比 10/57 ≈ 0.175, 软件换算 ×5.7
+ *   满电 8.4V → ADC ~1.47V; 标称 7.4V → ADC ~1.30V
+ *
+ * MicroPython 接口:
  *   import bpuppy_adc
- *   bpuppy_adc.init()            # ⚠ 停用: 打印警告, 不初始化
- *   mv = bpuppy_adc.read_mv()    # 返回 -1
+ *   bpuppy_adc.init()            # 初始化 (11dB 衰减, ~0-3.1V)
+ *   mv = bpuppy_adc.read_mv()    # ADC 引脚电压 (mV)
+ *   volt = mv * 5.7 / 1000       # 电池电压 (V), 软件换算
  *
  * ⚠ 必须用 legacy ADC API (adc1_*): MicroPython 的 machine.ADC 使用 legacy
  *   driver, ESP-IDF 5.x 中 legacy 与 driver_ng (adc_oneshot) 互斥,
  *   混用会触发 "CONFLICT! driver_ng is not allowed..." 断言重启。
  */
 
-#define BPUPPY_ADC_ENABLE  0   // 0=停用 (GPIO38 已给舵机); 1=启用(需改通道+复用引脚)
+#define BPUPPY_ADC_ENABLE  1   // V3.0: 电池=GPIO3/ADC1_CH2, BLE/WiFi 下可用 → 启用
 
 #include "py/runtime.h"
 #include "py/obj.h"
@@ -30,7 +35,7 @@
 static const char *TAG = "adc";
 
 #if BPUPPY_ADC_ENABLE
-#define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // 需按实际复用的引脚改通道
+#define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // GPIO3 (V3.0: IMU SDA 改到 GPIO14 后腾出)
 #define ADC_DEFAULT_ATTEN    ADC_ATTEN_DB_11  // ~0-3.1V
 #endif
 
@@ -47,7 +52,7 @@ void adc_init(void)
     g_adc_ready = true;
     ESP_LOGI(TAG, "ADC ready  atten=11dB (legacy)");
 #else
-    ESP_LOGW(TAG, "电池检测已停用 (GPIO38 已给舵机); 需复用摄像头 ADC1 脚 + BPUPPY_ADC_ENABLE=1 才可用");
+    ESP_LOGW(TAG, "电池检测已停用 (V2.0 硬件: 电池=GPIO14/ADC2, BLE 下不可用); V3.0 板需 BPUPPY_ADC_ENABLE=1");
     return;
 #endif
 }
@@ -86,7 +91,7 @@ void adc_stop(void)
  * MicroPython 导出接口
  *
  *   import bpuppy_adc
- *   bpuppy_adc.init()        # GPIO 38, ADC1_CH2
+ *   bpuppy_adc.init()        # GPIO 3, ADC1_CH2
  *   mv = bpuppy_adc.read_mv()
  *   raw = bpuppy_adc.read_raw()
  * ================================================================ */

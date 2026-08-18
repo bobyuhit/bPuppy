@@ -266,7 +266,7 @@
       opcode: 'initImu',
       blockType: 'command',
       text: '$$initImu',
-      pycode: 'bpuppy_imu.init(0, 3, 14, 0x68)'
+      pycode: 'bpuppy_imu.init(0, 14, 21, 0x68)'
     },
     {
       opcode: 'getRoll',

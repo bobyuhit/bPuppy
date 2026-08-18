@@ -1,9 +1,13 @@
 
 /*
- * bPuppy IMU 传感器驱动 — MPU9250 9轴 IMU + AK8963 磁力计
+ * bPuppy IMU 传感器驱动 — MPU6050 / MPU9250 自适应
  *
  * I2C 接口引脚由 Python 层初始化时指定。
  * 使用 ESP-IDF v5.x I2C Master API (driver/i2c_master.h)
+ *
+ * WHO_AM_I 自动识别: 0x68/0x69 = MPU6050 (6轴), 0x71/0x73 = MPU9250 (9轴)
+ *   MPU6050 无磁力计 → mag_* 读数恒 0, yaw 有漂移 (6轴姿态)
+ *   MPU9250 含 AK8963 → mag_* 可用, Mahony 9轴融合, 无漂移 yaw
  *
  * 数据格式:
  *   加速度: 16-bit signed, 量程 ±8g → 4096 LSB/g
@@ -52,6 +56,12 @@ void imu_init(uint8_t port, uint8_t sda_pin, uint8_t scl_pin, uint8_t addr);
 
 // 是否已初始化 (供依赖模块按需启动)
 bool imu_is_ready(void);
+
+// 已识别的芯片型号: "mpu6050" / "mpu9250" / "unknown" (init 后有效)
+const char *imu_chip_name(void);
+
+// 是否有磁力计 (MPU9250=true, MPU6050=false)
+bool imu_has_mag(void);
 
 // 停止 AHRS 任务, 释放 IMU (可重新 init)
 void imu_stop(void);
