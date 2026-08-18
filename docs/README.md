@@ -436,10 +436,10 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 
 | 舵机 | GPIO | 舵机 | GPIO |
 |------|------|------|------|
-| LF_HIP 左前大腿 | 45 | RF_HIP 右前大腿 | 39 |
-| LF_KNEE 左前小腿 | 38 | RF_KNEE 右前小腿 | 40 |
-| LH_HIP 左后大腿 | 41 | RH_HIP 右后大腿 | 2 |
-| LH_KNEE 左后小腿 | 42 | RH_KNEE 右后小腿 | 1 |
+| LF_HIP 左前大腿 | 1 | RF_HIP 右前大腿 | 40 |
+| LF_KNEE 左前小腿 | 42 | RF_KNEE 右前小腿 | 38 |
+| LH_HIP 左后大腿 | 2 | RH_HIP 右后大腿 | 39 |
+| LH_KNEE 左后小腿 | 41 | RH_KNEE 右后小腿 | 45 |
 
 IMU: I2C0 (V2.0: SDA=GPIO3, SCL=GPIO21, addr=0x68; V3.0: SDA 改 GPIO14)。双芯片自适应: WHO_AM_I 识别 MPU6050(6轴)/MPU9250(9轴), REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
 UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。

@@ -313,18 +313,17 @@ void servo_group_commit(void)
 /* ---- 自动初始化所有舵机（GPIO 待用户指定）---- */
 void servo_init_all(void)
 {
-    // GPIO 映射 (新接线):
-    //   左前: HIP=45, KNEE=38   左后: HIP=41, KNEE=42
-    //   右前: HIP=39, KNEE=40   右后: HIP=2,  KNEE=1
-    // ⚠ GPIO38 原为 ADC1_CH2 电池电压检测, 现复用为舵机 — 若需电池检测需换 ADC 管脚
-    servo_init(0, 45);   // LF_HIP  左前大腿
-    servo_init(1, 38);   // LF_KNEE 左前小腿
-    servo_init(2, 41);   // LH_HIP  左后大腿
-    servo_init(3, 42);   // LH_KNEE 左后小腿
-    servo_init(4, 39);   // RF_HIP  右前大腿
-    servo_init(5, 40);   // RF_KNEE 右前小腿
-    servo_init(6, 2);    // RH_HIP  右后大腿
-    servo_init(7, 1);    // RH_KNEE 右后小腿
+    // GPIO 映射 (V3.0 板接线):
+    //   左前: HIP=1,  KNEE=42   左后: HIP=2,  KNEE=41
+    //   右前: HIP=40, KNEE=38   右后: HIP=39, KNEE=45
+    servo_init(0, 1);    // LF_HIP  左前大腿
+    servo_init(1, 42);   // LF_KNEE 左前小腿
+    servo_init(2, 2);    // LH_HIP  左后大腿
+    servo_init(3, 41);   // LH_KNEE 左后小腿
+    servo_init(4, 40);   // RF_HIP  右前大腿
+    servo_init(5, 38);   // RF_KNEE 右前小腿
+    servo_init(6, 39);   // RH_HIP  右后大腿
+    servo_init(7, 45);   // RH_KNEE 右后小腿
     ESP_LOGI(TAG, "All 8 servos initialized");
 }
 
