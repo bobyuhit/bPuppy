@@ -182,6 +182,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
 | `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~10 |
+| `frozen/voice.py` | 语音「事件」转发核心 — UART2 收发 + 后台线程 + 事件注册/分发（无内置动作，见下方「语音事件系统」节） |
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
@@ -327,6 +328,177 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 > 蓝牙无线连接走 **Nordic UART + dupterm REPL**（固件内置），KittenBlock 把它当串口用。无线上传 main.py 到 VFS 同样支持。
 
 > ⚠ **指令发送不全的修复**（2026-08 实测确认）：KittenBlock 的 JS 库自身按 20 字节硬编码分包 + 设备侧逐字符 echo 通知洪峰饿死 NimBLE mbuf 池，导致长命令第二包被丢。修复为 `ble_stream.c` **echo 批量打包**（攒一行/超时 30ms 发一个通知）。详见 [硬件连接.md 蓝牙节](硬件连接.md)。
+
+---
+
+## 语音「事件」系统（CI-33T）— 给接手者的全链路交接
+
+> 本文回答一个问题：**"事件"响应型的语音模块是怎么做出来的，改起来要动哪些文件？**
+> 面向后续接手的 AI / 开发者，自包含、可照着改。2026-08-19 实测定稿。
+
+### 0. 一句话架构
+
+```
+CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不做动作）
+                                      │ 按命令码触发
+                                      ▼
+                用户程序 def voiceWhenX()（KittenBlock 事件积木生成）
+                                      │
+                                      ▼
+                bpuppy_motion / poses（用户积木里的动作）
+```
+
+**设计铁律（2026-08-19 起）**：固件收到语音指令**只转发事件信号，不做任何动作**。要不要动、怎么动，完全由 KittenBlock 用户程序决定。这条铁律让"语音功能"和"机器狗动作"彻底解耦——换动作只改积木，不动固件。
+
+### 1. 三层各自管什么
+
+| 层 | 文件 | 职责 |
+|----|------|------|
+| 硬件/协议 | 接线 + CI-33T 平台配置 | 语音词 ↔ 串口字节的转换 |
+| 固件 | `frozen/voice.py`（frozen 模块） | UART2 收发 + 后台线程扫描 + **事件注册与分发**（无内置动作） |
+| 用户 | KittenBlock 扩展 + 用户程序 | `voiceWhenX` 事件函数 → 动作积木 |
+
+#### 1.1 硬件层（接线 + 协议）
+
+- **接线**（2026-08-19 起引脚反转）：`CI-33T PA2(TX)→GPIO20(UART2 RX)`、`PA3(RX)←GPIO19(UART2 TX)`、**9600 波特率**、5V 外部供电共地。
+- ⚠ **GPIO19/20 是 ESP32-S3 原生 USB_D-/USB_D+**。MicroPython 默认启用 TinyUSB 会接管它们 → UART2 发不出。已在 `components/mr9you__micropython-helper/mpy_startup.c` 注释掉 `usb_init()` 释放。**代价：USB-CDC 虚拟串口不可用**（REPL/烧录走 UART0=COM14 不受影响）。若以后要 USB 串口，恢复该调用，但 GPIO19/20 会被再占。
+- **下行**（CI-33T→ESP32，语音指令）= **裸 2 字节数据区** `<CMD> <PARAM>`，实测**不带** AA 55 帧头帧尾（例：`31 00` = 前进）。
+- **上行**（ESP32→CI-33T，发声/反馈）= 帧 `AA 55 <CMD> <PARAM> 55 AA`（例：`AA 55 70 01 55 AA` = 汪汪）。
+- 命令码表（下行，0x30–0x3C）：
+
+| CMD | 语音 | CMD | 语音 |
+|-----|------|-----|------|
+| 0x30 | 停止 | 0x38 | 站立 |
+| 0x31 | 前进 | 0x39 | 蹲下 |
+| 0x32 | 后退 | 0x3A | 坐下 |
+| 0x33 | 左转 | 0x3B | 摇手 |
+| 0x34 | 右转 | 0x3C | 邀玩 |
+| 0x35 | 加速 | | |
+| 0x36 | 减速 | | |
+| 0x37 | 跳跃 | | |
+
+- CI-33T 平台（智能公元）配置：每个命令词配【串口发送】输出对应数据区字节；要狗发声时配【串口输入】词条匹配 `AA 55 <数据> 55 AA` 帧触发音效。
+
+#### 1.2 固件层 — `frozen/voice.py`（事件转发核心）
+
+启动即 `import voice` → 模块底部 `start()` → `bpuppy_uart.init(2,19,20,9600)` + 起后台线程 `_pump()`。
+
+`_pump()` 每 20ms：
+1. `_scan_events()` — 扫描主全局 dict，把新出现的 `voiceWhenX` 函数注册为回调（**只注册不调用**）。
+2. `bpuppy_uart.any()` → `read(16)` → `print("VOICE RX: <hex>")` → 逐字节扫 0x30–0x3C → 命中就 `_dispatch(cmd)`。
+3. `_dispatch(cmd)` — 查 `_handlers[cmd]` 逐个调用用户函数（`print("VOICE CMD: 0x%02x -> event")`）。无回调则什么都不做。
+
+对外接口：`voice.on_cmd(cmd, fn)` / `off_cmd` / `play('汪汪'|'嘤嘤')` / `say(cat, code)` / `start` / `stop`。
+
+#### 1.3 用户层 — KittenBlock 扩展
+
+- 13 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：每个 `pycode: ['def voiceWhenX()']`。
+- KittenBlock 离线代码生成：hat 积木把 `def voiceWhenX():` 放**生成文件末尾**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
+- 2 个发声积木：`voice.play('汪汪')` / `voice.play('嘤嘤')`。
+
+### 2. 事件注册机制（核心难点，含坑）
+
+#### 2.1 完整数据流（"前进"为例）
+
+```
+用户说"前进"
+ → CI-33T 识别 → 串口发 31 00
+ → GPIO20 (UART2 RX) → bpuppy_uart 缓冲
+ → _pump() 轮询到 → print "VOICE RX: 3100"
+ → 扫到 0x31 → _dispatch(0x31)
+ → print "VOICE CMD: 0x31 -> event"
+ → 调用户 def voiceWhenFwd()  ← 已由 _scan_events 注册
+ → 函数体（积木翻译的动作）→ bpuppy_motion.set_gait('go') 等
+```
+
+#### 2.2 关键机制：函数在哪、怎么被找到
+
+事件函数 `def voiceWhenFwd()` 定义在**主脚本全局作用域**（frozen main.py `exec(/main.py)` 执行用户程序的那个 dict，或 REPL 的 `globals()`）。`_scan_events()` 按 `_EVT_FUNCS` 表（函数名→命令码）在**主全局 dict** 里找函数、注册为回调。
+
+#### 2.3 ⚠ 最大的坑：`sys.modules['__main__']` 是 `None`
+
+这个 MicroPython 固件里 `sys.modules.get('__main__')` 返回 **None**（实测），早期实现靠它找事件函数 → 永远找不到 → 语音指令收到但狗不动（`event` 打印缺失）。
+
+**解决方案（已在代码里）**：`voice.set_main_globals(globals())` 显式传入主全局 dict。`_scan_events()` 的 dict 来源优先级：`set_main_globals()` 传入的 > `sys.modules['__main__']`。
+
+传入的三个路径（**新接手的 AI 加路径时别漏**）：
+1. `frozen/main.py`（L98）—— 开机/物理 RESET 路径。在 `import voice` 之后、`exec(_user_code)` 之前调用，`exec` 新定义的函数会进入同一个 dict。
+2. `kext-bpuppy/extension.json` 的 `afterConnect`（L33）—— KittenBlock 在线连接/软复位路径。
+3. `kext-bpuppy/kblock.json5` 的 `libs."*".import`（L3 末尾）—— KittenBlock 代码生成注入路径。
+
+**凡是改了 `frozen/voice.py` 或 `frozen/main.py`，必须重编译固件 + 烧录**（它们打进固件，不是传 `/main.py`）。只改扩展侧只需重新打包 zip + 推送。
+
+#### 2.4 `_scan_events` 幂等扫描
+
+每 20ms 扫描一次；已注册的不重复注册；只注册不调用 → **用户函数体不会在开机时执行一次**。开机日志里出现 `voice: event 0x31 -> voiceWhenFwd` 即注册成功。
+
+### 3. 怎么改（Recipe）
+
+#### 3.1 加一个全新语音指令（例："转圈"）
+
+动 4 处，缺一不可：
+
+1. **CI-33T 平台**（智能公元，用户侧）：配命令词"转圈" → 串口发送一个数据区字节，如 `0x3D 0x00`。
+2. **固件** `frozen/voice.py`：
+   - 加常量（可选，注释更清晰）`CMD_SPIN = 0x3D`；
+   - `_CMD_MAX` 从 `0x3C` 扩到 `0x3D`（下行扫描段，**漏了这条指令会被忽略**）；
+   - `_EVT_FUNCS` 加一行 `'voiceWhenSpin': CMD_SPIN`。
+   - 重编译固件 + 烧录。
+3. **扩展** `kext-bpuppy/kblock.json5`：`## $$cat_voice` 组加一个 hat 积木
+   ```json5
+   { opcode: 'voiceWhenSpin', blockType: 'hat', text: '$$voiceWhenSpin',
+     micropy: { instance: 'voice.start()' }, pycode: ['def voiceWhenSpin()'] }
+   ```
+   ⚠ **opcode 必须和函数名一致**（`voiceWhenSpin`），`_EVT_FUNCS` 才能映射到命令码。
+4. **本地化** `kext-bpuppy/bpuppy.l10n.json`：加 `voiceWhenSpin` 的显示文本（中文"当收到转圈指令"）。
+   **重新打包 zip**（extension.json + kblock.json5 + bpuppy.png + bpuppy.l10n.json 4 个文件）→ 推送 GitHub（raw 链接 `https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip`）→ KittenBlock 里清本地扩展重新导入。
+
+#### 3.2 换/加声音映射
+
+只改 `frozen/voice.py` 的 `SND_WANG` / `SND_YING`（= 上行 `(category, code)`，如 `(0x70, 0x01)`）。改完重编译烧录；积木代码不用动。
+
+#### 3.3 让固件对某指令有"默认动作"（不推荐）
+
+破坏「纯事件转发」铁律：固件动作和用户积木会竞争/叠加，用户无法覆盖。如果确实要：在 `_dispatch` 里对某 cmd 加了内置动作，就必须同时保证**有用户回调时不动作**，否则两边打架。目前设计下，正确的"默认动作"做法 = 在**文档/示例程序**里给出一段 KittenBlock 模板，而不是进固件。
+
+#### 3.4 调试
+
+- REPL 查注册状态：`voice._handlers`（dict cmd→[fn]）确认 0x31 已挂上用户函数。
+- REPL 模拟触发（不靠真语音）：`voice._dispatch(0x31)` → 应该触发 `voiceWhenFwd`。
+- 真机：说指令看串口 `VOICE RX: <hex>`（确认 CI-33T 发的字节）→ `VOICE CMD: 0x%02x -> event`（确认分发）→ 狗动（确认函数体）。
+
+### 4. 踩坑清单（一页速查）
+
+1. **`sys.modules['__main__']` 为 None** → 必须 `set_main_globals(globals())`，三条路径都传（见 2.3）。
+2. **hat 函数名 ≠ opcode** → 注册不上。函数名是 `pycode` 里的字面量。
+3. **命令码超出扫描段**（> `_CMD_MAX`）→ 收得到但被忽略。加指令必须同步扩段。
+4. **GPIO19/20 被 TinyUSB 占** → UART2 发不出。必须关 `usb_init()`（已在固件里关了）。
+5. **下行是裸 2 字节**（无 AA 55 帧）→ 解析按数据区字节扫描，别等帧头。
+6. **上行必须带帧** `AA 55 <CMD> <PARAM> 55 AA` → CI-33T 才认。
+7. **KittenBlock 在线绿旗不传 hat def** → 语音事件**只能 upload+RESET**（或手动贴函数）；在线调试只对 command 积木有效。
+8. **Ctrl-D 软复位不重跑 frozen app** → 改了固件后必须**物理 RESET**（或重新烧录）。
+9. **改 frozen 文件≠传 /main.py** → frozen 打进固件，重编译 + 烧录才生效。
+10. **`afterConnect` / `libs` import 里维护同一份参数与 `set_main_globals`** → 两处都动，别只改一处。
+
+### 5. 相关文件索引
+
+| 文件 | 角色 |
+|------|------|
+| `frozen/voice.py` | 事件转发核心（UART2 + 后台线程 + 注册/分发） |
+| `frozen/main.py` | 启动脚本，L98 `set_main_globals`，L104 `exec(/main.py)` |
+| `frozen/manifest.py` | frozen 模块清单（加 frozen 文件要注册） |
+| `kext-bpuppy/kblock.json5` | 积木定义 + `libs.import` 注入串 |
+| `kext-bpuppy/extension.json` | 扩展元数据 + `afterConnect` |
+| `kext-bpuppy/bpuppy.l10n.json` | 积木文本本地化 |
+| `kext-bpuppy/KittenBlock扩展开发.md` | 扩展开发全指南（§13 事件积木机制） |
+| `docs/操作指南.md` | §7.2.1 用户侧语音用法 |
+| `docs/硬件连接.md` | UART2/CI-33T 接线 |
+
+### 6. 与其他部分的关系
+
+- **voice 与 KittenBlock 蓝牙**互不干扰：语音走 UART2（GPIO19/20），蓝牙走射频，REPL/烧录走 UART0(COM14)。
+- **voice 与 `bpuppy_motion`**：voice **不直接调** motion（铁律）；动作由用户程序通过扩展积木间接调。
+- **事件模型**：本系统的"事件" = 固件后台线程扫描主全局 dict 按名注册 + 收到串口指令分发。这是纯板侧事件（详见 `kext-bpuppy/KittenBlock扩展开发.md` §13 关于在线/离线事件模型的讨论）。
 
 ---
 
@@ -512,6 +684,8 @@ ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。
 | 添加 MicroPython C 函数 | 对应 `drivers/*.c` + 注册到模块表 |
 | 修改 Python 启动逻辑 | `frozen/main.py` |
 | 修改 BLE 协议 | `frozen/ble_hiwonder.py` |
+| 修改语音事件/命令码映射 | `frozen/voice.py`（固件侧，需重编译烧录）+ `kext-bpuppy/kblock.json5`（扩展侧，重打包 zip） |
+| 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送） |
 | 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |
 | 修改 PC 拍照工具 | `tools/capture.py` |
 | 修改构建参数 | `CMakeLists.txt` + `sdkconfig.defaults` |
@@ -543,6 +717,8 @@ idf.py flash monitor       # 烧录并监控
 - [ ] KittenBlock 模式 (`BPUPPY_BLE_KEBLOCK`): 广播 `bPuppy_XXXX`，KittenBlock 蓝牙可连（安卓/iPad Bluefy/PC）
 - [ ] Hiwonder 模式 (`BPUPPY_BLE_HIWONDER`): 广播 `mechdog_XX`，Wonderbot App 可连
 - [ ] 蓝牙 REPL：`os.dupterm(None)` 返回 BLE 流对象（C 层自动注册）
+- [ ] 语音: 开机日志出现 `voice: CI-33T ready`；说"前进" → 串口 `VOICE RX: 3100` + `VOICE CMD: 0x31 -> event` → 狗走
+- [ ] 语音: 开机日志出现 `voice: event 0x31 -> voiceWhenFwd`（事件函数已注册）
 
 ---
 
