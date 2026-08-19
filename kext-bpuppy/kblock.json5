@@ -289,95 +289,18 @@
     "---",
     "## $$cat_voice",
     {
-      opcode: 'voiceWhenStop',
+      opcode: 'voiceWhen',
       blockType: 'hat',
-      text: '$$voiceWhenStop',
+      text: '$$voiceWhen',
       micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenStop()']
-    },
-    {
-      opcode: 'voiceWhenFwd',
-      blockType: 'hat',
-      text: '$$voiceWhenFwd',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenFwd()']
-    },
-    {
-      opcode: 'voiceWhenBack',
-      blockType: 'hat',
-      text: '$$voiceWhenBack',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenBack()']
-    },
-    {
-      opcode: 'voiceWhenLeft',
-      blockType: 'hat',
-      text: '$$voiceWhenLeft',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenLeft()']
-    },
-    {
-      opcode: 'voiceWhenRight',
-      blockType: 'hat',
-      text: '$$voiceWhenRight',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenRight()']
-    },
-    {
-      opcode: 'voiceWhenFaster',
-      blockType: 'hat',
-      text: '$$voiceWhenFaster',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenFaster()']
-    },
-    {
-      opcode: 'voiceWhenSlower',
-      blockType: 'hat',
-      text: '$$voiceWhenSlower',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenSlower()']
-    },
-    {
-      opcode: 'voiceWhenJump',
-      blockType: 'hat',
-      text: '$$voiceWhenJump',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenJump()']
-    },
-    {
-      opcode: 'voiceWhenStand',
-      blockType: 'hat',
-      text: '$$voiceWhenStand',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenStand()']
-    },
-    {
-      opcode: 'voiceWhenCrouch',
-      blockType: 'hat',
-      text: '$$voiceWhenCrouch',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenCrouch()']
-    },
-    {
-      opcode: 'voiceWhenSit',
-      blockType: 'hat',
-      text: '$$voiceWhenSit',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenSit()']
-    },
-    {
-      opcode: 'voiceWhenWave',
-      blockType: 'hat',
-      text: '$$voiceWhenWave',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenWave()']
-    },
-    {
-      opcode: 'voiceWhenPlay',
-      blockType: 'hat',
-      text: '$$voiceWhenPlay',
-      micropy: { instance: 'voice.start()' },
-      pycode: ['def voiceWhenPlay()']
+      pycode: ['def voiceWhen[VOICE]()'],
+      arguments: {
+        VOICE: {
+          type: 'value',
+          menu: 'voiceMenu',
+          defaultValue: 'Fwd'
+        }
+      }
     },
     {
       opcode: 'voiceBark',
@@ -408,6 +331,21 @@
       { text: '$$RF_KNEE',  value: '5' },
       { text: '$$RH_HIP',   value: '6' },
       { text: '$$RH_KNEE',  value: '7' }
+    ],
+    voiceMenu: [
+      { text: '$$voiceCmdStop',   value: 'Stop' },
+      { text: '$$voiceCmdFwd',    value: 'Fwd' },
+      { text: '$$voiceCmdBack',   value: 'Back' },
+      { text: '$$voiceCmdLeft',   value: 'Left' },
+      { text: '$$voiceCmdRight',  value: 'Right' },
+      { text: '$$voiceCmdFaster', value: 'Faster' },
+      { text: '$$voiceCmdSlower', value: 'Slower' },
+      { text: '$$voiceCmdJump',   value: 'Jump' },
+      { text: '$$voiceCmdStand',  value: 'Stand' },
+      { text: '$$voiceCmdCrouch', value: 'Crouch' },
+      { text: '$$voiceCmdSit',    value: 'Sit' },
+      { text: '$$voiceCmdWave',   value: 'Wave' },
+      { text: '$$voiceCmdPlay',   value: 'Play' }
     ]
   }
 }

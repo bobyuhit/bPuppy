@@ -660,7 +660,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
 | 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |
 | 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
-| 语音 | 当收到停止/前进/…指令（13 事件） | `def voiceWhenX():` 末尾函数 + voice.py 按名注册回调 |
+| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，13 选项） | `def voiceWhen<value>():` 末尾函数 + voice.py 按名注册回调 |
 | 语音 | 语音播放汪汪 / 语音播放嘤嘤 | `voice.play('汪汪')` / `voice.play('嘤嘤')` |
 
 底层 API（固件 C 模块，MicroPython 可调）：
@@ -676,7 +676,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 自定义 hat 积木在**离线 micropy 代码生成**里的行为（源码 `offlineCodeGen` + `provideFunction_`）：
 
-1. **生成末尾函数**：`blockType:'hat'` 积木把 `pycode` 逐行拆分——以 `@`/`#`/`def` 开头的行进函数头区，其余行进函数体（放在**用户体之后**）。所以 `pycode:['def voiceWhenStop()']` 生成 `def voiceWhenStop():` + 用户积木体。**函数名 = pycode 里的字面量**（无占位符时 `provideFunction_` 不改名）。
+1. **生成末尾函数**：`blockType:'hat'` 积木把 `pycode` 逐行拆分——以 `@`/`#`/`def` 开头的行进函数头区，其余行进函数体（放在**用户体之后**）。`pycode:['def voiceWhen[VOICE]()']` 生成 `def voiceWhenFwd():` + 用户积木体。**函数名 = pycode 里 `[VOICE]` 占位符被参数值替换后的结果**（无占位符时 `provideFunction_` 不改名）。函数去重 key = `opcode_参数值`（如 `voiceWhen_Fwd`），所以多个实例选不同指令会生成各自的函数、互不 dedupe 冲突。
 2. **没人自动调用它**：离线代码生成只**定义**函数，不生成调用。asr@kai 的 `kai_whenHeard` 靠在线 Scratch 事件，离线只是空函数。
 3. **真正的事件范式 = meowbit/futureboard 的「注册 + 调度」**（官方 board 扩展）：
    ```json5
@@ -690,12 +690,12 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
    `micropy.instance` 注入到生成文件**顶部**（`definitions_` 非 import/def 区，imports 之后），`pycode` 数组 join 后按行拆：注册行进函数体末尾、def 行进函数头。调度线程扫描 globals 按命名约定（`on_*_pressed`）调用一次 → 触发自注册 → 轮询分发。
 
 **bPuppy 语音事件积木的实现**（避免「调用一次 = 用户体执行一次」的副作用）：
-- hat 积木 `pycode` 只有 `['def voiceWhenStop()']`，**不写注册行**。
+- hat 积木 `pycode` 只有 `['def voiceWhen[VOICE]()']`（VOICE 是 `type:'value'`+`voiceMenu` 下拉参数），**不写注册行**。下拉值 `Fwd` 裸代入 → `def voiceWhenFwd():`；**必须 `type:'value'` 不能 `type:'string'`**——string 会被 KittenBlock 自动加引号 → `def voiceWhen'Fwd'():` 语法错误（`replaceArgs` 加引号只发生在 `type === STRING`）。
 - voice.py 后台线程 `_scan_events()` 扫**主脚本全局 dict**（frozen main.py `exec(_user_code)` / REPL 的作用域），按 `_EVT_FUNCS` 表（`voiceWhenX` → 命令码）把函数**直接注册**为回调，**不调用** → 用户体不在开机时误执行。
 - ⚠ **全局 dict 来源**（实测 2026-08-19）：本固件 MicroPython **`sys.modules['__main__']` 为 `None`**，不能用它找函数。必须在 `frozen/main.py` 与 KittenBlock afterConnect / libs 里调 `voice.set_main_globals(globals())` 显式传入（主脚本与 REPL 共享同一 dict，`exec` 新定义的 `voiceWhen*` 会进入该 dict，后台扫描即可看到）。
 - 收到下行指令 → `_dispatch` 调注册的回调。**固件无任何内置动作**（2026-08-19 起已移除 `_ACTIONS`/`auto_move`），命令来了要么触发用户事件函数、要么什么都不做，动作全由用户编程。
 
-> ⚠ hat 函数名必须与 opcode 一致（`voiceWhenX`），`_EVT_FUNCS` 才能映射到命令码；函数名被 KittenBlock 改成别的名会注册不上。
+> ⚠ 下拉 **value 必须与 `_EVT_FUNCS` 后缀一致**（`Fwd` → `def voiceWhenFwd()`），`_EVT_FUNCS` 才能映射到命令码；value 拼错或与后缀不匹配会注册不上。加新指令不用新增积木，只需在 `voiceMenu` 加一项 + l10n 加显示文本。
 
 📘 语音「事件」系统的全链路交接文档（含改法 Recipe 与踩坑清单）：[docs/README.md 语音「事件」系统节](../docs/README.md)。
 

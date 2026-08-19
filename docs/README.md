@@ -392,8 +392,8 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 #### 1.3 用户层 — KittenBlock 扩展
 
-- 13 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：每个 `pycode: ['def voiceWhenX()']`。
-- KittenBlock 离线代码生成：hat 积木把 `def voiceWhenX():` 放**生成文件末尾**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
+- 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 13 个后缀完全一致。
+- KittenBlock 离线代码生成：hat 积木把 `def voiceWhen<指令>():` 放**生成文件末尾**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
 - 2 个发声积木：`voice.play('汪汪')` / `voice.play('嘤嘤')`。
 
 ### 2. 事件注册机制（核心难点，含坑）
@@ -444,13 +444,9 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
    - `_CMD_MAX` 从 `0x3C` 扩到 `0x3D`（下行扫描段，**漏了这条指令会被忽略**）；
    - `_EVT_FUNCS` 加一行 `'voiceWhenSpin': CMD_SPIN`。
    - 重编译固件 + 烧录。
-3. **扩展** `kext-bpuppy/kblock.json5`：`## $$cat_voice` 组加一个 hat 积木
-   ```json5
-   { opcode: 'voiceWhenSpin', blockType: 'hat', text: '$$voiceWhenSpin',
-     micropy: { instance: 'voice.start()' }, pycode: ['def voiceWhenSpin()'] }
-   ```
-   ⚠ **opcode 必须和函数名一致**（`voiceWhenSpin`），`_EVT_FUNCS` 才能映射到命令码。
-4. **本地化** `kext-bpuppy/bpuppy.l10n.json`：加 `voiceWhenSpin` 的显示文本（中文"当收到转圈指令"）。
+3. **扩展** `kext-bpuppy/kblock.json5`：**不再新增积木**，只在 `menus.voiceMenu` 加一项 `{ text: '$$voiceCmdSpin', value: 'Spin' }`。
+   ⚠ **value 必须和函数名后缀一致**（`Spin` → `def voiceWhenSpin()`），`_EVT_FUNCS` 才能映射到命令码。
+4. **本地化** `kext-bpuppy/bpuppy.l10n.json`：加 `voiceCmdSpin` 的显示文本（中文"转圈"）。
    **重新打包 zip**（extension.json + kblock.json5 + bpuppy.png + bpuppy.l10n.json 4 个文件）→ 推送 GitHub（raw 链接 `https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip`）→ KittenBlock 里清本地扩展重新导入。
 
 #### 3.2 换/加声音映射
@@ -470,7 +466,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 ### 4. 踩坑清单（一页速查）
 
 1. **`sys.modules['__main__']` 为 None** → 必须 `set_main_globals(globals())`，三条路径都传（见 2.3）。
-2. **hat 函数名 ≠ opcode** → 注册不上。函数名是 `pycode` 里的字面量。
+2. **下拉 value ≠ `_EVT_FUNCS` 后缀** → 注册不上。函数名 = `pycode` 里的 `def voiceWhen<value>()`（value 裸代入，如 `Fwd` → `def voiceWhenFwd()`）。
 3. **命令码超出扫描段**（> `_CMD_MAX`）→ 收得到但被忽略。加指令必须同步扩段。
 4. **GPIO19/20 被 TinyUSB 占** → UART2 发不出。必须关 `usb_init()`（已在固件里关了）。
 5. **下行是裸 2 字节**（无 AA 55 帧）→ 解析按数据区字节扫描，别等帧头。
