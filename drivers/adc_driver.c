@@ -13,8 +13,10 @@
  * MicroPython 接口:
  *   import bpuppy_adc
  *   bpuppy_adc.init()            # 初始化 (11dB 衰减, ~0-3.1V)
+ *                                # 同时激活 GPIO48 WS2812 电池指示灯 (见 led_driver.c)
  *   mv = bpuppy_adc.read_mv()    # ADC 引脚电压 (mV)
  *   volt = mv * 6.1 / 1000       # 电池电压 (V), 软件换算
+ *   # 推荐: import batt; batt.read_batt_v()  最小二乘线性拟合标定 (mpy_modules/batt.py)
  *
  * ⚠ 必须用 legacy ADC API (adc1_*): MicroPython 的 machine.ADC 使用 legacy
  *   driver, ESP-IDF 5.x 中 legacy 与 driver_ng (adc_oneshot) 互斥,
@@ -29,6 +31,10 @@
 #include "esp_log.h"
 
 static const char *TAG = "adc";
+
+/* WS2812 电池指示灯 (led_driver.c): adc_init 后自动启动监控任务 */
+extern void led_batt_start(void);
+extern void led_batt_stop(void);
 
 #if BPUPPY_ADC_ENABLE
 #define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // GPIO3 (V3.0: IMU SDA 改到 GPIO14 后腾出)
@@ -47,6 +53,9 @@ void adc_init(void)
 
     g_adc_ready = true;
     ESP_LOGI(TAG, "ADC ready  atten=11dB (legacy)");
+
+    /* 同时激活 WS2812 电池电压指示灯 (led_driver.c, 颜色随电压变化) */
+    led_batt_start();
 #else
     ESP_LOGW(TAG, "电池检测已停用 (BPUPPY_ADC_ENABLE=0): read_mv() 返回 -1");
     return;
@@ -79,6 +88,7 @@ int adc_read_mv(void)
 void adc_stop(void)
 {
     g_adc_ready = false;
+    led_batt_stop();   /* 停掉电池指示灯监控任务 */
     ESP_LOGI(TAG, "ADC stopped (read 返回 -1, 可重新 init)");
 }
 

@@ -143,13 +143,14 @@ Ready.
 MicroPython 层:   frozen/main.py → 上电自动站立 + WiFi 遥控 (IMU/BLE/UART/ADC 手动或按需启动)
                        ↑ import
 C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_uart / bpuppy_adc /
-                  bpuppy_ik / bpuppy_motion / bpuppy_camera / bpuppy_ble
+                  bpuppy_ik / bpuppy_motion / bpuppy_camera / bpuppy_ble / bpuppy_led
                        ↑ MP_REGISTER_MODULE
 C 驱动层:
   servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode) + NVS 校准
   imu_driver.c      — I2C MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050=6轴无磁力计, 9250=9轴 Mahony + 磁力计椭球校准)
   uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 + I2C1 摄像头复用口
   adc_driver.c      — ADC 电池检测 (电池=GPIO3/ADC1_CH2, 分压 51k/10k)
+  led_driver.c      — WS2812 电池指示灯 (GPIO48, RMT chan 0, adc_init 后自动激活)
   ik.h / ik.c       — 2-DOF 逆运动学
   ble_driver.c      — NimBLE GATT (编译互斥: KittenBlock Nordic / Hiwonder FFE0)
   ble_stream.c      — BLE 流对象 (dupterm REPL 桥接, KittenBlock 模式)
@@ -171,6 +172,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/imu_driver.c` | MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050 跳过磁力计), Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
 | `drivers/adc_driver.c` | ADC 电池检测 (GPIO3=ADC1_CH2, 分压 51k/10k) |
+| `drivers/led_driver.c` | WS2812 电池指示灯 (GPIO48, `bpuppy_adc.init()` 自动激活; 蓝=满电/红=低压/闪烁=危险) |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
@@ -444,10 +446,10 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 | LH_KNEE 左后小腿 | 41 | RH_KNEE 右后小腿 | 45 |
 
 IMU: I2C0 (SDA=GPIO14, SCL=GPIO21, addr=0x68)。双芯片自适应: WHO_AM_I 识别 MPU6050(6轴)/MPU9250(9轴), REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
-UART2: GPIO19=RX, 20=TX (CI-33T / micro:bit, 手动 init)。
+UART2: GPIO20=RX, 19=TX (CI-33T / micro:bit, ⚠ 2026-08-19 起反转 TX=19/RX=20; ⚠ GPIO19/20=USB_D-/D+, 固件已关 TinyUSB 释放, 见 docs/硬件连接.md)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
-ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。
+ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。`bpuppy_adc.init()` 同时激活 GPIO48 WS2812 电池指示灯 (≥7.4V 蓝 / 6.6~7.4V 渐变 / ≤6.6V 红 / <6.4V 闪烁)。
 完整 GPIO 分配表见 `docs/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)

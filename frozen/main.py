@@ -6,9 +6,11 @@ bPuppy 机器狗 — MicroPython 启动脚本
   1. 挂载 VFS (Flash 文件系统)
   2. 启动 BLE (KittenBlock 蓝牙 / Hiwonder, 由固件编译模式决定)
   3. 原厂无条件初始化: IDLE → POSE → 站姿待命
-  4. 检查 /main.py (用户程序)
-  5. 有 → exec 用户程序 (从站姿切入)
-  6. 无 → Ready 待命
+  4. 电池电压检测 + WS2812 指示灯 (frozen/voltage.py, 上电默认)
+  5. 语音控制 — CI-33T 语音模块 (frozen/voice.py, UART2/9600, 上电默认)
+  6. 检查 /main.py (用户程序)
+  7. 有 → exec 用户程序 (从站姿切入)
+  8. 无 → Ready 待命
 
 WiFi 热点: 上电默认不开 (KittenBlock 蓝牙优先)。需要时手动
   import camera_stream; camera_stream.start()
@@ -84,6 +86,12 @@ bpuppy_servo.set_angle(6, 135);  bpuppy_servo.set_angle(7, 45)   # RH
 
 # 默认姿态 POSE_STAND (Python 站姿, 留在姿态模式)
 poses.stand()
+
+# 电池电压检测 + WS2812 指示灯 (frozen/voltage.py, 上电默认; 逻辑在模块内, import 即启动)
+import voltage
+
+# 语音控制 — CI-33T 语音模块 (frozen/voice.py, UART2/9600, 上电默认; import 即启动)
+import voice
 
 # ============================================================
 # 用户程序 (从站姿切入)

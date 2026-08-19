@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册'},
   },
   blocks: [
     "## $$cat_motion",
@@ -285,6 +285,111 @@
       blockType: 'reporter',
       text: '$$getYaw',
       pycode: 'bpuppy_imu.read_angles()[2]'
+    },
+    "---",
+    "## $$cat_voice",
+    {
+      opcode: 'voiceWhenStop',
+      blockType: 'hat',
+      text: '$$voiceWhenStop',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenStop()']
+    },
+    {
+      opcode: 'voiceWhenFwd',
+      blockType: 'hat',
+      text: '$$voiceWhenFwd',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenFwd()']
+    },
+    {
+      opcode: 'voiceWhenBack',
+      blockType: 'hat',
+      text: '$$voiceWhenBack',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenBack()']
+    },
+    {
+      opcode: 'voiceWhenLeft',
+      blockType: 'hat',
+      text: '$$voiceWhenLeft',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenLeft()']
+    },
+    {
+      opcode: 'voiceWhenRight',
+      blockType: 'hat',
+      text: '$$voiceWhenRight',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenRight()']
+    },
+    {
+      opcode: 'voiceWhenFaster',
+      blockType: 'hat',
+      text: '$$voiceWhenFaster',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenFaster()']
+    },
+    {
+      opcode: 'voiceWhenSlower',
+      blockType: 'hat',
+      text: '$$voiceWhenSlower',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenSlower()']
+    },
+    {
+      opcode: 'voiceWhenJump',
+      blockType: 'hat',
+      text: '$$voiceWhenJump',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenJump()']
+    },
+    {
+      opcode: 'voiceWhenStand',
+      blockType: 'hat',
+      text: '$$voiceWhenStand',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenStand()']
+    },
+    {
+      opcode: 'voiceWhenCrouch',
+      blockType: 'hat',
+      text: '$$voiceWhenCrouch',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenCrouch()']
+    },
+    {
+      opcode: 'voiceWhenSit',
+      blockType: 'hat',
+      text: '$$voiceWhenSit',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenSit()']
+    },
+    {
+      opcode: 'voiceWhenWave',
+      blockType: 'hat',
+      text: '$$voiceWhenWave',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenWave()']
+    },
+    {
+      opcode: 'voiceWhenPlay',
+      blockType: 'hat',
+      text: '$$voiceWhenPlay',
+      micropy: { instance: 'voice.start()' },
+      pycode: ['def voiceWhenPlay()']
+    },
+    {
+      opcode: 'voiceBark',
+      blockType: 'command',
+      text: '$$voiceBark',
+      pycode: "voice.play('汪汪')"
+    },
+    {
+      opcode: 'voiceWhimper',
+      blockType: 'command',
+      text: '$$voiceWhimper',
+      pycode: "voice.play('嘤嘤')"
     }
   ],
   menus: {

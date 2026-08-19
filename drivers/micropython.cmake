@@ -19,6 +19,7 @@ target_sources(usermod INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/ble_driver_mpy.c
     ${CMAKE_CURRENT_LIST_DIR}/ble_stream.c
     ${CMAKE_CURRENT_LIST_DIR}/camera_driver.c
+    ${CMAKE_CURRENT_LIST_DIR}/led_driver.c
 )
 
 # 添加模块头文件搜索路径

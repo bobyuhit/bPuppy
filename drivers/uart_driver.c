@@ -1,7 +1,7 @@
 /*
  * bPuppy UART 通信驱动
  *
- * UART2 (GPIO 19=RX, GPIO 20=TX) — 默认通信口 (CI-33T / micro:bit)
+ * UART2 (GPIO 20=RX, GPIO 19=TX) — 默认通信口 (CI-33T / micro:bit)  ⚠ 2026-08-19 起反转 TX=GPIO19/RX=GPIO20
  * UART1 (GPIO 4=TX, GPIO 5=RX) — 摄像头复用口 (SCCB SDA/SCL)
  * UART0 (GPIO 43/44)          — 烧录 + REPL 控制台
  */
@@ -155,7 +155,7 @@ void uart1_comm_stop(void)
  *   import bpuppy_uart
  *
  *   # UART2 (默认)
- *   bpuppy_uart.init(2, 20, 19, 115200)
+ *   bpuppy_uart.init(2, 19, 20, 115200)   # TX=GPIO19, RX=GPIO20
  *   bpuppy_uart.send(b"hello")
  *   data = bpuppy_uart.read(64)
  *
