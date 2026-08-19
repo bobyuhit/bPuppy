@@ -30,6 +30,7 @@
         "import poses",
         "import bpuppy_imu",
         "import voice",
+        "voice.set_main_globals(globals())",
         "_speed = 2.5; _stride = 70; _height = 70"
     ],
     "ble": {

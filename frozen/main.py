@@ -92,6 +92,10 @@ import voltage
 
 # 语音控制 — CI-33T 语音模块 (frozen/voice.py, UART2/9600, 上电默认; import 即启动)
 import voice
+# 实测 (2026-08-19): 本固件 sys.modules['__main__'] 为 None, 事件积木函数
+# (voiceWhen*) 必须从主脚本全局 dict 扫描。exec(_user_code) 在下方同一全局执行,
+# 函数定义后会进入这个 dict, voice 后台线程周期性扫描即能注册。
+voice.set_main_globals(globals())
 
 # ============================================================
 # 用户程序 (从站姿切入)

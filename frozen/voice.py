@@ -84,6 +84,17 @@ _CMD_MAX = 0x3C
 
 _started = False
 
+# ---- 主脚本全局 dict (事件积木函数所在作用域) ----
+# 实测 (2026-08-19): 本固件 MicroPython 的 sys.modules['__main__'] 为 None,
+# 不能用它找 voiceWhen* 函数。由 frozen main.py / KittenBlock afterConnect
+# 显式传入 globals() (主脚本/REPL 共享的全局 dict), 扫描事件函数用它。
+_MAIN_GLOBALS = None
+
+def set_main_globals(g):
+    """传入主脚本全局 dict (frozen main.py 或 afterConnect 调用: voice.set_main_globals(globals()))"""
+    global _MAIN_GLOBALS
+    _MAIN_GLOBALS = g
+
 # ================================================================
 # 事件回调注册表 — 只转发信号, 不做动作 (2026-08-19)
 # ================================================================
@@ -125,16 +136,20 @@ _EVT_FUNCS = {
 }
 
 def _scan_events():
-    """扫描 __main__ 全局 (frozen main.py exec 用户程序的作用域),
+    """扫描主脚本全局 (frozen main.py exec 用户程序 / REPL 的作用域),
     把 voiceWhen* 函数注册为对应命令码的事件回调 (幂等, 后台线程周期性调用)。
-    只注册不调用 → 用户函数体不会在开机时执行一次。"""
+    只注册不调用 → 用户函数体不会在开机时执行一次。
+    全局 dict 来源: set_main_globals() (frozen main.py/afterConnect) > sys.modules['__main__']。"""
     try:
-        import sys
-        mod = sys.modules.get('__main__')
-        if mod is None:
+        g = _MAIN_GLOBALS
+        if g is None:
+            import sys
+            m = sys.modules.get('__main__')
+            g = m.__dict__ if m is not None else None
+        if g is None:
             return
         for fname, cmd in _EVT_FUNCS.items():
-            fn = getattr(mod, fname, None)
+            fn = g.get(fname)
             if fn is not None and callable(fn) and fn not in _handlers.get(cmd, []):
                 on_cmd(cmd, fn)
                 print("voice: event 0x%02x -> %s" % (cmd, fname))

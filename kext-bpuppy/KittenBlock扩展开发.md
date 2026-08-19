@@ -691,7 +691,8 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 **bPuppy 语音事件积木的实现**（避免「调用一次 = 用户体执行一次」的副作用）：
 - hat 积木 `pycode` 只有 `['def voiceWhenStop()']`，**不写注册行**。
-- voice.py 后台线程 `_scan_events()` 扫 `sys.modules['__main__']`（frozen main.py `exec(_user_code)` 的作用域），按 `_EVT_FUNCS` 表（`voiceWhenX` → 命令码）把函数**直接注册**为回调，**不调用** → 用户体不在开机时误执行。
+- voice.py 后台线程 `_scan_events()` 扫**主脚本全局 dict**（frozen main.py `exec(_user_code)` / REPL 的作用域），按 `_EVT_FUNCS` 表（`voiceWhenX` → 命令码）把函数**直接注册**为回调，**不调用** → 用户体不在开机时误执行。
+- ⚠ **全局 dict 来源**（实测 2026-08-19）：本固件 MicroPython **`sys.modules['__main__']` 为 `None`**，不能用它找函数。必须在 `frozen/main.py` 与 KittenBlock afterConnect / libs 里调 `voice.set_main_globals(globals())` 显式传入（主脚本与 REPL 共享同一 dict，`exec` 新定义的 `voiceWhen*` 会进入该 dict，后台扫描即可看到）。
 - 收到下行指令 → `_dispatch` 调注册的回调。**固件无任何内置动作**（2026-08-19 起已移除 `_ACTIONS`/`auto_move`），命令来了要么触发用户事件函数、要么什么都不做，动作全由用户编程。
 
 > ⚠ hat 函数名必须与 opcode 一致（`voiceWhenX`），`_EVT_FUNCS` 才能映射到命令码；函数名被 KittenBlock 改成别的名会注册不上。
