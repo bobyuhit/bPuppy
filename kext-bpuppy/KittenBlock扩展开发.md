@@ -697,6 +697,8 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 > ⚠ hat 函数名必须与 opcode 一致（`voiceWhenX`），`_EVT_FUNCS` 才能映射到命令码；函数名被 KittenBlock 改成别的名会注册不上。
 
+📘 语音「事件」系统的全链路交接文档（含改法 Recipe 与踩坑清单）：[语音事件系统.md](../docs/语音事件系统.md)。
+
 ## 14. 参考
 
 - KittenBlock 插件开发指南 01/02：积木定义、串口通信基础
