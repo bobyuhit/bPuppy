@@ -20,8 +20,8 @@ bPuppy 是基于 ESP32-S3 的 8 自由度四足机器狗（4腿 × 2DOF：髋+�
 |------|--------|----------|
 | 大腿 L1 | 40mm | `cal_ik(L1, L2)` → NVS |
 | 小腿 L2 | 45mm | `cal_ik(L1, L2)` → NVS |
-| 前后髋距 | 125mm | `set_body_dims(bl, bw)` → NVS |
-| 左右髋宽 | 118mm | `set_body_dims(bl, bw)` → NVS |
+| 前后髋距 | 半距 62.5mm（全长 125mm） | `set_body_dims(bl, bw)` → NVS ⚠ 传**半距** |
+| 左右髋宽 | 半宽 59mm（全宽 118mm） | `set_body_dims(bl, bw)` → NVS ⚠ 传**半宽** |
 | 膝角范围 | 10°~170° | `set_joint_limits()` → NVS |
 | 髋角范围 | 0°~180° | `set_joint_limits()` → NVS |
 | 速度范围 | 0~10 | `set_params()` |
@@ -604,8 +604,16 @@ crouch 姿态角度在 Python `poses.py` 定义 (`CROUCH = [135,45,...]`)。若�
 
 ### 6. 校准公式
 
-`cal(ch, ref_deg)` → offset = `ref_deg - 90`。`set_angle(90)` → 发送 `90 + offset` 到舵机。
-含义: "舵机要转到 ref_deg° 腿才垂直" → offset 补偿后 set_angle(90) 腿正好垂直。
+**三点校准 (现行, `cal_point`)**: 每通道存 0°/90°/180° 三个点 `c[0],c[1],c[2]` —— 值为"命令该角度时舵机实际应转的角度", 中间**分段线性插值** (`servo_driver.c:223-233`):
+
+```
+set_angle(ch, A) → A ≤ 90 时发 c[0] + (c[1]-c[0])×A/90
+                   A > 90 时发 c[1] + (c[2]-c[1])×(A-90)/90
+```
+
+同时补偿零点偏移和斜率/非线性误差。
+
+**旧单点法 (`cal`, 已不推荐, 接口保留)**: `cal(ch, ref_deg)` ≡ `cal_point(ch, 1, ref_deg)`, 只设 90° 点, 0°/180° 保持恒等 → `set_angle(90)` 发送 `ref_deg`, 只补偿零点、不补偿斜率。上述公式**只对旧的单点法成立**; 三点校准后除 90° 点外一般 `set_angle(A) ≠ A`。
 
 ### 7. GO 自适应中的 eff_speed
 

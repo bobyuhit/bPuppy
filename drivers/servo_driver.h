@@ -90,7 +90,9 @@ void servo_init_all(void);
 
 // ★ 三点校准 (point: 0=0°点, 1=90°点, 2=180°点)
 //   每个点存"命令该角度时舵机实际应转的角度", 中间分段线性插值补偿。
-//   标定流程: set_angle(ch, A) 试角度看位置 → 调到对 → cal_point(ch, p, A) 存 NVS。
+//   标定流程: 直接用 cal_point(ch, p, A) 试 —— 它跳过校准表按原始角度驱动舵机,
+//   同时写 NVS, 反复换数重发到位置对为止。不要用 set_angle 试: 它发的是插值后的
+//   值, 标定途中校准表在变, 输出角度和你输入的对不上 (set_angle 只用于标完后验证)。
 //   设置单点校准参考角 (90° 点, 兼容旧接口)
 void servo_set_cal(uint8_t channel, float ref_angle_deg);
 
