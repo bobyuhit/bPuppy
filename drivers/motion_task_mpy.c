@@ -26,6 +26,12 @@ STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
     else if (strcmp(s, "trot") == 0)        g = GAIT_TROT;
     else if (strcmp(s, "trotfwd") == 0)     g = GAIT_TROT;
     else if (strcmp(s, "trotbck") == 0)     g = GAIT_TROT;
+    else {
+        // 未知步态名 → 停车。这是刻意的 fail-safe (指令可能被传坏, 如蓝牙丢字节
+        // "trot"→"tr"), 不是缺陷。行为不变, 只把"名字打错"和"正常停车"区分开。
+        // 详见 docs/操作指南.md §1.2 步态列表
+        mp_printf(&mp_plat_print, "⚠ 未知步态 \"%s\" → 停车\n", s);
+    }
     motion_set_gait(g);
     return mp_const_none;
 }
