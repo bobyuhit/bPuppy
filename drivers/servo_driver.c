@@ -417,23 +417,11 @@ STATIC mp_obj_t mp_servo_stop(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_servo_stop_obj, mp_servo_stop);
 
-// ---- 校准函数 MPY 包装 ----
-#define MAKE_SERVO_CAL(ch, name) \
-    STATIC mp_obj_t mp_cal_##name(mp_obj_t deg_obj) { \
-        motion_python_servo_write();   /* 校准写参考角 → 自动切 POSE */ \
-        servo_set_cal((ch), mp_obj_get_float(deg_obj)); \
-        return mp_const_none; \
-    } \
-    STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_cal_##name##_obj, mp_cal_##name);
-
-MAKE_SERVO_CAL(SERVO_LF_HIP,  LF_HIP)
-MAKE_SERVO_CAL(SERVO_LF_KNEE, LF_KNEE)
-MAKE_SERVO_CAL(SERVO_LH_HIP,  LH_HIP)
-MAKE_SERVO_CAL(SERVO_LH_KNEE, LH_KNEE)
-MAKE_SERVO_CAL(SERVO_RF_HIP,  RF_HIP)
-MAKE_SERVO_CAL(SERVO_RF_KNEE, RF_KNEE)
-MAKE_SERVO_CAL(SERVO_RH_HIP,  RH_HIP)
-MAKE_SERVO_CAL(SERVO_RH_KNEE, RH_KNEE)
+// 实测 (2026-09-16): 此处原有 8 个按腿命名的旧校准导出
+// (cal_LF_HIP … cal_RH_KNEE, 经 servo_set_cal 只标 90° 点)。
+// 全仓 (代码/文档/kext) 无任何引用, 且被 cal_point(ch, point, deg) 完全覆盖
+// (三个点、任意通道), 故删除。servo_set_cal()/servo_get_cal() 保留 ——
+// mp_servo_cal() 与 motion_task_mpy.c 的 show_geometry() 仍在用。
 
 // ---- load_cal ----
 STATIC mp_obj_t mp_servo_load_cal(void) {
@@ -495,15 +483,6 @@ STATIC const mp_rom_map_elem_t bpuppy_servo_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_get_cal),    MP_ROM_PTR(&mp_servo_get_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal_point),  MP_ROM_PTR(&mp_servo_cal_point_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_cal_point), MP_ROM_PTR(&mp_servo_get_cal_point_obj) },
-    // 校准 (兼容旧接口)
-    { MP_ROM_QSTR(MP_QSTR_cal_LF_HIP),  MP_ROM_PTR(&mp_cal_LF_HIP_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_LF_KNEE), MP_ROM_PTR(&mp_cal_LF_KNEE_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_LH_HIP),  MP_ROM_PTR(&mp_cal_LH_HIP_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_LH_KNEE), MP_ROM_PTR(&mp_cal_LH_KNEE_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_RF_HIP),  MP_ROM_PTR(&mp_cal_RF_HIP_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_RF_KNEE), MP_ROM_PTR(&mp_cal_RF_KNEE_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_RH_HIP),  MP_ROM_PTR(&mp_cal_RH_HIP_obj) },
-    { MP_ROM_QSTR(MP_QSTR_cal_RH_KNEE), MP_ROM_PTR(&mp_cal_RH_KNEE_obj) },
     // 舵机命名常量
     { MP_ROM_QSTR(MP_QSTR_LF_HIP),      MP_ROM_INT(SERVO_LF_HIP) },
     { MP_ROM_QSTR(MP_QSTR_LF_KNEE),     MP_ROM_INT(SERVO_LF_KNEE) },
