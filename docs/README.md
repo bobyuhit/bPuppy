@@ -603,6 +603,28 @@ bpuppy_camera.deinit()
 **格式常量**: `JPEG`(4) / `RGB565`(1) / `GRAYSCALE`(5)
 **分辨率常量**: `QQVGA`(160×120) / `QVGA`(320×240) / `VGA`(640×480) / `SVGA`(800×600) / `XGA`(1024×768) / `UXGA`(1600×1200)
 
+### 内存：帧缓冲在 PSRAM，不占内部 RAM
+
+- 帧缓冲在 **PSRAM**（`drivers/camera_driver.c:68` 的 `.fb_location = CAMERA_FB_IN_PSRAM`），
+  SVGA 双缓冲下为 2 × 97KB
+- DMA 中转缓冲**已取消**（`sdkconfig.bpuppy` 开了 `CONFIG_CAMERA_PSRAM_DMA=y`）。
+  不开的话 `cam_hal.c:520` 会额外在**内部 RAM** 要一块连续 16KB，跑久了碎片化
+  凑不出来 → 相机**当场初始化失败**（见易错点 11）
+- **结论：相机完全不依赖内部 RAM，碎片化影响不到它**
+
+自检（**开图传后**才有，走 **UART0 串口**，蓝牙看不到）：
+
+```
+I cam_hal: PSRAM DMA mode enabled
+I cam_hal: Allocating 97040 Byte frame buffer in PSRAM
+I cam_hal: Allocating 97040 Byte frame buffer in PSRAM
+```
+
+`enabled` + 帧缓冲地址在 `0x3C......`（PSRAM 段）才算对。若是 `disabled`，
+见「sdkconfig 三层覆盖机制」那节的坑。
+
+> 相机参数改 `drivers/camera_driver.c`（C 层），MicroPython 侧改不了默认值。
+
 ### PC 端串口拍照
 
 ```powershell
@@ -701,6 +723,45 @@ ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。
 
 **绝不能**用 new driver (`adc_oneshot_*`, driver_ng) — MicroPython 的 `machine.ADC` 使用 legacy driver，ESP-IDF 5.x 中两者互斥，混用会触发 `CONFLICT! driver_ng is not allowed to be used with the legacy driver` 断言并**上电无限重启**。
 
+### 11. 内部 RAM 只看**最大连续块**，不看总空闲
+
+判断内部内存够不够，看 `heap_caps_get_largest_free_block()`（最大**连续**块），
+不看 `free`（总空闲）。两个数经常差很远，而**要连续块的分配只看前一个**。
+
+- 内部 RAM 是这个板子上**最稀缺**的资源（总 D/IRAM 才 ~222KB），
+  BLE / WiFi / 所有线程栈 / 各种缓冲都从它出
+- 往内部 RAM 要大块连续内存之前先问：**这块能不能挪到 PSRAM？**
+  （8MB，且不跟上面那些抢）
+- 碎片化导致的失败特征是「**间歇性 + 和时间相关**」（跑几分钟没事、十几分钟才挂），
+  比必然失败难查 —— 所以**别把大块内存放在内部 RAM 上赌碎片**
+
+> **实例**：`cam_hal.c:520` 默认会在内部 RAM 要一块连续 16KB 做 DMA 中转缓冲，
+> 跑久了凑不出来就**当场初始化失败**（`Camera init_adv failed: 0xffffffff`）。
+> 已在 `sdkconfig.bpuppy` 开 `CONFIG_CAMERA_PSRAM_DMA=y` 取消该块 ——
+> 相机现在**完全不依赖内部 RAM**。
+
+### 12. `_thread.stack_size()` 是**全局默认值**，设完必须还原
+
+两条硬规则（`py/modthread.c`）：
+
+1. **它设的是"此后新建线程"的默认值，是全局状态。** 设完不还原，后面每个模块
+   起线程都按这个尺寸要 —— 内部 RAM 不够时 `start_new_thread` 直接抛
+   `OSError: can't create thread`，而且看当时碎片，**时好时坏**。
+2. **不带参数调用 `stack_size()` 不是安全的读** —— 它返回旧值的同时会把设置
+   **重置成 0**。别拿它当调试探针。
+
+固定写法（设完立刻还原；`start_new_thread()` 返回前就已读走该值，还原不影响它）：
+
+```python
+_thread.stack_size(16 * 1024)
+_thread.start_new_thread(fn, args)
+_thread.stack_size(0)          # 0 = 端口默认 (esp32: 5120)
+```
+
+尺寸：esp32 端口默认 `MP_THREAD_DEFAULT_STACK_SIZE = 5KB`，下限
+`MP_THREAD_MIN_STACK_SIZE = 4KB`（传更小的值会被**向上**夹到 4KB）。
+线程栈从**内部 RAM** 分配，所以这条和易错点 11 是同一个约束。
+
 ---
 
 ## 首次编译问题排查
@@ -729,6 +790,26 @@ ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。
 
 后加载的覆盖先加载的。查看生效配置: `grep CONFIG_ESPTOOLPY build/sdkconfig`
 
+### ⚠ 改 `sdkconfig.bpuppy` 后必须删掉 `build/sdkconfig`
+
+**`build/sdkconfig` 已存在时，往 `sdkconfig.bpuppy` 新增的配置不会生效** ——
+编译不报错，烧进去没有任何提示，那个 `CONFIG_*` 一直保持关闭。
+
+改配置后固定走这三步 + 一次核对：
+
+```bash
+cp build/sdkconfig /tmp/sdkconfig.before   # 备份
+rm build/sdkconfig                          # 从 defaults 重新生成
+bash build.sh
+diff /tmp/sdkconfig.before build/sdkconfig  # 应当只有你改的那几行不同
+```
+
+那个 `diff` 是关键：它同时验证「新配置生效了」和「没有别的配置被意外改动」。
+**改完一定要 `grep <你的 CONFIG_*> build/sdkconfig` 亲眼确认**，别假定它生效了。
+
+> `build/` 整个是产物目录，`sdkconfig` 不在 git 里，删掉是安全的。
+> 要保留的配置全在 `sdkconfig.bpuppy` / `sdkconfig.defaults`（这两个在 git 里）。
+
 ---
 
 ## 修改代码指引
@@ -744,6 +825,7 @@ ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。
 | 修改语音事件/命令码映射 | `frozen/voice.py`（固件侧，需重编译烧录）+ `kext-bpuppy/kblock.json5`（扩展侧，重打包 zip） |
 | 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送） |
 | 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |
+| 改相机内存走向 (内部 RAM ↔ PSRAM) | `sdkconfig.bpuppy` → `CONFIG_CAMERA_PSRAM_DMA`（改完**必须删 `build/sdkconfig`**，见下节） |
 | 修改 PC 拍照工具 | `tools/capture.py` |
 | 修改构建参数 | `CMakeLists.txt` + `sdkconfig.defaults` |
 | 更新版本号 | `drivers/bpuppy_version.c` → `BP_VERSION` |
@@ -776,10 +858,25 @@ idf.py flash monitor       # 烧录并监控
 - [ ] 蓝牙 REPL：`os.dupterm(None)` 返回 BLE 流对象（C 层自动注册）
 - [ ] 语音: 开机日志出现 `voice: CI-33T ready`；说"前进" → 串口 `VOICE RX: 3100` + `VOICE CMD: 0x31 -> event` → 狗走
 - [ ] 语音: 开机日志出现 `voice: event 0x31 -> voiceWhenFwd`（事件函数已注册）
+- [ ] 相机: 开图传后串口出现 `cam_hal: PSRAM DMA mode enabled` + 两行 `frame buffer in PSRAM`（**串口**看，蓝牙看不到）
 
 ---
 
 ## 已知问题 / 待解决
+
+### 图传「关了再开」必挂、久开后开不了图传 —— ✅ 已修复
+
+两个**互相独立**的原因：
+
+1. **关流时在消费者还活着的情况下 `deinit()` 相机** —— 关流只等 100ms，而
+   `capture()` 可以阻塞 4000ms。改成「最后一个退出的流线程负责释放」
+   （`frozen/camera_stream.py`）。
+2. **相机要在内部 RAM 要一块连续 16KB** 做 DMA 中转缓冲，跑久了碎片化凑不出来。
+   已取消该块（`sdkconfig.bpuppy` 的 `CONFIG_CAMERA_PSRAM_DMA=y`）。
+
+排查要点：**别拿「以前这个版本是好的」当线索**（相机代码 6~8 周没动过，是以前
+没测过「关了再开」、也没跑过那么久），要拿**日志里的数**当线索 ——
+`largest free block:` 那个值。详见易错点 11 / 12 与「OV2640 摄像头」节。
 
 ### IMU 校准后有固定偏差 —— ✅ 已修复
 `calibrate(300)` 原先只补偿 Z 轴（1g），X/Y 零偏未标定 → 水平放置姿态角偏 ~12°。现已补 X/Y 零偏（**校准时机身必须水平**）。修复后水平放置读数应 ≈0。
