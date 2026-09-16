@@ -87,16 +87,6 @@ void motion_set_params(float speed, float stride, float height);
 // 校验参数（不写入），返回 0=OK, 1=超限
 int motion_check_params(float stride, float height);
 
-// 分腿校准
-void motion_cal_LF_HIP(float deg);
-void motion_cal_LH_HIP(float deg);
-void motion_cal_RF_HIP(float deg);
-void motion_cal_RH_HIP(float deg);
-void motion_cal_LF_KNEE(float deg);
-void motion_cal_LH_KNEE(float deg);
-void motion_cal_RF_KNEE(float deg);
-void motion_cal_RH_KNEE(float deg);
-
 // IK 校准：调整大腿/小腿长度
 void motion_cal_ik(float L1, float L2);
 
