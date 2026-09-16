@@ -114,7 +114,49 @@ Ready.
 |---------|---------|
 | `frozen/*.py` | `bash build.sh` → 只烧 app 分区 |
 | `drivers/*.c/.cpp` | `bash build.sh` → 只烧 app 分区 |
-| `CMakeLists.txt` / `sdkconfig.*` / `partitions.csv` | `rm -rf build && bash build.sh` → **全烧** |
+| `partitions.csv` | `bash build.sh` → **全烧**（增量即会重生成分区表, **不需** `rm -rf build`） |
+| `CMakeLists.txt` / `sdkconfig.*` | `rm -rf build && bash build.sh` → **全烧** |
+
+> `partitions.csv` 是 `partition-table.bin` 的**显式 ninja 依赖**（`build/build.ninja` 里
+> `build partition_table/partition-table.bin: CUSTOM_COMMAND ... partitions.csv ...`），
+> 改它普通增量 `idf.py build` 一定会重生成，不必全量重编。
+> 判断有没有生效：构建日志里会打出 `Partition table binary generated. Contents:` 那段表。
+> 想二次确认就解析 `build/partition_table/partition-table.bin`（32 字节一项，
+> 第 5 项是 magic `0xEBEB` 的 MD5 伪项、不是分区，之后是 0xFF 填充，文件固定 3072 字节）。
+
+### Flash 分区布局 (16MB)
+
+`partitions.csv` 是唯一权威来源：
+
+| 分区 | 类型 | 偏移 | 大小 | 用途 |
+|------|------|------|------|------|
+| *(bootloader)* | — | `0x0` | 32KB | 二级引导 |
+| *(分区表本身)* | — | `0x8000` | 4KB | 3072 字节实体 + 填充 |
+| `nvs` | data/nvs | `0x9000` | 24KB | **舵机三点标定 / 几何 / IMU 标定** |
+| `phy_init` | data/phy | `0xF000` | 4KB | RF 校准数据 |
+| `factory` | app/factory | `0x10000` | `0x7F0000` (7.94MB) | 固件 + frozen `.py`（两者都在这里） |
+| `vfs` | data/fat | `0x800000` | 8MB | 用户程序（KittenBlock 下载的 `/main.py`） |
+
+两条改分区前必读：
+
+- **2026-09-16 前是 `factory` 2MB / `vfs` 14MB**。那时固件 1.63MB 已占满应用分区的 84%（只剩 320KB），
+  而 vfs 只装一个几 KB 的 `/main.py` —— 纯浪费。现已调成 8MB/8MB，应用剩 6.3MB。
+- ⚠ **`nvs` 在 `factory` 之前，所以改 `factory`/`vfs` 的尺寸永远碰不到它** —— 前提是 `factory`
+  起始仍是 `0x10000`、且不动 `nvs` 那两行。烧录**绝不要用 `--erase-all` / `erase-flash`**：
+  那是唯一会毁掉舵机标定的操作。也**别把「升级 ESP-IDF」和「改分区表」放在同一次操作里** ——
+  `mpy_startup.c` 里 `nvs_flash_init()` 的失败分支会调 `nvs_flash_erase()`，
+  NVS 格式版本一变就静默清空全部标定。
+
+**改过分区表后 vfs 必须重建一次**（位置/大小变了，旧 FAT 失效）。`frozen/main.py` 只在首扇区
+全 `0xFF`（处女分区）时才自动格式化，所以要先把新 vfs 的首扇区擦掉让它自愈：
+
+```powershell
+esptool --chip esp32s3 --port COM3 erase-region 0x800000 0x1000
+```
+
+复位后应看到 `[bPuppy] VFS 是未格式化的新分区, 正在格式化...`，然后正常挂载。
+若看到 `[bPuppy] [ERROR] VFS 挂载失败 ... 已拒绝自动格式化`，就是漏了这一步 —— 补擦再复位即可。
+（只擦 1 个扇区就够：guard 只读首扇区，`mkfs` 不要求 flash 是擦除态。）
 
 ---
 

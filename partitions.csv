@@ -1,8 +1,10 @@
 # bPuppy ESP32-S3 16MB Flash 分区表
 # 格式: Name,   Type, SubType, Offset,  Size
-# 16MB - 2MB factory - 64KB overhead ≈ 14MB VFS
+# 16MB - 8MB factory (含 64KB 引导区) - 8MB VFS
+# 实测 2026-09-16: 固件 1.63MB, vfs 只装一个几 KB 的 /main.py —— 原 2MB/14MB 配置是浪费,
+# 应用只剩 320KB(16%)。改成 8MB/8MB 后应用剩 6.3MB。nvs/phy_init 位置大小绝不能动。
 
 nvs,      data, nvs,     0x9000,  0x6000
 phy_init, data, phy,     0xF000,  0x1000
-factory,  app,  factory, 0x10000, 0x1F0000
-vfs,      data, fat,     0x200000, 0xE00000
+factory,  app,  factory, 0x10000, 0x7F0000
+vfs,      data, fat,     0x800000, 0x800000
