@@ -8,12 +8,16 @@ bPuppy 机器狗 — MicroPython 启动脚本
   3. 原厂无条件初始化: IDLE → POSE → 站姿待命
   4. 电池电压检测 + WS2812 指示灯 (frozen/voltage.py, 上电默认)
   5. 语音控制 — CI-33T 语音模块 (frozen/voice.py, UART2/9600, 上电默认)
-  6. 检查 /main.py (用户程序)
-  7. 有 → exec 用户程序 (从站姿切入)
-  8. 无 → Ready 待命
+  6. /camera_on.py 存在 → 后台线程执行 (上电自动开"网页+摄像头"的开关文件)
+  7. /main.py 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
+  8. 都不存在 → Ready 待命
 
-WiFi 热点: 上电默认不开 (KittenBlock 蓝牙优先)。需要时手动
-  import camera_stream; camera_stream.start()
+WiFi 热点: 上电默认不开 (KittenBlock 蓝牙优先)。两种开法:
+  - 把下面两行放进 /camera_on.py (推荐) —— 之后上电自动开, 删掉该文件即恢复
+    "上电不开"。KittenBlock 下载只重写 /main.py, 不会动它。
+        import camera_stream
+        camera_stream.start(stream=True)
+  - 手动: import camera_stream; camera_stream.start()
 """
 
 import gc
@@ -128,36 +132,56 @@ import voice
 voice.set_main_globals(globals())
 
 # ============================================================
-# 用户程序 (从站姿切入)
+# 开机自动脚本 /camera_on.py  +  用户程序 /main.py
 # ============================================================
-# 实测 (2026-09-16): 用户程序必须放在**后台线程**里跑, 不能在主线程 exec。
+# 两个脚本都在**后台线程**里跑, 不能在主线程 exec。
 # 原因: KittenBlock 的「重复执行」会生成顶格 while True:, 而键盘积木「按下x键?」
 # 下载后又退化成恒假的 if False: (按键检测在浏览器侧) → 循环体空转、无 sleep。
 # 在主线程 exec 它 → exec 永不返回 → 主线程走不到 REPL (mpy_startup.c 的
 # for(;;) pyexec_friendly_repl()) → KittenBlock 整个失联, 且每次复位都卡,
 # 只能串口 Ctrl-C + 删 /main.py 才救得回来。
 # 放线程后 exec 不再阻塞主线程, 失败模式从"板子变砖"降级为"程序没反应"。
-def _run_user(_code):
+def _read_script(_path):
+    """读 VFS 上的脚本; 不存在返回 None"""
     try:
-        # 显式传 globals(): 让用户程序的顶层赋值/def 落进 main.py 的模块全局 dict
+        with open(_path, 'r') as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _run_script(_code, _label):
+    try:
+        # 显式传 globals(): 让脚本的顶层赋值/def 落进 main.py 的模块全局 dict
         # (MicroPython 的 mp_locals_get() 是线程级而非函数帧级, 不传其实也等价;
         #  但显式写出来才不会因日后重构而悄悄丢掉语音事件的注册链路)
         exec(_code, globals())
-        print("[bPuppy] 用户程序结束, 回到 REPL")
+        print("[bPuppy] %s 结束" % _label)
     except BaseException as e:  # 必须 BaseException: SystemExit/KeyboardInterrupt 不在 Exception 下
-        print("[bPuppy] 用户程序异常: %s" % e)
+        print("[bPuppy] %s 异常: %s" % (_label, e))
 
 
 if _vfs_mounted:
-    try:
-        with open('/main.py', 'r') as f:
-            _user_code = f.read()
-    except OSError:
-        _user_code = None  # 无用户程序 → 走下面 Ready 兜底
+    import _thread
 
+    # ---- 开关文件 /camera_on.py (存在就跑, 删掉就不跑) ----
+    # 用途: 让"上电要不要自动开网页+摄像头"变成一个文件在不在 —— 不用重编译,
+    # 也不用手敲指令。文件在 = 开, 从 ViperIDE 删掉 = 不开, 下次上电即生效。
+    #
+    # 关键: 它和 /main.py **互不影响**。KittenBlock 下载用户程序只重写 /main.py,
+    # 不会碰这个文件 —— 所以拿它当开关, 不会被 KittenBlock 覆盖掉。
+    #
+    # 先于 /main.py 起线程: 此时全局栈还是默认值, 它拿 5KB (内容就是两行
+    # import + start(), 够用), 也不会被下面那个 16KB 影响。
+    _auto_code = _read_script('/camera_on.py')
+    if _auto_code:
+        print("[bPuppy] 运行 /camera_on.py (后台线程)...")
+        _thread.start_new_thread(_run_script, (_auto_code, "/camera_on.py"))
+
+    # ---- 用户程序 /main.py (KittenBlock 下载的程序) ----
+    _user_code = _read_script('/main.py')
     if _user_code:
         print("[bPuppy] 运行用户程序 (后台线程)...")
-        import _thread
         # 线程默认栈只有 5KB (mpthreadport.c MP_THREAD_DEFAULT_STACK_SIZE)。用户程序
         # 里 import VFS 上的 .py 会在线程栈上编译 → 栈不够是 FreeRTOS panic 重启
         # (MICROPY_STACK_CHECK 护不住解析器)。抬到与主任务栈相同的 16KB;
@@ -165,7 +189,7 @@ if _vfs_mounted:
         _thread.stack_size(16 * 1024)
         # 线程继承 main.py 的模块全局 dict (= 上面 voice.set_main_globals 传的同一个),
         # exec 新定义的 voiceWhen* 仍会被 voice 后台线程扫到并注册。
-        _thread.start_new_thread(_run_user, (_user_code,))
+        _thread.start_new_thread(_run_script, (_user_code, "用户程序"))
         # 立刻还原默认栈: stack_size 是**全局状态**, 上面那个 16KB 只该给用户线程。
         # 不还原的话, 此后每个模块起线程都按 16KB 要 (camera_stream 就有 3 处:
         # _accept_loop / _dns_server / 每个客户端一个 _send_stream), 内部 RAM
