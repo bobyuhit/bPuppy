@@ -73,7 +73,9 @@ rm -rf build && bash build.sh
 ### Windows 烧录 (PowerShell)
 
 板载 CH343 USB-UART 桥接芯片，走 **UART0 (GPIO43/44)**，**不是** ESP32-S3 原生 USB-JTAG。
-MicroPython 的 `usb_init()` 已注释掉以释放 GPIO19/20，**代价是 USB-CDC 虚拟串口不可用**
+ESP32-S3 的原生 USB 脚 **GPIO19/20 已被语音模块的 UART2 占用**（`frozen/voice.py`），
+所以 MicroPython 的 `usb_init()` 必须注释掉 —— 不关它，USB-OTG PHY 会接管这两个脚，
+UART2 发不出波形。**USB-CDC 虚拟串口因此不可用，这不是可以打开的功能**
 （详见 [硬件连接.md](硬件连接.md) 的 GPIO19/20 条目）。端口从设备管理器看，因机器而异。
 
 ```powershell
@@ -421,7 +423,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 #### 1.1 硬件层（接线 + 协议）
 
 - **接线**（2026-08-19 起引脚反转）：`CI-33T PA2(TX)→GPIO20(UART2 RX)`、`PA3(RX)←GPIO19(UART2 TX)`、**9600 波特率**、5V 外部供电共地。
-- ⚠ **GPIO19/20 是 ESP32-S3 原生 USB_D-/USB_D+**。MicroPython 默认启用 TinyUSB 会接管它们 → UART2 发不出。已在 `components/mr9you__micropython-helper/mpy_startup.c` 注释掉 `usb_init()` 释放。**代价：USB-CDC 虚拟串口不可用**（REPL/烧录走 UART0=COM14 不受影响）。若以后要 USB 串口，恢复该调用，但 GPIO19/20 会被再占。
+- ⚠ **GPIO19/20 是 ESP32-S3 原生 USB_D-/USB_D+，且已归语音模块的 UART2 用**（`frozen/voice.py` 的 `UART_TX=19` / `UART_RX=20`）。MicroPython 默认启用 TinyUSB 会接管它们 → UART2 发不出，所以已在 `components/mr9you__micropython-helper/mpy_startup.c` 注释掉 `usb_init()`，把两个脚让给 UART2。**USB-CDC 虚拟串口因此不可用，这不是可以打开的功能** —— 想恢复 USB 串口就得放弃 UART2（REPL/烧录走 UART0=COM14 不受影响）。
 - **下行**（CI-33T→ESP32，语音指令）= **裸 2 字节数据区** `<CMD> <PARAM>`，实测**不带** AA 55 帧头帧尾（例：`31 00` = 前进）。
 - **上行**（ESP32→CI-33T，发声/反馈）= 帧 `AA 55 <CMD> <PARAM> 55 AA`（例：`AA 55 70 01 55 AA` = 汪汪）。
 - 命令码表（下行，0x30–0x3C）：

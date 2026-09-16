@@ -9,11 +9,12 @@ bPuppy 语音控制 — Hiwonder CI-33T 语音识别/发声模块 (UART2, 9600)
     CI-33T PA3 (UART1_RX) ←── GPIO19 (UART2 TX)   ESP32 发指令给模块
     VCC 5V 外部供电, GND 共地
 
-⚠ GPIO19/20 = ESP32-S3 原生 USB 引脚 (D-/D+):
+⚠ GPIO19/20 = ESP32-S3 原生 USB 引脚 (D-/D+), 且已归 UART2 用 (UART_TX=19, UART_RX=20):
    MicroPython 组件默认启用 TinyUSB (mpy_startup.c 的 usb_init()),
    会初始化 USB-OTG PHY 接管 GPIO19/20 → UART2 TX 发不出、machine.Pin 无效。
-   已在 components/mr9you__micropython-helper/mpy_startup.c 注释掉 usb_init() 释放。
-   代价: USB-CDC 虚拟串口不可用 (REPL/烧录走 UART0=COM14, 不受影响)。
+   已在 components/mr9you__micropython-helper/mpy_startup.c 注释掉 usb_init(),
+   把两个脚让给 UART2。USB-CDC 虚拟串口因此不可用, 不是可以打开的功能 ——
+   想恢复 USB 串口就得放弃本模块的 UART2 (REPL/烧录走 UART0=COM14, 不受影响)。
 
 2 字节数据区协议 <CMD> <PARAM>:
   上行 (本系统 → CI-33T): AA 55 <CMD> <PARAM> 55 AA   (发声/反馈)
