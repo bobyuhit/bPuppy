@@ -23,3 +23,13 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 # ---- 日志级别: INFO (调试 BLE 连接用, 部署可改回 ERROR) ----
 CONFIG_LOG_DEFAULT_LEVEL_ERROR=
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ---- 相机 DMA 缓冲走 PSRAM (esp32-camera) ----
+# 实测 (2026-09-16): psram_mode=false 时 cam_hal.c:520 要在**内部 RAM** 里分配
+# 一块连续 16KB 当 DMA 缓冲; 内部 RAM 碎片化后拿不到 → esp_camera_init 直接失败,
+# 报 "DMA buffer 16384 Byte malloc failed, the current largest free block:14848"。
+# 开这个开关后 (cam_hal.c:491-495,520): 帧缓冲改到 PSRAM (MALLOC_CAP_SPIRAM),
+# 上面那块 16KB 内部 RAM **整块不再申请** —— 不是更容易拿到, 是根本不要了。
+# 代价: 帧数据经 PSRAM 做 DMA (N16R8 是 octal PSRAM, S3 支持), 帧率上限略降。
+# 验证: 启动日志会打 "cam_hal: PSRAM DMA mode enabled" (走 UART0, 蓝牙看不到)。
+CONFIG_CAMERA_PSRAM_DMA=y
