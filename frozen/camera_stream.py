@@ -29,6 +29,7 @@ _g_gait = "stop"
 _speed_set = False   # 用户本会话是否拖过速度滑块
 _g_stream_client = None  # 当前唯一的流客户端
 _stream_on = False       # 图传是否开启 (可运行时切换)
+_stream_threads = 0      # 活着的 _send_stream 线程数 (起线程前加, 线程 finally 里减)
 
 _BOUNDARY = "--bPuppyFrame"
 
@@ -262,21 +263,42 @@ def _open_stream():
     global _stream_on
     if _stream_on:
         return
-    if not bpuppy_camera.is_ready():
-        bpuppy_camera.init_adv(bpuppy_camera.SVGA, 10, 2, 20000000, bpuppy_camera.JPEG)
+    # 先置位再碰相机: 正在退出的流线程会看 _stream_on 决定要不要释放相机
+    # (见 _send_stream 的 finally)。置位晚一步就会撞上"它 deinit 完 → 这里
+    # is_ready() 却已经通过"的顺序, 结果是 _stream_on=True 但相机没了。
     _stream_on = True
+    try:
+        if not bpuppy_camera.is_ready():
+            bpuppy_camera.init_adv(bpuppy_camera.SVGA, 10, 2, 20000000, bpuppy_camera.JPEG)
+    except BaseException:
+        _stream_on = False      # init 失败 → 别假装开着
+        raise
     print("camera_stream: stream ON")
 
 
+def _release_camera():
+    """真正释放相机。只在确认没有流线程在跑时调用 (见 _close_stream / _send_stream)"""
+    bpuppy_camera.deinit()
+    print("camera_stream: stream OFF")
+
+
 def _close_stream():
-    """关闭图传: 停流线程 + 释放摄像头"""
+    """关闭图传: 停流线程 → 没人读了才释放相机"""
     global _stream_on
     if not _stream_on:
         return
-    _stream_on = False
-    time.sleep_ms(100)          # 让流线程退出
-    bpuppy_camera.deinit()
-    print("camera_stream: stream OFF")
+    _stream_on = False          # _send_stream 的循环条件会看到, 它自己退
+
+    # 绝不能在这里无条件 deinit。流线程可能正卡在 capture() 里, 而
+    # esp_camera_fb_get() 的超时是 4000ms (esp32-camera/driver/esp_camera.c
+    # FB_GET_TIMEOUT)。原来只 time.sleep_ms(100) 就 deinit, 等于在消费者还活着
+    # 的时候把 DMA / framebuffer / ISR 全拆了 —— 实测那样之后相机再也不出帧
+    # (cam_hal: EV-VSYNC-OVF + Failed to get frame: timeout), 要重启板子才恢复。
+    #
+    # 所以: 没有流线程 → 现在释放; 有 → 交给最后退出的那个线程自己释放,
+    # 那是唯一能确定 capture() 已经不在跑的时刻。
+    if _stream_threads == 0:
+        _release_camera()
 
 
 def _effective_speed():
@@ -415,44 +437,54 @@ def _send_html(client):
 
 def _send_stream(client):
     global _g_speed, _g_turn, _g_gait, _g_stride, _g_height, _g_stream_client
-
-    # 关闭旧流连接
-    old = _g_stream_client
-    _g_stream_client = client
-    if old:
-        try:
-            old.close()
-        except Exception:
-            pass
-
-    client.settimeout(3.0)
+    global _stream_threads
 
     try:
-        client.send(_HTTP_MJPEG_HEADER)
-    except OSError:
-        client.close()
-        return
+        # 关闭旧流连接
+        old = _g_stream_client
+        _g_stream_client = client
+        if old:
+            try:
+                old.close()
+            except Exception:
+                pass
 
-    for _ in range(3):
-        bpuppy_camera.capture()
-        time.sleep_ms(30)
+        client.settimeout(3.0)
 
-    while _running:
-        # 纯图传: 运动状态完全由 _parse_cmd 驱动, 流循环不碰 gait/速度
-        result = bpuppy_camera.capture()
-        if result is None:
-            time.sleep_ms(50)
-            continue
-
-        data = result[0]
         try:
-            client.sendall(_PART_TEMPLATE.format(len(data)).encode())
-            client.sendall(data)
+            client.send(_HTTP_MJPEG_HEADER)
         except OSError:
-            break
-        time.sleep_ms(70)
+            return
 
-    client.close()
+        for _ in range(3):
+            bpuppy_camera.capture()
+            time.sleep_ms(30)
+
+        # 条件必须同时看 _stream_on: 网页的"图传关"只把 _stream_on 置 False
+        # (_close_stream), 不碰 _running (那个是 stop() 管的)。只看 _running 的话
+        # 这个线程会一直活到 stop(), 期间不断 capture() 戳相机驱动。
+        while _running and _stream_on:
+            # 纯图传: 运动状态完全由 _parse_cmd 驱动, 流循环不碰 gait/速度
+            result = bpuppy_camera.capture()
+            if result is None:
+                time.sleep_ms(50)
+                continue
+
+            data = result[0]
+            try:
+                client.sendall(_PART_TEMPLATE.format(len(data)).encode())
+                client.sendall(data)
+            except OSError:
+                break
+            time.sleep_ms(70)
+    finally:
+        client.close()
+        _stream_threads -= 1
+        # 最后一个退出的流线程负责释放相机 —— 此刻才能确定 capture() 已经不在跑了。
+        # _close_stream() 不会在别人还活着的时候 deinit, 这里是它唯一的收尾路径。
+        # 条件带 _stream_on: 若用户已经又点开图传 (_open_stream 置回 True), 就别释放。
+        if _stream_threads == 0 and not _stream_on:
+            _release_camera()
 
 
 def _dns_server():
@@ -496,7 +528,7 @@ def _dns_server():
 
 
 def _accept_loop():
-    global _running
+    global _running, _stream_threads
 
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -536,9 +568,14 @@ def _accept_loop():
 
         if "/stream" in first_line:
             if _stream_on and _thread:
+                # 先计数再起线程: stop() 会从别的线程调 _close_stream(), 那里
+                # 用 _stream_threads==0 判断"没人读了, 可以释放相机"。计数晚一步
+                # 就会在那个窗口里误判, 把相机从刚起好的线程脚下拆掉。
+                _stream_threads += 1
                 try:
                     _thread.start_new_thread(_send_stream, (client,))
                 except OSError:
+                    _stream_threads -= 1
                     client.close()
             else:
                 try:
