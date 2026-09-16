@@ -72,21 +72,31 @@ rm -rf build && bash build.sh
 
 ### Windows 烧录 (PowerShell)
 
+板载 CH343 USB-UART 桥接芯片，走 **UART0 (GPIO43/44)**，**不是** ESP32-S3 原生 USB-JTAG。
+MicroPython 的 `usb_init()` 已注释掉以释放 GPIO19/20，**代价是 USB-CDC 虚拟串口不可用**
+（详见 [硬件连接.md](硬件连接.md) 的 GPIO19/20 条目）。端口从设备管理器看，因机器而异。
+
 ```powershell
-# ESP32-S3 原生 USB-JTAG，直连 USB 即可，无需 USB-UART 转接
-# 端口: 插入 USB 后从设备管理器查看 (因机器而异)
-esptool --chip esp32s3 --port COM3 --baud 921600 write-flash `
+# 日常增量: 只写 app 分区
+esptool --chip esp32s3 --port COM14 --baud 921600 write-flash `
   0x10000 build/micropython_bpuppy.bin
 ```
 
-> **日常增量**只写 app 分区 (0x10000)。改了 bootloader/分区表、或首次烧录时才需要**全烧**:
+> **只烧 app 是安全的**，即使板子上还是旧分区表 —— 固件在**运行时**按 label 找分区
+> （`frozen/main.py` 的 `Partition.find(1, label='vfs')`），不写死偏移。所以换固件不必换分区表。
 >
-> ```powershell
-> esptool --chip esp32s3 --port COM3 --baud 921600 write-flash `
->   0x0 build/bootloader/bootloader.bin `
->   0x8000 build/partition_table/partition-table.bin `
->   0x10000 build/micropython_bpuppy.bin
-> ```
+> 改了 bootloader / 分区表、或首次烧录时才需要**全烧**:
+
+```powershell
+# 全烧: 板子从零开始 (或分区表有变) 时用
+esptool --chip esp32s3 --port COM14 --baud 921600 write-flash `
+  0x0 build/bootloader/bootloader.bin `
+  0x8000 build/partition_table/partition-table.bin `
+  0x10000 build/micropython_bpuppy.bin
+```
+
+> ⚠ **全烧写了 `0x8000`（分区表），vfs 就必须重建一次** —— 位置/大小变了，旧 FAT 失效。
+> 做法见下面「Flash 分区布局」的 `erase-region` 步骤。只烧 app 则不需要。
 
 > 成功标志: 三行 `Wrote xxx bytes` + `Hash of data verified`。烧完按 RESET 或重新上电。
 
@@ -103,10 +113,14 @@ esptool --chip esp32s3 --port COM3 --baud 921600 write-flash `
   Build: ...
   WROOM-1 N16R8 | uPy v1.22.1 | IDF v5.1.2
 ============================================
-  Loaded:   servo, motion
+[bPuppy] 运行 /camera_on.py (后台线程)...
 Ready.
->>>
+>>> poses.crouch() / poses.stand()  # 姿态模式
+>>> bpuppy_motion.set_gait('go')    # 运动模式
 ```
+
+`[bPuppy] 运行 /camera_on.py` 这行**只在板子上存在该文件时**才打（见「上电行为」）。
+中间还会夹着 `micropython.mem_info()` 的内存报告和 servo/voice 的告警，属正常。
 
 ### 改了哪些文件需要怎么构建
 
@@ -352,6 +366,10 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 上电自动站姿待命 + **BLE 广播**（KittenBlock 蓝牙编程）。用户程序 (main.py) 从**站姿切入**。**WiFi / 摄像头 / IMU / UART / ADC 均手动或按需启动**:
 - WiFi 热点: 手动 `import camera_stream; camera_stream.start()`（上电默认不开, 把 RF 让给蓝牙）
 - WiFi 图传: 网页点「图传 开」或 `camera_stream.start(stream=True)`
+- **想上电就自动开**: 把上面两行写进板子的 `/camera_on.py`（仓库源文件 `mpy_modules/camera_on.py`）。
+  **文件在 = 开，从板子删掉 = 不开**，不用重编译固件，也不影响 KittenBlock 下载的 `/main.py`。
+  ⚠ 该文件必须**纯 ASCII**（蓝牙上传会丢非 ASCII 字节，中文注释会截断文件）。
+  实现: `frozen/main.py` 每次开机读 `/camera_on.py` 并丢进后台线程执行。用法见 [操作指南.md](操作指南.md) 2.2。
 - IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
 - BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式 `HiwonderBLE()` 构造时启动
 - UART / ADC: 手动 `import` + `init()`
