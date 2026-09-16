@@ -178,7 +178,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
 | `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
 | `kext-bpuppy/` | KittenBlock 硬件扩展 (15 积木 + 蓝牙配置 + 开发文档) |
-| `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序从站姿切入 |
+| `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序在**后台线程**里 exec (不阻塞 REPL) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
 | `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~10 |
@@ -413,7 +413,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 #### 2.2 关键机制：函数在哪、怎么被找到
 
-事件函数 `def voiceWhenFwd()` 定义在**主脚本全局作用域**（frozen main.py `exec(/main.py)` 执行用户程序的那个 dict，或 REPL 的 `globals()`）。`_scan_events()` 按 `_EVT_FUNCS` 表（函数名→命令码）在**主全局 dict** 里找函数、注册为回调。
+事件函数 `def voiceWhenFwd()` 定义在**主脚本全局作用域**（frozen main.py 在后台线程里 `exec(/main.py, globals())` 用的那个 dict，或 REPL 的 `globals()`）。`_scan_events()` 按 `_EVT_FUNCS` 表（函数名→命令码）在**主全局 dict** 里找函数、注册为回调。
 
 #### 2.3 ⚠ 最大的坑：`sys.modules['__main__']` 是 `None`
 
@@ -422,7 +422,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 **解决方案（已在代码里）**：`voice.set_main_globals(globals())` 显式传入主全局 dict。`_scan_events()` 的 dict 来源优先级：`set_main_globals()` 传入的 > `sys.modules['__main__']`。
 
 传入的三个路径（**新接手的 AI 加路径时别漏**）：
-1. `frozen/main.py`（L98）—— 开机/物理 RESET 路径。在 `import voice` 之后、`exec(_user_code)` 之前调用，`exec` 新定义的函数会进入同一个 dict。
+1. `frozen/main.py`（L98）—— 开机/物理 RESET 路径。在 `import voice` 之后、把用户程序交给后台线程之前调用；线程里 `exec(...)` 新定义的函数会进入同一个 dict（`py/modthread.c` 把创建者的 globals 传给新线程）。
 2. `kext-bpuppy/extension.json` 的 `afterConnect`（L33）—— KittenBlock 在线连接/软复位路径。
 3. `kext-bpuppy/kblock.json5` 的 `libs."*".import`（L3 末尾）—— KittenBlock 代码生成注入路径。
 
@@ -476,12 +476,23 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 9. **改 frozen 文件≠传 /main.py** → frozen 打进固件，重编译 + 烧录才生效。
 10. **`afterConnect` / `libs` import 里维护同一份参数与 `set_main_globals`** → 两处都动，别只改一处。
 
+**用户程序执行类（与语音无关，但都会撞上）**：
+
+11. **键盘积木（「按下x键?」「当按下x键」）只能在线** → 按键检测在**浏览器**里做，板子上没有键盘也没有这个功能。点绿旗在线跑正常；**点「下载」后这些积木退化成恒假的 `if False:`**（`lib.min.js` 的 `control_if`：`valueToCode(...) || 'False'`），按键全废。键盘遥控类程序**只能在线玩，不要下载**。
+12. **下载的程序里若有顶格「重复执行」→ 板子失联** → 生成顶格 `while True:`，且循环体常全是恒假的 `if False:`（空转、无 sleep）→ 原实现里主线程 `exec` 永不返回、REPL 起不来 → KittenBlock 点什么都没反应，**每次复位都卡**。
+    - **2026-09-16 起已加固**：用户程序改在**后台线程**执行（`frozen/main.py`）—— `while True:` 只空转，REPL 照常可用。失败模式从"板子变砖"降级为"程序没反应"，KittenBlock 一直连得上、能重新下载覆盖。
+    - **加固前的救援步骤**（老固件 / 仍遇到失联时）：串口发 `Ctrl-C`（`\x03`）打断 → 进 REPL → `import os; os.remove('/main.py')` → 复位。
+    - ⚠ **重烧 app 分区（`write-flash 0x10000`）不会清 `/main.py`** —— 它住在 `vfs` 分区，所以重烧救不回来，必须走 REPL 删文件。
+13. **加固带来的行为变化（2026-09-16）** → ① **`Ctrl-C` 不再能停住后台跑的用户程序**（`py/scheduler.c` 的 KeyboardInterrupt 只投递主线程）—— **停止程序的唯一手段是复位**（物理 RESET / `machine.reset()` / REPL 里 `machine.soft_reset()`）。② 用户程序里的 `machine.soft_reset()` 变成空操作（SystemExit 只在线程内被吞）。③ 用户程序与 REPL **共享同一个全局 dict**，REPL 里改同名变量会直接影响正在跑的程序（调试时是特性，也是坑）。④ 顶格死循环会拖慢（GIL 每 32 个 VM 分支换手一次），空转循环尤其明显。
+
+> 📌 **语音程序的推荐写法**：绿旗下面**只放初始化**（如「站立」），其余全用「当收到xx指令」回调，**不要用「重复执行」** —— 语音事件是回调式的，本来就不需要循环。这是 2026-09-16 实测可用并下载验证过的范式。
+
 ### 5. 相关文件索引
 
 | 文件 | 角色 |
 |------|------|
 | `frozen/voice.py` | 事件转发核心（UART2 + 后台线程 + 注册/分发） |
-| `frozen/main.py` | 启动脚本，L98 `set_main_globals`，L104 `exec(/main.py)` |
+| `frozen/main.py` | 启动脚本，L98 `set_main_globals`，用户程序在**后台线程**里 `exec(/main.py, globals())` |
 | `frozen/manifest.py` | frozen 模块清单（加 frozen 文件要注册） |
 | `kext-bpuppy/kblock.json5` | 积木定义 + `libs.import` 注入串 |
 | `kext-bpuppy/extension.json` | 扩展元数据 + `afterConnect` |

@@ -100,19 +100,43 @@ voice.set_main_globals(globals())
 # ============================================================
 # 用户程序 (从站姿切入)
 # ============================================================
+# 实测 (2026-09-16): 用户程序必须放在**后台线程**里跑, 不能在主线程 exec。
+# 原因: KittenBlock 的「重复执行」会生成顶格 while True:, 而键盘积木「按下x键?」
+# 下载后又退化成恒假的 if False: (按键检测在浏览器侧) → 循环体空转、无 sleep。
+# 在主线程 exec 它 → exec 永不返回 → 主线程走不到 REPL (mpy_startup.c 的
+# for(;;) pyexec_friendly_repl()) → KittenBlock 整个失联, 且每次复位都卡,
+# 只能串口 Ctrl-C + 删 /main.py 才救得回来。
+# 放线程后 exec 不再阻塞主线程, 失败模式从"板子变砖"降级为"程序没反应"。
+def _run_user(_code):
+    try:
+        # 显式传 globals(): 让用户程序的顶层赋值/def 落进 main.py 的模块全局 dict
+        # (MicroPython 的 mp_locals_get() 是线程级而非函数帧级, 不传其实也等价;
+        #  但显式写出来才不会因日后重构而悄悄丢掉语音事件的注册链路)
+        exec(_code, globals())
+        print("[bPuppy] 用户程序结束, 回到 REPL")
+    except BaseException as e:  # 必须 BaseException: SystemExit/KeyboardInterrupt 不在 Exception 下
+        print("[bPuppy] 用户程序异常: %s" % e)
+
+
 if _vfs_mounted:
     try:
         with open('/main.py', 'r') as f:
             _user_code = f.read()
-        print("[bPuppy] 运行用户程序...")
-        exec(_user_code)
-        print("Ready.")
-        # 用户程序执行完, 不再跑后续
-        raise SystemExit
     except OSError:
-        pass  # 无用户程序
-    except SystemExit:
-        raise  # 传递出去, 真正退出
+        _user_code = None  # 无用户程序 → 走下面 Ready 兜底
+
+    if _user_code:
+        print("[bPuppy] 运行用户程序 (后台线程)...")
+        import _thread
+        # 线程默认栈只有 5KB (mpthreadport.c MP_THREAD_DEFAULT_STACK_SIZE)。用户程序
+        # 里 import VFS 上的 .py 会在线程栈上编译 → 栈不够是 FreeRTOS panic 重启
+        # (MICROPY_STACK_CHECK 护不住解析器)。抬到与主任务栈相同的 16KB;
+        # stack_size 只影响此后新建线程, 已启动的 voice 线程不受影响。
+        _thread.stack_size(16 * 1024)
+        # 线程继承 main.py 的模块全局 dict (= 上面 voice.set_main_globals 传的同一个),
+        # exec 新定义的 voiceWhen* 仍会被 voice 后台线程扫到并注册。
+        _thread.start_new_thread(_run_user, (_user_code,))
+        # 主线程继续往下, 打印 Ready 并进入 REPL
 
 # ---- Ready (站姿待命) ----
 gc.collect()

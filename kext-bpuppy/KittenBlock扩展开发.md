@@ -388,7 +388,7 @@ menus: {
 KittenBlock 把图形化积木翻译成 MicroPython，规则：
 
 1. **程序入口 = 内置「当绿旗被点击」hat 块**。积木必须接在绿旗下面，代码面板才会生成代码。
-2. **自定义 hat 块 ≠ 程序入口**。自定义 hat 块（如 blynk 的 `whenConnected`）会被当成**末尾函数**生成（`@装饰器` + `def 函数():`），代码放在文件末尾，不是开头。**不要试图用自定义 hat 当入口**。
+2. **自定义 hat 块 ≠ 程序入口**。自定义 hat 块（如 blynk 的 `whenConnected`）会被当成**独立函数**生成（`@装饰器` + `def 函数():`）。**函数定义排在正文之前**，不在末尾（生成器 `finish()` = `definitions_.join()` + 正文，2026-09-16 复核 `lib.min.js`）—— 所以「重复执行」生成的顶格 `while True:` **挡不到它**。但它只被**定义**、不会被自动调用，所以**不要试图用自定义 hat 当入口**。
 3. **libs.import 代码** 注入到文件**最靠前**，且**只一次**。初始化应放这里。
 4. 积木 pycode 按积木连接顺序逐条生成。
 
@@ -660,7 +660,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
 | 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |
 | 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
-| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，13 选项） | `def voiceWhen<value>():` 末尾函数 + voice.py 按名注册回调 |
+| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，13 选项） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
 | 语音 | 语音播放汪汪 / 语音播放嘤嘤 | `voice.play('汪汪')` / `voice.play('嘤嘤')` |
 
 底层 API（固件 C 模块，MicroPython 可调）：
@@ -676,7 +676,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 自定义 hat 积木在**离线 micropy 代码生成**里的行为（源码 `offlineCodeGen` + `provideFunction_`）：
 
-1. **生成末尾函数**：`blockType:'hat'` 积木把 `pycode` 逐行拆分——以 `@`/`#`/`def` 开头的行进函数头区，其余行进函数体（放在**用户体之后**）。`pycode:['def voiceWhen[VOICE]()']` 生成 `def voiceWhenFwd():` + 用户积木体。**函数名 = pycode 里 `[VOICE]` 占位符被参数值替换后的结果**（无占位符时 `provideFunction_` 不改名）。函数去重 key = `opcode_参数值`（如 `voiceWhen_Fwd`），所以多个实例选不同指令会生成各自的函数、互不 dedupe 冲突。
+1. **生成独立函数（定义在正文之前）**：`blockType:'hat'` 积木把 `pycode` 逐行拆分——以 `@`/`#`/`def` 开头的行进函数头区，其余行进函数体；整段经 `provideFunction_` 落进生成器的 `definitions_`。生成器的 `finish()` 是 `definitions_.join("\n\n") + "\n\n\n" + code`（2026-09-16 复核 `lib.min.js`）→ **函数定义排在正文前面，不是末尾**。`pycode:['def voiceWhen[VOICE]()']` 生成 `def voiceWhenFwd():` + 用户积木体。**函数名 = pycode 里 `[VOICE]` 占位符被参数值替换后的结果**（无占位符时 `provideFunction_` 不改名）。函数去重 key = `opcode_参数值`（如 `voiceWhen_Fwd`），所以多个实例选不同指令会生成各自的函数、互不 dedupe 冲突。
 2. **没人自动调用它**：离线代码生成只**定义**函数，不生成调用。asr@kai 的 `kai_whenHeard` 靠在线 Scratch 事件，离线只是空函数。
 3. **真正的事件范式 = meowbit/futureboard 的「注册 + 调度」**（官方 board 扩展）：
    ```json5
