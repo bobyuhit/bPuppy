@@ -1,0 +1,4 @@
+# 补丁文件必须按原样存/取。
+# 本仓库 core.autocrlf=true，若不锁定，patches/*.patch 在 checkout 时会被转成 CRLF，
+# 而 git apply 会把 \r 当成上下文的一部分 → 补丁永远打不上，build.sh 直接报错退出。
+patches/*.patch -text

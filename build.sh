@@ -28,6 +28,29 @@ echo "项目: $PROJECT_DIR"
 echo "缓存: $CCACHE_DIR"
 echo ""
 
+# ---- 应用 patches/ 下的本地补丁 ----
+# components/ 是组件管理器自动下载的第三方依赖 (见 main/idf_component.yml), 整个目录
+# 被 .gitignore 忽略 —— 所以对它做的必要改动**不会进 git**, 换台电脑重下依赖就丢了。
+# 这些改动以补丁形式存在 patches/ 里, 每次编译前自动打上。
+#
+# 必须带 -c core.autocrlf=false: 本仓库 core.autocrlf=true, 直接 git apply 会把
+# 打补丁的文件整体转成 CRLF (C 编译不受影响, 但补丁之后就无法反向校验了)。
+for p in "$PROJECT_DIR"/patches/*.patch; do
+  [ -e "$p" ] || continue
+  _name="$(basename "$p")"
+  if git -C "$PROJECT_DIR" -c core.autocrlf=false apply --check --reverse "$p" 2>/dev/null; then
+    echo "补丁已应用, 跳过: $_name"      # 反向能打 = 已在目标状态, 幂等
+  elif git -C "$PROJECT_DIR" -c core.autocrlf=false apply "$p"; then
+    echo "已应用补丁: $_name"
+  else
+    echo "!! 补丁应用失败: $_name" >&2
+    echo "   多半是 components/ 里的文件版本变了 (依赖升版), 上下文对不上。" >&2
+    echo "   处理: 手动改对应文件, 再按 patches/README.md 重新生成补丁。" >&2
+    exit 1
+  fi
+done
+echo ""
+
 # MSYS_NO_PATHCONV=1 阻止 Git Bash 把 /d/xxx 转成 C:/Program Files/Git/xxx
 MSYS_NO_PATHCONV=1 docker run --rm \
   -v "${PROJECT_DIR}:/workspace" \

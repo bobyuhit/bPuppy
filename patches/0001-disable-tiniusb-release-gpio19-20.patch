@@ -1,0 +1,17 @@
+--- a/components/mr9you__micropython-helper/mpy_startup.c	2026-09-16 19:00:47.322586500 +0800
++++ b/components/mr9you__micropython-helper/mpy_startup.c	2026-09-16 19:00:47.355594200 +0800
+@@ -101,7 +101,13 @@
+     #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+     usb_serial_jtag_init();
+     #elif CONFIG_USB_OTG_SUPPORTED
+-    usb_init();
++    // bPuppy 定制: 关闭 TinyUSB, 把 GPIO19/20 让给 UART2 (CI-33T 语音, frozen/voice.py)
++    // 原因: 这两个脚是原生 USB_D-/USB_D+, 且已被 UART2 占用 (UART_TX=19, UART_RX=20)。
++    //        usb_init() 初始化 USB-OTG PHY 会接管它们, 导致 machine.Pin 驱动无效、
++    //        UART2 TX 发不出波形。关闭后 GPIO19/20 回归普通 GPIO 归 UART2 用。
++    // 因此 USB-CDC 虚拟串口不可用 —— 这不是可选项, 想恢复就得放弃语音模块的 UART2。
++    // REPL/烧录走 UART0(COM14), BLE 走射频, 均不受影响。
++    // usb_init();
+     #endif
+     #if MICROPY_HW_ENABLE_UART_REPL
+     uart_stdout_init();
