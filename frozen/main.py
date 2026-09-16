@@ -35,19 +35,49 @@ print("  WROOM-1 N16R8 | uPy v1.22.1 | IDF v5.1.2")
 print("=" * 44)
 
 # ---- 挂载 VFS ----
+def _vfs_is_virgin(part):
+    """分区首扇区全是 0xFF = 擦除态 = 出厂新片, 可以安全格式化。
+
+    只要有任何一个字节不是 0xFF, 说明上面**有东西** (哪怕文件系统已损坏),
+    这时绝不能格 —— mkfs 会抹掉整个 14MB vfs, 用户的程序全在里面,
+    而挂载失败的原因往往只是瞬时的 (分区正被写 / 上次没干净卸载)。
+    """
+    try:
+        buf = bytearray(512)
+        part.readblocks(0, buf)
+        return all(b == 0xFF for b in buf)
+    except Exception as e:
+        # 读不出来就更不该格
+        print("[bPuppy] VFS 首扇区读取失败: %s (按'有数据'处理)" % e)
+        return False
+
+
 _vfs_mounted = False
 try:
     from esp32 import Partition
-    _bdev = Partition.find(1, label='vfs')  # TYPE_DATA=1
-    if _bdev:
+    _bparts = Partition.find(1, label='vfs')  # TYPE_DATA=1
+    if not _bparts:
+        print("[bPuppy] [WARN] 找不到 vfs 分区, 用户程序不可用")
+    else:
+        _bdev = _bparts[0]
         try:
-            uos.mount(uos.VfsFat(_bdev[0]), '/')   # 已格式化, 直接挂载
-        except:
-            uos.VfsFat.mkfs(_bdev[0])              # 首次使用, 先格式化
-            uos.mount(uos.VfsFat(_bdev[0]), '/')
-        _vfs_mounted = True
-except Exception:
-    pass
+            uos.mount(uos.VfsFat(_bdev), '/')   # 已格式化, 直接挂载
+            _vfs_mounted = True
+        except Exception as e:
+            # 实测 (2026-09-16): 原先是裸 except + 无条件 mkfs —— 任何挂载失败都会
+            # 格式化整个 vfs, 把用户程序抹光。改成只在"确认是全新分区"时才格。
+            if _vfs_is_virgin(_bdev):
+                print("[bPuppy] VFS 是未格式化的新分区, 正在格式化...")
+                uos.VfsFat.mkfs(_bdev)
+                uos.mount(uos.VfsFat(_bdev), '/')
+                _vfs_mounted = True
+            else:
+                print("[bPuppy] [ERROR] VFS 挂载失败: %s" % e)
+                print("[bPuppy]         分区上有数据, 已拒绝自动格式化 (避免抹掉用户程序)")
+                print("[bPuppy]         本次用户程序不可用; 确需重建时手动执行 (⚠ 会清空 vfs):")
+                print("[bPuppy]         import esp32, os; os.VfsFat.mkfs(esp32.Partition.find(1,label='vfs')[0])")
+except Exception as e:
+    print("[bPuppy] [WARN] VFS 初始化异常: %s" % e)
 
 # ---- 启动 BLE (固件编译模式决定: KittenBlock Nordic / Hiwonder FFE0) ----
 # KittenBlock 模式时 C 层 (ble_driver_mpy.c) 自动注册 dupterm REPL 通道
