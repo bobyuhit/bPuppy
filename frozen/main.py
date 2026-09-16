@@ -166,6 +166,14 @@ if _vfs_mounted:
         # 线程继承 main.py 的模块全局 dict (= 上面 voice.set_main_globals 传的同一个),
         # exec 新定义的 voiceWhen* 仍会被 voice 后台线程扫到并注册。
         _thread.start_new_thread(_run_user, (_user_code,))
+        # 立刻还原默认栈: stack_size 是**全局状态**, 上面那个 16KB 只该给用户线程。
+        # 不还原的话, 此后每个模块起线程都按 16KB 要 (camera_stream 就有 3 处:
+        # _accept_loop / _dns_server / 每个客户端一个 _send_stream), 内部 RAM
+        # 不够时 start_new_thread 直接抛 OSError: can't create thread —— 而且
+        # 是间歇性的 (看当时碎片), 比必然失败更难查。实测踩过。
+        # 上面的 start_new_thread 是同步的: 16KB 在它返回前就已分配好, 所以这行
+        # 不影响用户线程, 只影响"之后"新建的线程。
+        _thread.stack_size(0)          # 0 = 端口默认 (esp32: MP_THREAD_DEFAULT_STACK_SIZE)
         # 主线程继续往下, 打印 Ready 并进入 REPL
 
 # ---- Ready (站姿待命) ----
