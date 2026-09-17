@@ -14,40 +14,44 @@
 #   Uploading over Bluetooth (ViperIDE) drops non-ASCII bytes, which would
 #   corrupt the file.  Keep it ASCII-only.
 #
-# PIN / CHANNEL MAP (channel number = PWM_EXT number - 1)
-#   PWM_EXT1  GPIO 3   ch 0    shares pin with battery ADC   -> needs adc_stop
-#   PWM_EXT2  GPIO 47  ch 1    free pin                      -> no adc_stop  <-- enabled below
-#   PWM_EXT3  GPIO 48  ch 2    shares pin with WS2812 LED    -> needs adc_stop
+# WHAT TO EDIT
+#   Only the macros below.  1 = enable that output at boot, 0 = leave it off.
+#   You do NOT need to know which GPIO or which MCPWM channel anything uses,
+#   and you do NOT need to stop the battery ADC yourself -- all of that lives
+#   in the firmware (frozen/pwm_ext.py, function pwm_ext.on).
 #
-#   PWM_EXT1 (GPIO3) and PWM_EXT3 (GPIO48) share their pin with the battery
-#   measurement (ADC divider / WS2812 LED).  Before using those, call
-#   bpuppy_adc.stop() -- otherwise the firmware keeps driving/reading the same
-#   pin and fights your PWM signal.  bpuppy_adc.stop() also stops the LED
-#   monitor task, so one call covers both.  Side effect: battery voltage
-#   reading and the battery LED go away until bpuppy_adc.init() again.
-#   PWM_EXT2 (GPIO47) is a free pin -- none of that applies here.
+#   PWM_EXT1  GPIO 3   shares pin with battery ADC   -> battery reading goes away
+#   PWM_EXT2  GPIO 47  free pin                      -> no side effect
+#   PWM_EXT3  GPIO 48  shares pin with WS2812 LED    -> battery LED goes away
+#
+#   If EXT1 or EXT3 is 1, the battery voltage reads -1.0 and the battery LED
+#   stays dark for the whole session -- the pin now belongs to PWM, that is
+#   expected, not a fault.
 #
 # TO TURN IT OFF AGAIN
 #   Delete /pwm_ext_on.py from the board (ViperIDE file manager, or
 #   `mpremote rm :pwm_ext_on.py`).  Next boot will not start anything.
 #
 # MANUAL USE INSTEAD (from the REPL, without this file):
-#   import bpuppy_pwm_ext
-#   bpuppy_pwm_ext.init(1, 47)          # ch 1 = PWM_EXT2
-#   bpuppy_pwm_ext.set_angle(1, 90)
-#   bpuppy_pwm_ext.deinit(1)
+#   import pwm_ext
+#   pwm_ext.on(2)               # 2 = PWM_EXT2
+#   pwm_ext.set_angle(2, 90)
+#   pwm_ext.off(2)
 
-import bpuppy_pwm_ext
+# ============================================================
+# MACROS -- 1 = enable at boot, 0 = leave off
+# ============================================================
+EXT1 = 0        # GPIO 3   shares pin with battery ADC
+EXT2 = 1        # GPIO 47  free pin
+EXT3 = 0        # GPIO 48  shares pin with WS2812 LED
+ANGLE = 90      # initial angle (deg) for every enabled output
+# ============================================================
 
-bpuppy_pwm_ext.init(1, 47)              # ch 1 = PWM_EXT2, signal on GPIO47
-bpuppy_pwm_ext.set_angle(1, 90)         # move to 90 deg right away
+import pwm_ext
 
-# Enable more outputs by uncommenting:
-#   import bpuppy_adc
-#   bpuppy_adc.stop()                   # required before PWM_EXT1 or PWM_EXT3
-#   bpuppy_pwm_ext.init(0, 3)           # PWM_EXT1
-#   bpuppy_pwm_ext.set_angle(0, 90)
-#   bpuppy_pwm_ext.init(2, 48)          # PWM_EXT3
-#   bpuppy_pwm_ext.set_angle(2, 90)
-
-print("[pwm_ext_on] PWM_EXT2 ready on GPIO47")
+_WANT = {1: EXT1, 2: EXT2, 3: EXT3}
+for _n, _want in _WANT.items():
+    if _want:
+        pwm_ext.on(_n)
+        pwm_ext.set_angle(_n, ANGLE)
+        print("[pwm_ext_on] PWM_EXT%d ready" % _n)

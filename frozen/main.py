@@ -8,9 +8,9 @@ bPuppy 机器狗 — MicroPython 启动脚本
   3. 原厂无条件初始化: IDLE → POSE → 站姿待命
   4. 电池电压检测 + WS2812 指示灯 (frozen/voltage.py, 上电默认)
   5. 语音控制 — CI-33T 语音模块 (frozen/voice.py, UART2/9600, 上电默认)
-  6. 开关文件存在 → 后台线程执行 (见下)
-       /camera_on.py   — 上电自动开"网页+摄像头"
-       /pwm_ext_on.py  — 上电自动启扩展舵机 (PWM_EXT)
+  6. 开关文件存在 → 执行 (见下)
+       /camera_on.py   — 上电自动开"网页+摄像头"      (后台线程, 启动慢)
+       /pwm_ext_on.py  — 上电自动启扩展舵机 (PWM_EXT)  (同步, 必须早于 /main.py)
   7. /main.py 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
   8. 都不存在 → Ready 待命
 
@@ -20,14 +20,12 @@ bPuppy 机器狗 — MicroPython 启动脚本
 ⚠ 必须纯 ASCII: 蓝牙上传会丢非 ASCII 字节。
 
   /camera_on.py  →  import camera_stream; camera_stream.start(stream=True)
-  /pwm_ext_on.py →  import bpuppy_pwm_ext
-                    bpuppy_pwm_ext.init(1, 47)   # 通道 1 = PWM_EXT2 (空闲脚, 无需停 ADC)
-                    若改启用 PWM_EXT1(GPIO3) 或 PWM_EXT3(GPIO48):
-                    它们与电池检测同脚, 必须先 bpuppy_adc.stop()
+  /pwm_ext_on.py →  EXT1/EXT2/EXT3 宏决定开哪几路, 再 pwm_ext.on(n) + set_angle(n, 90)
+                    关 ADC / 抢管脚都在 pwm_ext.on() 里, 开关文件不用管
 
 手动执行 (不建开关文件时):
   import camera_stream; camera_stream.start()
-  import bpuppy_pwm_ext; bpuppy_pwm_ext.init(1, 47)   # 通道 1 = PWM_EXT2
+  import pwm_ext; pwm_ext.on(2); pwm_ext.set_angle(2, 90)   # 2 = PWM_EXT2
 """
 
 import gc
@@ -185,15 +183,33 @@ if _vfs_mounted:
     # (ViperIDE 文件管理器, 或 mpremote cp)。
     # ⚠ 必须纯 ASCII: 蓝牙上传会丢非 ASCII 字节, 中文注释会把文件截断。
     #
-    # 先于 /main.py 起线程: 此时全局栈还是默认值, 它们各拿 5KB
-    # (内容就几行 import + init, 够用), 也不会被下面那个 16KB 影响。
+    # 分两类跑:
+    #   后台线程 —— 启动慢 / 会阻塞的 (起服务器、开摄像头), 不能拖住开机
+    #   同步     —— 只有几行, 且**必须早于 /main.py** 的 (抢管脚要在用户程序前完成)
     #
-    # 加新开关: 在 mpy_modules/ 建同名样例, 并把文件名加进下面这个元组。
-    for _path in ('/camera_on.py', '/pwm_ext_on.py'):
+    # ★ 为什么 pwm_ext 必须同步: start_new_thread 立即返回, 后台线程和 /main.py
+    #   是**并发**的。用户程序若在头几行就 poses.set_servo(9, ...), 可能撞上
+    #   pwm_ext 还没 on(2) 而报"PWM_EXT2 未启用" —— 一个只在快慢上碰运气的假报错。
+    #   它只是 on(n) + set_angle(n, ...), 无阻塞操作, 同步跑代价可忽略。
+    #
+    # 加新开关: 在 mpy_modules/ 建同名样例, 把文件名加进下面两组之一。
+    #
+    # 先起后台线程: 此时全局栈还是默认值, 它们各拿 5KB
+    # (内容就几行 import + init, 够用), 也不会被下面那个 16KB 影响。
+    _THREADED = ('/camera_on.py',)
+    _SYNC = ('/pwm_ext_on.py',)
+
+    for _path in _THREADED:
         _code = _read_script(_path)
         if _code:
             print("[bPuppy] 运行 %s (后台线程)..." % _path)
             _thread.start_new_thread(_run_script, (_code, _path))
+
+    for _path in _SYNC:
+        _code = _read_script(_path)
+        if _code:
+            print("[bPuppy] 运行 %s (同步)..." % _path)
+            _run_script(_code, _path)
 
     # ---- 用户程序 /main.py (KittenBlock 下载的程序) ----
     _user_code = _read_script('/main.py')

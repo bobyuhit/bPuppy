@@ -101,18 +101,26 @@ def set_step(n):
 
 
 def read_pose():
-    """读取所有舵机当前位置填入 buffer, 并打印显示。
-    未启用的扩展舵机不读、也不触发初始化 (显示 off)"""
+    """读取所有舵机当前位置并打印显示。
+    未启用的扩展舵机不读、也不触发初始化 (显示 off)。
+
+    ★ 只读, 不碰 _pose_buf —— 那里面装的是"待提交的目标"。
+      早先这里是把读回的值写进 _pose_buf 的, 于是
+          set_servo(0, 135); read_pose(); commit()   → 静默什么都不动
+      (目标被当前角度覆盖了)。而那个"填入 buffer"本就多余:
+      _move_to 对 None 和"当前值"的处理完全等价 (主舵机走 get_angle 取当前值,
+      扩展舵机跳过不写), 所以它不带来任何好处, 只会销毁待提交的目标。"""
+    cur = [None] * _CH_COUNT
     for ch in range(8):
-        _pose_buf[ch] = bpuppy_servo.get_angle(ch)
+        cur[ch] = bpuppy_servo.get_angle(ch)
     try:
         import pwm_ext
         for n in range(1, 4):
-            _pose_buf[_EXT_BASE + n - 1] = pwm_ext.get_angle(n) if pwm_ext.is_on(n) else None
+            cur[_EXT_BASE + n - 1] = pwm_ext.get_angle(n) if pwm_ext.is_on(n) else None
     except Exception:
         pass
     print("Pose: [" + ", ".join(
-        "%.1f" % a if a is not None else "off" for a in _pose_buf) + "]")
+        "%.1f" % a if a is not None else "off" for a in cur) + "]")
 
 
 # ============================================================
@@ -128,7 +136,7 @@ def _move_to(targets, step=3.0):
     cur = [None] * _CH_COUNT
     for ch in range(_CH_COUNT):
         if targets[ch] is not None:
-            cur[ch] = _read(ch)      # 扩展舵机会在这里按需初始化
+            cur[ch] = _read(ch)      # 扩展舵机未启用会在这里报错 (不自动开)
 
     while True:
         done = True

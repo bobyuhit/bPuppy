@@ -369,10 +369,15 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 7. `poses.stand()` — POSE_STAND 站姿待命 (Python IK, 固定高度)
 8. `import voltage` — 电池电压检测 + WS2812 指示灯 (import 即启动)
 9. `import voice` — 语音模块 (UART2/9600, import 即启动) + `set_main_globals(globals())`
-10. 开关文件存在 → 后台线程执行 (见下)
-    - `/camera_on.py` — 上电自动开"网页+摄像头"
-    - `/pwm_ext_on.py` — 上电自动启扩展舵机 (PWM_EXT)
+10. 开关文件存在 → 执行 (见下)
+    - `/camera_on.py` — 上电自动开"网页+摄像头" (**后台线程**, 起服务器慢, 不能拖住开机)
+    - `/pwm_ext_on.py` — 上电自动启扩展舵机 (**同步**, 必须早于 `/main.py`)
 11. `/main.py` 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
+
+> **开关文件分两类跑**：`/pwm_ext_on.py` 必须**同步**，因为它要在用户程序之前把管脚抢好。
+> `_thread.start_new_thread` 立即返回，后台线程和 `/main.py` 是**并发**的 —— 用户程序若在
+> 头几行就 `poses.set_servo(9, ...)`，可能撞上 `pwm_ext` 还没 `on(2)` 而报"未启用"，
+> 一个只在快慢上碰运气的假报错。它只有几行、无阻塞操作，同步跑代价可忽略。
 
 **上电自动**: 站姿待命 + BLE 广播 + 电池指示灯 (ADC) + 语音 (UART2)。用户程序 (main.py) 从**站姿切入**。
 **手动或按需启动**的只有 WiFi / 摄像头 / IMU:
