@@ -55,7 +55,7 @@ def start(target=57.0):
             if abs(err) < _DEADBAND:
                 print("  yaw=%.1f  err=%+.1f  ✓ 到达, 停下" % (yaw, err))
                 bpuppy_motion.set_turn(0)
-                bpuppy_motion.set_gait("stand")
+                bpuppy_motion.set_gait("stop")   # 必须用合法名: "stand" 不是步态, 会走未知步态兜底
                 break
             else:
                 print("  yaw=%.1f  err=%+.1f  turn=%.2f  TURN" %
@@ -71,5 +71,5 @@ def stop():
     global _running
     _running = False
     bpuppy_motion.set_turn(0)
-    bpuppy_motion.set_gait("stand")
+    bpuppy_motion.set_gait("stop")   # 同上: 合法步态名
     print("Heading lock stopped")

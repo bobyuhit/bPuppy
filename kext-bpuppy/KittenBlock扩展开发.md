@@ -665,7 +665,8 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 底层 API（固件 C 模块，MicroPython 可调）：
 - `bpuppy_motion.set_params(speed, stride, height)` — speed 0~10, stride 正前负后, height mm
-- `bpuppy_motion.set_gait('go'/'walk'/'trot'/'stand'/'sit'/'crouch'/'play'/'wave')`
+- `bpuppy_motion.set_gait('stop'/'walk'/'walkfwd'/'walkbck'/'go'/'trot'/'trotfwd'/'trotbck')` — 只有这 8 个是合法步态名。⚠ 未知名字**不会报错**，会走 fail-safe 停车 + 打印 `⚠ 未知步态`
+- ⚠ **`stand`/`sit`/`crouch`/`play`/`wave` 不是步态**，是 `poses.py` 里的**姿态函数**（`poses.stand()` 等），别混用
 - `bpuppy_motion.set_turn(-0.8~0.8)`
 - `bpuppy_motion.set_lift(mm)`
 - `bpuppy_servo.init_all()` / `bpuppy_servo.load_cal()` / `bpuppy_servo.set_angle(ch, deg)`
