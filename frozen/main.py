@@ -8,16 +8,26 @@ bPuppy 机器狗 — MicroPython 启动脚本
   3. 原厂无条件初始化: IDLE → POSE → 站姿待命
   4. 电池电压检测 + WS2812 指示灯 (frozen/voltage.py, 上电默认)
   5. 语音控制 — CI-33T 语音模块 (frozen/voice.py, UART2/9600, 上电默认)
-  6. /camera_on.py 存在 → 后台线程执行 (上电自动开"网页+摄像头"的开关文件)
+  6. 开关文件存在 → 后台线程执行 (见下)
+       /camera_on.py   — 上电自动开"网页+摄像头"
+       /pwm_ext_on.py  — 上电自动启扩展舵机 (PWM_EXT)
   7. /main.py 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
   8. 都不存在 → Ready 待命
 
-WiFi 热点: 上电默认不开 (KittenBlock 蓝牙优先)。两种开法:
-  - 把下面两行放进 /camera_on.py (推荐) —— 之后上电自动开, 删掉该文件即恢复
-    "上电不开"。KittenBlock 下载只重写 /main.py, 不会动它。
-        import camera_stream
-        camera_stream.start(stream=True)
-  - 手动: import camera_stream; camera_stream.start()
+开关文件: 让"上电要不要自动做某件事"变成一个文件在不在 —— 文件在 = 开, 从
+板上删掉 = 不开, 下次上电即生效。不用重编译, 也不会被 KittenBlock 下载覆盖
+(它只重写 /main.py)。源文件在仓库 mpy_modules/ 下, 手动传到板子根目录。
+⚠ 必须纯 ASCII: 蓝牙上传会丢非 ASCII 字节。
+
+  /camera_on.py  →  import camera_stream; camera_stream.start(stream=True)
+  /pwm_ext_on.py →  import bpuppy_pwm_ext
+                    bpuppy_pwm_ext.init(1, 47)   # 通道 1 = PWM_EXT2 (空闲脚, 无需停 ADC)
+                    若改启用 PWM_EXT1(GPIO3) 或 PWM_EXT3(GPIO48):
+                    它们与电池检测同脚, 必须先 bpuppy_adc.stop()
+
+手动执行 (不建开关文件时):
+  import camera_stream; camera_stream.start()
+  import bpuppy_pwm_ext; bpuppy_pwm_ext.init(1, 47)   # 通道 1 = PWM_EXT2
 """
 
 import gc
@@ -164,19 +174,26 @@ def _run_script(_code, _label):
 if _vfs_mounted:
     import _thread
 
-    # ---- 开关文件 /camera_on.py (存在就跑, 删掉就不跑) ----
-    # 用途: 让"上电要不要自动开网页+摄像头"变成一个文件在不在 —— 不用重编译,
+    # ---- 开关文件 (存在就跑, 删掉就不跑) ----
+    # 用途: 让"上电要不要自动做某件事"变成一个文件在不在 —— 不用重编译,
     # 也不用手敲指令。文件在 = 开, 从 ViperIDE 删掉 = 不开, 下次上电即生效。
     #
-    # 关键: 它和 /main.py **互不影响**。KittenBlock 下载用户程序只重写 /main.py,
-    # 不会碰这个文件 —— 所以拿它当开关, 不会被 KittenBlock 覆盖掉。
+    # 关键: 它们和 /main.py **互不影响**。KittenBlock 下载用户程序只重写 /main.py,
+    # 不会碰这些文件 —— 所以拿它们当开关, 不会被 KittenBlock 覆盖掉。
     #
-    # 先于 /main.py 起线程: 此时全局栈还是默认值, 它拿 5KB (内容就是两行
-    # import + start(), 够用), 也不会被下面那个 16KB 影响。
-    _auto_code = _read_script('/camera_on.py')
-    if _auto_code:
-        print("[bPuppy] 运行 /camera_on.py (后台线程)...")
-        _thread.start_new_thread(_run_script, (_auto_code, "/camera_on.py"))
+    # 源文件在仓库 mpy_modules/ 下, 由用户手动传到板子根目录
+    # (ViperIDE 文件管理器, 或 mpremote cp)。
+    # ⚠ 必须纯 ASCII: 蓝牙上传会丢非 ASCII 字节, 中文注释会把文件截断。
+    #
+    # 先于 /main.py 起线程: 此时全局栈还是默认值, 它们各拿 5KB
+    # (内容就几行 import + init, 够用), 也不会被下面那个 16KB 影响。
+    #
+    # 加新开关: 在 mpy_modules/ 建同名样例, 并把文件名加进下面这个元组。
+    for _path in ('/camera_on.py', '/pwm_ext_on.py'):
+        _code = _read_script(_path)
+        if _code:
+            print("[bPuppy] 运行 %s (后台线程)..." % _path)
+            _thread.start_new_thread(_run_script, (_code, _path))
 
     # ---- 用户程序 /main.py (KittenBlock 下载的程序) ----
     _user_code = _read_script('/main.py')
