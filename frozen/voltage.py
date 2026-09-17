@@ -4,21 +4,22 @@ bPuppy 电池电压检测 + WS2812 指示灯 (上电默认模块)
 开机后默认检测电池电压, 通过 GPIO48 WS2812 显示 (颜色随电压):
     ≥7.4V 蓝常亮 | 渐变紫 | ≤6.6V 红常亮 | <6.4V 红闪烁
 
-换算与阈值与 C 层 led_driver.c 一致 (同一套标定系数)。
+标定系数与颜色阈值都在 C 层 led_driver.c —— 本模块**不做任何换算**:
+read_v() 直接返回 C 缓存的同一个值。所以 LED 显示的颜色和这里读到的电压
+必然一致 (同一条代码路径), 不会出现"两套系数算出两个电压"。
 
 用法:
     import voltage          # 上电默认: import 即自动启动
-    v = voltage.read_v()    # 已标定电压 (V)
+    v = voltage.read_v()    # 已标定电压 (V); 未就绪返回 -1.0
     voltage.stop()          # 停止监控 (LED 熄灭)
     voltage.start()         # 重新启动 (幂等)
+
+改标定 (换板子后重新采集, 不用重编译固件):
+    import batt; batt.verify(); batt.apply_to_board()     # 见 mpy_modules/batt.py
 """
 
 import bpuppy_adc
-
-# 标定 (mpy_modules/batt.py 最小二乘拟合, 与 led_driver.c 常量一致)
-_CAL_A = 1.0379     # 实际 = a × 显示 + b
-_CAL_B = 0.4660
-_DIVIDER = 6.1      # 51k/10k 分压换算: read_mv() × 6.1 / 1000 → 显示值 V
+import bpuppy_led
 
 _started = False
 
@@ -40,12 +41,8 @@ def stop():
 
 
 def read_v():
-    """已标定电池电压 (V); ADC 未就绪返回 -1"""
-    mv = bpuppy_adc.read_mv()
-    if mv < 0:
-        return -1.0
-    v = mv * _DIVIDER / 1000.0
-    return _CAL_A * v + _CAL_B
+    """已标定电池电压 (V); 监控未跑或 ADC 未就绪返回 -1.0"""
+    return bpuppy_led.batt_v()
 
 
 start()   # 上电默认: import 即自动启动

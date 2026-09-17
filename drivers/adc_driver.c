@@ -74,15 +74,10 @@ int adc_read_raw(void)
 
 int adc_read_mv(void)
 {
-#if BPUPPY_ADC_ENABLE
-    if (!g_adc_ready) return -1;
-    int raw = adc1_get_raw(ADC_DEFAULT_CHANNEL);
+    int raw = adc_read_raw();   // 就绪检查 + adc1_get_raw + 失败返回 -1 都在里面
     if (raw < 0) return -1;
     // 11dB 衰减: ~0-3100mV → 0-4095 (12-bit)
     return (int)((int64_t)raw * 3100 / 4096);
-#else
-    return -1;   // 已停用
-#endif
 }
 
 void adc_stop(void)

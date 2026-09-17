@@ -17,9 +17,18 @@
  *   RMT TX 通道 0 — 避开 machine.bitstream 默认占用的 TX 通道 3, 两者共存。
  *   WS2812 数据序为 GRB, 单帧 24bit。
  *
- * 电压标定: 与 mpy_modules/batt.py 相同的最小二乘拟合:
+ * 电压标定 (最小二乘拟合, 由 mpy_modules/batt.py 用实测点算出):
  *   显示值 v_disp = read_mv() × 6.1 / 1000
- *   标定值 v     = 1.0379 × v_disp + 0.4660   (4 点实测 2026-08-19)
+ *   标定值 v     = a × v_disp + b
+ *   默认 a=1.0379, b=0.4660 (4 点实测)
+ *
+ * ⚠ 本文件是**唯一**的标定实现 —— Python 层不再各存一份常量:
+ *   voltage.read_v()      → 直接返回 bpuppy_led.batt_v() (下面缓存的同一个值)
+ *   batt.read_batt_v()    → 标定工具自己的检查, 不参与运行时读数
+ *   所以 LED 颜色和 Python 读到的电压**不可能不一致** (同一条代码路径)。
+ *
+ * 标定值存 NVS (namespace "bpuppy_batt"), 掉电保留、固件升级不丢。
+ * 改标定: batt.py 采集 + 拟合 → apply_to_board() → 写进 NVS, 不用重编译。
  *
  * MicroPython 接口:
  *   import bpuppy_led
@@ -27,12 +36,17 @@
  *   bpuppy_led.set_color(r,g,b)    # 手动设色 0-255
  *   bpuppy_led.off()               # 熄灭
  *   bpuppy_led.batt(on=True)       # 手动启停电池监控任务
+ *   bpuppy_led.batt_v()            # 最近一次已标定电池电压 (V); 监控未跑时返回 -1.0
+ *   bpuppy_led.get_cal()           # → (a, b) 当前生效的标定系数
+ *   bpuppy_led.set_cal(a, b)       # 设置并写入 NVS (掉电保留)
+ *   bpuppy_led.reset_cal()         # 清除 NVS 标定, 恢复默认常量
  */
 
 #include "py/runtime.h"
 #include "py/obj.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/rmt.h"
@@ -54,10 +68,15 @@ static const char *TAG = "led";
 #define BATT_LOW_V        6.6f   /* ≤ 此值: 红色 (低压) */
 #define BATT_BLINK_V      6.4f   /* < 此值: 红色闪烁 (危险) */
 
-/* 标定 (来自 batt.py 最小二乘拟合): 标定值 = a × 显示值 + b */
+/* 标定默认值 (来自 batt.py 最小二乘拟合): 标定值 = a × 显示值 + b
+ * 运行时实际用的是 s_cal_a / s_cal_b — 会被 NVS 里的值覆盖 (见 led_batt_load_cal) */
 #define BATT_CAL_A        1.0379f
 #define BATT_CAL_B        0.4660f
 #define BATT_DIVIDER      6.1f   /* 51k/10k 分压换算 */
+
+/* 标定值持久化 — namespace 与舵机几何 (GEOM_NVS_NS) 分开, 互不影响 */
+#define BATT_CAL_NVS_NS   "bpuppy_batt"
+#define BATT_CAL_SCALE    10000.0f  /* NVS 只存 i32: a/b ×10000 存入, 读回再除 → 保留 4 位小数 */
 
 /* ---- 监控任务 ---- */
 #define MONITOR_TICK_MS   100    /* 10Hz 轮询 */
@@ -72,6 +91,14 @@ extern int adc_read_mv(void);
 static rmt_channel_t s_channel = RMT_CHANNEL_0;
 static bool s_led_ready = false;
 static TaskHandle_t s_monitor_task = NULL;
+
+/* 运行时标定系数 — 初值是上面两个默认常量, led_batt_start() 时被 NVS 覆盖 */
+static float s_cal_a = BATT_CAL_A;
+static float s_cal_b = BATT_CAL_B;
+
+/* 最近一次算出的已标定电压 (V); <0 = 无有效读数 (ADC 未就绪 / 监控未跑)
+ * 由 batt_monitor_task 每 100ms 更新, bpuppy_led.batt_v() 直接读它 —— 只有这一条路径 */
+static volatile float s_batt_v = -1.0f;
 
 static void led_set_rgb(uint8_t r, uint8_t g, uint8_t b);   /* 前向声明 */
 
@@ -135,10 +162,12 @@ static void batt_monitor_task(void *arg)
 
         if (mv < 0) {
             led_set_rgb(0, 0, 0);        /* ADC 未就绪 → 熄灭 */
+            s_batt_v = -1.0f;
         } else {
             /* mv 已是 ADC 引脚电压 (mV) — adc_read_mv() 内部已 ×3100/4096 量程换算 */
             float v_disp = (float)mv * BATT_DIVIDER / 1000.0f;   /* ×6.1 分压比 → 电池显示电压 V */
-            float v = BATT_CAL_A * v_disp + BATT_CAL_B;          /* 标定后电压 V */
+            float v = s_cal_a * v_disp + s_cal_b;                /* 标定后电压 V (系数可被 NVS 覆盖) */
+            s_batt_v = v;                                        /* 缓存: bpuppy_led.batt_v() 读这个 */
 
             if (v >= BATT_HIGH_V) {
                 led_set_rgb(0, 0, 255);          /* 蓝: 满电 */
@@ -162,10 +191,64 @@ static void batt_monitor_task(void *arg)
     }
 }
 
+/* ================================================================
+ * 标定值持久化 (NVS)
+ * ================================================================ */
+
+/* float → NVS 存的 i32 (×10000)。必须区分正负再取整: 负值 +0.5 会朝零截断 */
+static int32_t cal_to_i32(float v)
+{
+    return (int32_t)(v * BATT_CAL_SCALE + (v >= 0.0f ? 0.5f : -0.5f));
+}
+
+/* 从 NVS 载入标定系数。没有记录 / 记录不完整 → 保持默认常量, 不算错误 */
+static void led_batt_load_cal(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(BATT_CAL_NVS_NS, NVS_READONLY, &h) != ESP_OK) {
+        ESP_LOGI(TAG, "batt cal: NVS 无记录, 用默认 a=%.4f b=%.4f", s_cal_a, s_cal_b);
+        return;
+    }
+    int32_t ia = 0, ib = 0;
+    bool ok_a = (nvs_get_i32(h, "a", &ia) == ESP_OK);
+    bool ok_b = (nvs_get_i32(h, "b", &ib) == ESP_OK);
+    nvs_close(h);
+
+    if (ok_a && ok_b) {
+        s_cal_a = (float)ia / BATT_CAL_SCALE;
+        s_cal_b = (float)ib / BATT_CAL_SCALE;
+        ESP_LOGI(TAG, "batt cal: NVS 载入 a=%.4f b=%.4f", s_cal_a, s_cal_b);
+    } else {
+        ESP_LOGW(TAG, "batt cal: NVS 记录不完整, 用默认 a=%.4f b=%.4f", s_cal_a, s_cal_b);
+    }
+}
+
+/* 把 s_cal_a/s_cal_b 写进 NVS; 返回 true = 已持久化 */
+static bool led_batt_save_cal(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(BATT_CAL_NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
+        ESP_LOGE(TAG, "batt cal: NVS 打开失败, 标定未持久化");
+        return false;
+    }
+    esp_err_t e1 = nvs_set_i32(h, "a", cal_to_i32(s_cal_a));
+    esp_err_t e2 = nvs_set_i32(h, "b", cal_to_i32(s_cal_b));
+    esp_err_t e3 = nvs_commit(h);
+    nvs_close(h);
+
+    if (e1 != ESP_OK || e2 != ESP_OK || e3 != ESP_OK) {
+        ESP_LOGE(TAG, "batt cal: NVS 写入失败 (set a=%d set b=%d commit=%d)", e1, e2, e3);
+        return false;
+    }
+    ESP_LOGI(TAG, "batt cal: 已写入 NVS a=%.4f b=%.4f", s_cal_a, s_cal_b);
+    return true;
+}
+
 void led_batt_start(void)
 {
     if (s_monitor_task) return;
     led_init();
+    led_batt_load_cal();   /* 起任务前载入, 首次读数就用对的系数 */
     xTaskCreatePinnedToCore(batt_monitor_task, "batt_led", MONITOR_STACK,
                             NULL, MONITOR_PRIO, &s_monitor_task, MONITOR_CORE);
     ESP_LOGI(TAG, "battery LED monitor started  (core %d, %dms)", MONITOR_CORE, MONITOR_TICK_MS);
@@ -176,6 +259,7 @@ void led_batt_stop(void)
     if (s_monitor_task) {
         vTaskDelete(s_monitor_task);
         s_monitor_task = NULL;
+        s_batt_v = -1.0f;      /* 任务没了, 缓存值失效 — 否则 batt_v() 会返回陈旧读数 */
         led_set_rgb(0, 0, 0);
         ESP_LOGI(TAG, "battery LED monitor stopped");
     }
@@ -189,6 +273,10 @@ void led_batt_stop(void)
  *   bpuppy_led.set_color(r,g,b)    # 手动设色
  *   bpuppy_led.off()               # 熄灭
  *   bpuppy_led.batt(on=True)       # 启停电池监控
+ *   bpuppy_led.batt_v()            # 已标定电池电压 (V); 监控未跑 → -1.0
+ *   bpuppy_led.get_cal()           # → (a, b)
+ *   bpuppy_led.set_cal(a, b)       # 设置 + 写 NVS (失败抛 OSError)
+ *   bpuppy_led.reset_cal()         # 恢复默认标定并清 NVS
  * ================================================================ */
 
 STATIC mp_obj_t mp_led_init(void) {
@@ -224,6 +312,45 @@ STATIC mp_obj_t mp_led_batt(mp_obj_t on_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_led_batt_obj, mp_led_batt);
 
+STATIC mp_obj_t mp_led_batt_v(void) {
+    return mp_obj_new_float(s_batt_v);   /* 监控任务缓存的已标定电压; -1.0 = 无有效读数 */
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_led_batt_v_obj, mp_led_batt_v);
+
+STATIC mp_obj_t mp_led_get_cal(void) {
+    mp_obj_t items[2] = {
+        mp_obj_new_float(s_cal_a),
+        mp_obj_new_float(s_cal_b),
+    };
+    return mp_obj_new_tuple(2, items);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_led_get_cal_obj, mp_led_get_cal);
+
+STATIC mp_obj_t mp_led_set_cal(mp_obj_t a_obj, mp_obj_t b_obj) {
+    s_cal_a = mp_obj_get_float(a_obj);
+    s_cal_b = mp_obj_get_float(b_obj);
+    /* 系数已生效 (监控任务下一拍就用新的), 但没写进 NVS 就是没持久化 —— 必须让调用方知道 */
+    if (!led_batt_save_cal()) {
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("batt cal: NVS 写入失败 (系数本次生效, 重启后丢失)"));
+    }
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_led_set_cal_obj, mp_led_set_cal);
+
+STATIC mp_obj_t mp_led_reset_cal(void) {
+    nvs_handle_t h;
+    if (nvs_open(BATT_CAL_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);      /* 整个 namespace 都是本驱动的, 直接清空 */
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    s_cal_a = BATT_CAL_A;
+    s_cal_b = BATT_CAL_B;
+    ESP_LOGI(TAG, "batt cal: 已恢复默认 a=%.4f b=%.4f", s_cal_a, s_cal_b);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_led_reset_cal_obj, mp_led_reset_cal);
+
 // ---- 模块定义 ----
 STATIC const mp_rom_map_elem_t bpuppy_led_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),  MP_ROM_QSTR(MP_QSTR_bpuppy_led) },
@@ -231,6 +358,10 @@ STATIC const mp_rom_map_elem_t bpuppy_led_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_set_color), MP_ROM_PTR(&mp_led_set_color_obj) },
     { MP_ROM_QSTR(MP_QSTR_off),       MP_ROM_PTR(&mp_led_off_obj) },
     { MP_ROM_QSTR(MP_QSTR_batt),      MP_ROM_PTR(&mp_led_batt_obj) },
+    { MP_ROM_QSTR(MP_QSTR_batt_v),    MP_ROM_PTR(&mp_led_batt_v_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_cal),   MP_ROM_PTR(&mp_led_get_cal_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_cal),   MP_ROM_PTR(&mp_led_set_cal_obj) },
+    { MP_ROM_QSTR(MP_QSTR_reset_cal), MP_ROM_PTR(&mp_led_reset_cal_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(bpuppy_led_globals, bpuppy_led_globals_table);
 
