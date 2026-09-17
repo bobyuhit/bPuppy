@@ -219,7 +219,7 @@
           defaultValue: '0'
         }
       },
-      pycode: 'bpuppy_servo.get_angle([SERVO])'
+      pycode: 'poses.get_servo_angle([SERVO])'
     },
     "---",
     "## $$cat_action",
@@ -330,7 +330,10 @@
       { text: '$$RF_HIP',   value: '4' },
       { text: '$$RF_KNEE',  value: '5' },
       { text: '$$RH_HIP',   value: '6' },
-      { text: '$$RH_KNEE',  value: '7' }
+      { text: '$$RH_KNEE',  value: '7' },
+      { text: '$$EXT1',     value: '8' },
+      { text: '$$EXT2',     value: '9' },
+      { text: '$$EXT3',     value: '10' }
     ],
     voiceMenu: [
       { text: '$$voiceCmdStop',   value: 'Stop' },
