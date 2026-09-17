@@ -41,8 +41,37 @@ RF_HIP, RF_KNEE = 4, 5
 RH_HIP, RH_KNEE = 6, 7
 
 # ---- 全局状态 ----
-_pose_buf = [None] * 8      # 用户逐通道设置的目标角度，None=不修改
-_pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_FRAME 一致
+# 舵机编号约定 (与 KittenBlock 下拉菜单同一套):
+#   0~7     = 主舵机 8 路 (LF_HIP..RH_KNEE)
+#   8/9/10  = PWM_EXT1 / PWM_EXT2 / PWM_EXT3 扩展舵机
+_EXT_BASE = 8
+_CH_COUNT = 11              # 0~7 主舵机 + 8~10 扩展舵机
+
+_pose_buf  = [None] * _CH_COUNT   # 逐通道目标角度, None = 本次不动它
+_pose_step = 3.0                  # 过渡速度 (°/帧), 与 C SERVO_MAX_DEG_PER_FRAME 一致
+
+
+# ============================================================
+# 舵机读写 — 主舵机 / 扩展舵机走不同底层, 上层当作同一组通道
+# ============================================================
+# 缓动只在这一层之上实现一次 (见 _move_to / oscillate), 两种舵机共用。
+# 底层各写各的: 主舵机 bpuppy_servo (LEDC), 扩展舵机 pwm_ext (MCPWM)。
+
+def _read(ch):
+    """读一路当前角度 (deg); ch 0~7 主舵机, 8~10 扩展舵机"""
+    if ch >= _EXT_BASE:
+        import pwm_ext
+        return pwm_ext.get_angle(ch - _EXT_BASE + 1)
+    return bpuppy_servo.get_angle(ch)
+
+
+def _write(ch, deg):
+    """立即写一路角度 (硬切); ch 0~7 主舵机, 8~10 扩展舵机"""
+    if ch >= _EXT_BASE:
+        import pwm_ext
+        pwm_ext.set_angle(ch - _EXT_BASE + 1, deg)
+    else:
+        bpuppy_servo.set_angle(ch, deg)
 
 
 # ============================================================
@@ -50,8 +79,19 @@ _pose_step = 3.0             # 过渡速度 (°/帧)，与 C SERVO_MAX_DEG_PER_F
 # ============================================================
 
 def set_servo(ch, deg):
-    """设置某路舵机的目标角度（不立即执行，等 commit）"""
+    """设置某路舵机的目标角度（不立即执行，等 commit）
+    ch 0~7 = 主舵机; 8/9/10 = PWM_EXT1/2/3"""
+    ch = int(ch)
+    if ch < 0 or ch >= _CH_COUNT:
+        raise ValueError("舵机编号 0~%d, 收到 %s" % (_CH_COUNT - 1, ch))
     _pose_buf[ch] = float(deg)
+
+
+def get_servo_angle(ch):
+    """读某路舵机当前角度 (deg)
+    ch 0~7 = 主舵机; 8/9/10 = PWM_EXT1/2/3
+    (积木「舵机[X]的角度」用这个, 不要直接调 bpuppy_servo.get_angle —— 它只认 0~7)"""
+    return _read(int(ch))
 
 
 def set_step(n):
@@ -61,68 +101,89 @@ def set_step(n):
 
 
 def read_pose():
-    """读取所有舵机当前位置填入 buffer, 并打印显示"""
+    """读取所有舵机当前位置填入 buffer, 并打印显示。
+    未启用的扩展舵机不读、也不触发初始化 (显示 off)"""
     for ch in range(8):
         _pose_buf[ch] = bpuppy_servo.get_angle(ch)
-    print("Pose: [" + ", ".join("%.1f" % (a if a is not None else 0.0)
-          for a in _pose_buf) + "]")
+    try:
+        import pwm_ext
+        for n in range(1, 4):
+            _pose_buf[_EXT_BASE + n - 1] = pwm_ext.get_angle(n) if pwm_ext.is_on(n) else None
+    except Exception:
+        pass
+    print("Pose: [" + ", ".join(
+        "%.1f" % a if a is not None else "off" for a in _pose_buf) + "]")
 
 
 # ============================================================
 # 平滑逼近 — Python 版 servo_step_toward
+# 主舵机和扩展舵机共用这一份实现, 只是最后写出去的地方不同
 # ============================================================
-
-def _get_cur():
-    """返回 8 路舵机当前角度"""
-    return [bpuppy_servo.get_angle(ch) for ch in range(8)]
-
 
 def _move_to(targets, step=3.0):
     """
-    阻塞式平滑逼近 8 路舵机到 targets。
-    targets 中 None 的通道保持原位不动。
+    阻塞式平滑逼近全部通道到 targets (长度 11: 0~7 主舵机, 8~10 扩展舵机)。
+    targets 中 None 的通道**完全不动** —— 不读、不初始化、不写。
     """
-    cur = _get_cur()
-    resolved = [t if t is not None else cur[i] for i, t in enumerate(targets)]
+    cur = [None] * _CH_COUNT
+    for ch in range(_CH_COUNT):
+        if targets[ch] is not None:
+            cur[ch] = _read(ch)      # 扩展舵机会在这里按需初始化
 
     while True:
         done = True
-        for ch in range(8):
-            diff = resolved[ch] - cur[ch]
+        for ch in range(_CH_COUNT):
+            if targets[ch] is None:
+                continue
+            diff = targets[ch] - cur[ch]
             if abs(diff) < 0.3:
                 continue
             done = False
             cur[ch] += max(-step, min(step, diff))
 
+        # 主舵机: 一帧内批量提交 (group), 未参与的通道从舵机读回原位
         bpuppy_servo.group_begin()
         for ch in range(8):
-            bpuppy_servo.group_add(ch, cur[ch])
+            v = cur[ch] if cur[ch] is not None else bpuppy_servo.get_angle(ch)
+            bpuppy_servo.group_add(ch, v)
         bpuppy_servo.group_commit()
+
+        # 扩展舵机: 逐个写 (MCPWM 无批量接口), 只写参与本次的
+        for ch in range(_EXT_BASE, _CH_COUNT):
+            if cur[ch] is not None:
+                _write(ch, cur[ch])
 
         if done:
             break
-        time.sleep_ms(20)
+        time.sleep_ms(20)            # 20ms/帧 = 50Hz
 
 
 def commit():
     """
     执行姿态: 写舵机自动切 POSE (C 层检测), 再从当前位置平滑逼近 _pose_buf。
     没被 set_servo() 修改的通道保持原位。
+
+    主舵机 (0~7) 和扩展舵机 (8~10) 在**同一个循环**里一起逼近, 同时到位 ——
+    缓动只有一份实现 (_move_to), 两种舵机只是最后写出去的地方不同。
     """
     time.sleep_ms(30)   # 等 C 层自动切 POSE 生效
     _move_to(_pose_buf, _pose_step)
+
     # ★ 执行后清空 buffer, 防止残留污染下次 (否则之前设过的通道会被意外写入)
-    for ch in range(8):
+    for ch in range(_CH_COUNT):
         _pose_buf[ch] = None
 
 
 def go_to(targets, step=3.0):
     """
-    一步到位: 写舵机自动切 POSE, 直接逼近 targets（8 个浮点数列表）。
+    一步到位: 写舵机自动切 POSE, 直接逼近 targets。
+    targets 可给 8 个 (只动主舵机) 或 11 个 (含 PWM_EXT1/2/3), 短的后面补 None。
     不修改 _pose_buf，适合代码直调。
     """
+    t = list(targets)
+    t += [None] * (_CH_COUNT - len(t))    # 补到 11 路, 缺的当"不动"
     time.sleep_ms(30)
-    _move_to(list(targets), step)
+    _move_to(t[: _CH_COUNT], step)
 
 
 # ============================================================
@@ -130,16 +191,22 @@ def go_to(targets, step=3.0):
 # ============================================================
 
 def oscillate(ch, amp, hz, cycles):
-    """单舵机正弦摆动: 写舵机自动切 POSE, 在当前位置 ±amp°, 频率 hz, 循环 cycles 次"""
-    time.sleep_ms(30)
-    center = bpuppy_servo.get_angle(ch)
+    """单舵机正弦摆动: 在当前位置 ±amp°, 频率 hz, 循环 cycles 次
+    ch 0~7 = 主舵机 (写舵机自动切 POSE); 8/9/10 = PWM_EXT1/2/3
+    与 _move_to 同理: 摆动逻辑只有这一份, 读写经由 _read/_write 分流"""
+    ch = int(ch)
+    if ch < 0 or ch >= _CH_COUNT:
+        raise ValueError("舵机编号 0~%d, 收到 %s" % (_CH_COUNT - 1, ch))
+    if ch < _EXT_BASE:
+        time.sleep_ms(30)        # 主舵机: 等 C 层自动切 POSE
+    center = _read(ch)
     # 帧数 = 50帧/秒 × 次数 / 频率 (每周期 50/hz 帧)
     frames = int(round(50.0 * cycles / hz))
     for i in range(frames):
         val = center + amp * math.sin(2.0 * math.pi * hz * i / 50.0)
-        bpuppy_servo.set_angle(ch, val)
+        _write(ch, val)
         time.sleep_ms(20)
-    bpuppy_servo.set_angle(ch, center)   # 结束精确回到原位
+    _write(ch, center)           # 结束精确回到原位
 
 
 # ============================================================
