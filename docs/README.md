@@ -11,7 +11,7 @@ bPuppy 是基于 ESP32-S3 的 8 自由度四足机器狗（4腿 × 2DOF：髋+�
 | 舵机 | 8× 模拟舵机 (每条腿 2DOF: 髋 + 膝) |
 | IMU | MPU6050/MPU9250 双芯片自适应 (I2C0 SDA=GPIO14, SCL=GPIO21, addr=0x68; WHO_AM_I 自动识别: 6050=6轴无磁力计, 9250=9轴含 AK8963; Mahony 姿态) |
 | 通信 | BLE (NimBLE, 编译互斥: KittenBlock Nordic UART 或 Hiwonder FFE0) + UART2 (GPIO19/20, CI-33T/micro:bit) |
-| 控制台 | USB-JTAG CDC (921600bps, 直连 USB) |
+| 控制台 | CH343 USB-UART 桥 → UART0 (GPIO43/44), 115200bps (USB-CDC 已关闭) |
 | 供电 | 7.4V 2S LiPo |
 
 **当前固件参数（默认值，均可运行时修改 + NVS 持久化）：**
@@ -198,7 +198,7 @@ esptool --chip esp32s3 --port COM3 erase-region 0x800000 0x1000
 ## 软件架构
 
 ```
-MicroPython 层:   frozen/main.py → 上电自动站立 + WiFi 遥控 (IMU/BLE/UART/ADC 手动或按需启动)
+MicroPython 层:   frozen/main.py → 上电自动站立 + BLE 广播 + 电池指示灯 + 语音 (WiFi/摄像头/IMU 手动或按需启动)
                        ↑ import
 C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_uart / bpuppy_adc /
                   bpuppy_ik / bpuppy_motion / bpuppy_camera / bpuppy_ble / bpuppy_led
@@ -206,7 +206,7 @@ C Extension API:  bpuppy_servo / bpuppy_imu / bpuppy_uart / bpuppy_adc /
 C 驱动层:
   servo_driver.c    — LEDC PWM 8路舵机 (S3 统一 LS mode) + NVS 校准
   imu_driver.c      — I2C MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050=6轴无磁力计, 9250=9轴 Mahony + 磁力计椭球校准)
-  uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 + I2C1 摄像头复用口
+  uart_driver.c     — UART2 通信口 + UART1 摄像头复用口 (I2C1 无固件模块, 用原生 machine.I2C)
   adc_driver.c      — ADC 电池检测 (电池=GPIO3/ADC1_CH2, 分压 51k/10k)
   led_driver.c      — WS2812 电池指示灯 (GPIO48, RMT chan 0, adc_init 后自动激活)
   ik.h / ik.c       — 2-DOF 逆运动学
@@ -230,12 +230,12 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/imu_driver.c` | MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050 跳过磁力计), Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
 | `drivers/adc_driver.c` | ADC 电池检测 (GPIO3=ADC1_CH2, 分压 51k/10k) |
-| `drivers/led_driver.c` | WS2812 电池指示灯 (GPIO48, `bpuppy_adc.init()` 自动激活; 蓝=满电/红=低压/闪烁=危险) |
+| `drivers/led_driver.c` | WS2812 电池指示灯 (GPIO48, `bpuppy_adc.init()` 自动激活; 蓝=满电/红=低压/闪烁=危险)。**标定唯一实现** — 系数存 NVS, `bpuppy_led.batt_v()` 读电压, `set_cal/reset_cal` 改标定 |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
 | `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
-| `kext-bpuppy/` | KittenBlock 硬件扩展 (15 积木 + 蓝牙配置 + 开发文档) |
+| `kext-bpuppy/` | KittenBlock 硬件扩展 (34 积木 + 蓝牙配置 + 开发文档) |
 | `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序在**后台线程**里 exec (不阻塞 REPL) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
@@ -246,7 +246,6 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
 | `gait_sim/gait_sim.py` | PC 端步态仿真 — CSV/PNG/GIF |
 | `docs/操作指南.md` | 日常操作手册 |
-| `docs/camera_design.md` | 摄像头功能设计文档 |
 
 ---
 
@@ -359,13 +358,24 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
 
 ## 上电行为
 
-1. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值 (保持 IDLE)
-2. `sleep(0.5)` — 初始化稳定
-3. 舵机设到蹲姿 (set_angle) — 触发 IDLE→POSE 自动进入姿态模式
-4. `poses.stand()` — POSE_STAND 站姿待命 (Python IK, 固定高度)
-5. `bpuppy_ble.start()` — 启动 BLE 广播 (模式由固件编译决定, KittenBlock 模式自动注册 dupterm REPL)
+`frozen/main.py` 的实际执行顺序:
 
-上电自动站姿待命 + **BLE 广播**（KittenBlock 蓝牙编程）。用户程序 (main.py) 从**站姿切入**。**WiFi / 摄像头 / IMU / UART / ADC 均手动或按需启动**:
+1. 挂载 VFS (`vfs` 分区, 用户程序所在)
+2. `bpuppy_ble.start()` — 启动 BLE 广播 (模式由固件编译决定, KittenBlock 模式自动注册 dupterm REPL)
+3. `servo_init_all()` + `load_cal()` — 初始化 8 路 LEDC + 从 NVS 加载校准值 (保持 IDLE)
+4. `import bpuppy_motion` / `poses` — 加载运动与姿态模块
+5. `sleep(0.5)` — 初始化稳定
+6. 舵机设到蹲姿 (set_angle) — 触发 IDLE→POSE 自动进入姿态模式
+7. `poses.stand()` — POSE_STAND 站姿待命 (Python IK, 固定高度)
+8. `import voltage` — 电池电压检测 + WS2812 指示灯 (import 即启动)
+9. `import voice` — 语音模块 (UART2/9600, import 即启动) + `set_main_globals(globals())`
+10. 开关文件存在 → 后台线程执行 (见下)
+    - `/camera_on.py` — 上电自动开"网页+摄像头"
+    - `/pwm_ext_on.py` — 上电自动启扩展舵机 (PWM_EXT)
+11. `/main.py` 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
+
+**上电自动**: 站姿待命 + BLE 广播 + 电池指示灯 (ADC) + 语音 (UART2)。用户程序 (main.py) 从**站姿切入**。
+**手动或按需启动**的只有 WiFi / 摄像头 / IMU:
 - WiFi 热点: 手动 `import camera_stream; camera_stream.start()`（上电默认不开, 把 RF 让给蓝牙）
 - WiFi 图传: 网页点「图传 开」或 `camera_stream.start(stream=True)`
 - **想上电就自动开**: 把上面两行写进板子的 `/camera_on.py`（仓库源文件 `mpy_modules/camera_on.py`）。
@@ -374,7 +384,6 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
   实现: `frozen/main.py` 每次开机读 `/camera_on.py` 并丢进后台线程执行。用法见 [操作指南.md](操作指南.md) 2.2。
 - IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
 - BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式 `HiwonderBLE()` 构造时启动
-- UART / ADC: 手动 `import` + `init()`
 
 > **蓝牙编译互斥**：两个蓝牙模式（KittenBlock Nordic / Hiwonder FFE0）**不要同时编译**，同一固件只能启用其一。由 `drivers/micropython.cmake` 的 `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 宏二选一，详见 `kext-bpuppy/KittenBlock扩展开发.md` 第 11 节。
 
@@ -455,7 +464,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 #### 1.3 用户层 — KittenBlock 扩展
 
 - 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 13 个后缀完全一致。
-- KittenBlock 离线代码生成：hat 积木把 `def voiceWhen<指令>():` 放**生成文件末尾**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
+- KittenBlock 离线代码生成：hat 积木把 `def voiceWhen<指令>():` 放**生成文件开头（正文之前）**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
 - 2 个发声积木：`voice.play('汪汪')` / `voice.play('嘤嘤')`。
 
 ### 2. 事件注册机制（核心难点，含坑）
@@ -484,7 +493,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 **解决方案（已在代码里）**：`voice.set_main_globals(globals())` 显式传入主全局 dict。`_scan_events()` 的 dict 来源优先级：`set_main_globals()` 传入的 > `sys.modules['__main__']`。
 
 传入的三个路径（**新接手的 AI 加路径时别漏**）：
-1. `frozen/main.py`（L98）—— 开机/物理 RESET 路径。在 `import voice` 之后、把用户程序交给后台线程之前调用；线程里 `exec(...)` 新定义的函数会进入同一个 dict（`py/modthread.c` 把创建者的 globals 传给新线程）。
+1. `frozen/main.py`（L132）—— 开机/物理 RESET 路径。在 `import voice` 之后、把用户程序交给后台线程之前调用；线程里 `exec(...)` 新定义的函数会进入同一个 dict（`py/modthread.c` 把创建者的 globals 传给新线程）。
 2. `kext-bpuppy/extension.json` 的 `afterConnect`（L33）—— KittenBlock 在线连接/软复位路径。
 3. `kext-bpuppy/kblock.json5` 的 `libs."*".import`（L3 末尾）—— KittenBlock 代码生成注入路径。
 
@@ -554,7 +563,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 | 文件 | 角色 |
 |------|------|
 | `frozen/voice.py` | 事件转发核心（UART2 + 后台线程 + 注册/分发） |
-| `frozen/main.py` | 启动脚本，L98 `set_main_globals`，用户程序在**后台线程**里 `exec(/main.py, globals())` |
+| `frozen/main.py` | 启动脚本，L132 `set_main_globals`，用户程序在**后台线程**里 `exec(/main.py, globals())` |
 | `frozen/manifest.py` | frozen 模块清单（加 frozen 文件要注册） |
 | `kext-bpuppy/kblock.json5` | 积木定义 + `libs.import` 注入串 |
 | `kext-bpuppy/extension.json` | 扩展元数据 + `afterConnect` |
@@ -869,7 +878,7 @@ idf.py flash monitor       # 烧录并监控
 
 - [ ] `idf.py build` 编译成功
 - [ ] `build/micropython_bpuppy.bin` 存在
-- [ ] 烧录后 USB CDC 串口可连接 (921600, 端口见设备管理器)
+- [ ] 烧录后 UART0 串口可连 REPL (115200, CH343 端口见设备管理器; **USB-CDC 不可用**, 见上文「Windows 烧录」)
 - [ ] 启动 banner 显示 "bPuppy Robot Dog - ESP32-S3"
 - [ ] 上电自动站立，无跳动
 - [ ] `import bpuppy; bpuppy.version()` 返回版本号
@@ -910,5 +919,5 @@ idf.py flash monitor       # 烧录并监控
 |------|------|
 | MicroPython | v1.22.1 |
 | ESP-IDF | v5.1.2 |
-| 固件版本 | V1.0_2026071001 |
+| 固件版本 | `202607090001`（`bpuppy.version()` 另附编译日期时间） |
 | 芯片 | ESP32-S3 WROOM-1 N16R8 |
