@@ -1,8 +1,0 @@
-# PyInstaller 产物 —— 用 README 里的命令自己打, 不入库
-# (exe 约 29MB, 且是构建产物; 打包命令和踩坑说明都在 README.md 里)
-build/
-dist/
-*.spec
-
-__pycache__/
-*.pyc
