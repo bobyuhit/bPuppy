@@ -98,11 +98,11 @@ void servo_init(uint8_t channel, uint8_t gpio)
 /* ---- 角度 → PWM 占空比 ---- */
 static uint32_t angle_to_duty(float angle_deg)
 {
-    // 钳位到 [SERVO_ANGLE_MIN, SERVO_ANGLE_MAX] = [-45, 225]
+    // 钳位到 [SERVO_ANGLE_MIN, SERVO_ANGLE_MAX] = [-35, 215] (270° 型号; 180° 型号为 [0, 180])
     if (angle_deg < SERVO_ANGLE_MIN) angle_deg = SERVO_ANGLE_MIN;
     if (angle_deg > SERVO_ANGLE_MAX) angle_deg = SERVO_ANGLE_MAX;
 
-    // 线性映射: -45°→500us, 90°→1500us, 225°→2500us
+    // 线性映射: -35°→500us, 90°→1500us, 215°→2500us
     float pulse_us = PULSE_MIN_US +
         (angle_deg - SERVO_ANGLE_MIN) / SERVO_RANGE_DEG * (PULSE_MAX_US - PULSE_MIN_US);
 

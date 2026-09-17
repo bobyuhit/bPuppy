@@ -4,8 +4,9 @@
  * 输入: 足端坐标 (x, z) 相对髋关节，x=前(+), z=下(+)
  * 输出: 髋关节舵机角度, 膝关节舵机角度
  *
- * 腿参数:
- *   L1 (大腿) = 60mm, L2 (小腿) = 68mm
+ * 腿参数 (默认值, 见下方 IK_L1_DEFAULT / IK_L2_DEFAULT;
+ *          运行时可用 bpuppy_motion.cal_ik() 改 + NVS 持久化):
+ *   L1 (大腿) = 40mm, L2 (小腿) = 45mm
  *
  * 舵机映射 (标定结果):
  *   髋部: 0°前 → 90°下 → 180°后 (四腿相同)
@@ -59,7 +60,7 @@ extern float ik_knee_max;
 // IK 解算结果
 typedef struct {
     float hip_deg;   // 髋舵机角度 (0-180)
-    float knee_deg;  // 膝舵机角度 (45-135)
+    float knee_deg;  // 膝舵机角度 (默认限位见 IK_KNEE_MIN/MAX_DEFAULT: 10~170)
 } ik_result_t;
 
 // 解算单腿 IK（L1, L2 可传入校准值）

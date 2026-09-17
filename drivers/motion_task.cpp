@@ -266,7 +266,6 @@ static void motion_task_main(void *pvParam)
                 g_stop_decel = true;         // 先减速停 (每半步 -3 到 0)
                 g_pending_gait = GAIT_STOP;  // 停稳后切静态步态 (真正停止才用)
                 g_reverse = true;
-                g_reverse = true;
                 g_rev_gait = g_motion.gait;  // 记住运动步态 (反向起步用)
                 g_decel_sign = g_dir_last;   // 记住原方向 (减速停期间保持, 防腿打架)
             }
@@ -636,7 +635,6 @@ static bool motion_validate_params(float stride, float height, float lift)
     float L1 = g_motion.ik_L1;
     float L2 = g_motion.ik_L2;
     float x  = fabsf(stride) * 0.5f;
-    float z  = height;
     bool  bad = false;
 
     // 机械步幅上限

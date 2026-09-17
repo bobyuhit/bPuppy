@@ -23,7 +23,7 @@ typedef enum {
     GAIT_STOP = 0,      // 停止站好 (运动模式, 高度随参数)
     GAIT_WALK,          // 猫步 (speed>0前进, speed<0后退)
     GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
-    GAIT_GO,            // 自适应 (speed<5→walk, speed>10→trot, 之间插值)
+    GAIT_GO,            // 自适应 (speed≤4.0→walk, speed≥6.0→trot, 之间插值; 见 motion_task.cpp:329)
     // 以下未暴露到 MicroPython
     GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
     GAIT_COUNT

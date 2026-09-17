@@ -4,7 +4,8 @@
  * 几何模型:
  *   髋关节 O ─── L1 (大腿) ─── 膝关节 K ─── L2 (小腿) ─── 足端 F
  *
- *   已知: F 相对于 O 的坐标 (foot_x, foot_z), L1=60, L2=68
+ *   已知: F 相对于 O 的坐标 (foot_x, foot_z), L1=40, L2=45
+ *        (默认值见 ik.h 的 IK_L1_DEFAULT / IK_L2_DEFAULT, 是函数参数不是硬编码)
  *   求解: ∠hip (髋角), ∠knee (膝角)
  *
  * IK 公式:
@@ -18,8 +19,6 @@
 #include "esp_log.h"
 #include "py/runtime.h"
 #include "py/obj.h"
-
-static const char *TAG = "ik";
 
 // 运行时舵机极限 (可通过 motion_set_joint_limits() 修改 + NVS 持久化)
 float ik_hip_min  = IK_HIP_MIN_DEFAULT;

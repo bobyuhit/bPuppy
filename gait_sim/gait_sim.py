@@ -28,8 +28,8 @@ import numpy as np
 
 L1 = 40.0         # 大腿长度 mm (ik.h: IK_L1_DEFAULT)
 L2 = 45.0         # 小腿长度 mm (ik.h: IK_L2_DEFAULT)
-BODY_HALF_L = 60.0  # 前后髋半距 mm (motion_task.cpp: BODY_HALF_L=60, 全距 120mm)
-BODY_HALF_W = 59.0  # 左右髋半宽 mm (motion_task.cpp: BODY_HALF_W=59.0, 全距 118mm)
+BODY_HALF_L = 60.0  # 前后髋半距 mm (全距 120mm)。⚠ 固件默认是 62.5 (ik.h: IK_BODY_HALF_L_DEFAULT), 仿真有意用 60.0 — 改仿真几何时注意这个差异
+BODY_HALF_W = 59.0  # 左右髋半宽 mm (全距 118mm; 同 ik.h: IK_BODY_HALF_W_DEFAULT)
 
 HIP_MIN, HIP_MAX = 0.0, 180.0
 KNEE_MIN, KNEE_MAX = 10.0, 170.0  # 对应 ik.h ik_knee_min / ik_knee_max
