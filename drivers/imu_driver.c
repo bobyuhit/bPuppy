@@ -173,8 +173,13 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
         ESP_ERROR_CHECK(i2c_driver_install(g_i2c_port,c.mode,0,0,0));
         g_i2c_installed = true;
     }
-    // 扫描识别 MPU6050/MPU9250 — 上电初期传感器未稳定可能扫不到, 延时重试最多 3 次
-    // WHO_AM_I: 6050=0x68/0x69 (跟随 AD0), 9250=0x71/0x73
+    // 扫描识别 MPU6050/MPU6500/MPU9250 — 上电初期传感器未稳定可能扫不到, 延时重试最多 3 次
+    // WHO_AM_I: 6050=0x68, 6500=0x70, 9250=0x71, 9255=0x73
+    //   ⚠ 下面 a 扫的 0x68/0x69 是 **I2C 地址** (跟随 AD0), 别和 WHO_AM_I 的**值**搞混。
+    //   ⚠ 0x70 也走 9250 分支 —— 0x70 只说明是 6500 核心, **有没有磁力计不能据此断定**:
+    //      实测有模块报 0x70 却带着真的 AK8963 (WHO_AM_I=0x48), 9 轴功能完好。
+    //      这条路会配好 I2C 主模式, 由 ak8963_init() 自己去问磁力计 —— 问了才知道, 不猜。
+    //      所以真 6500 (无磁力计) 走这里也安全: ak8963_init() 返回 FAIL, has_mag() 如实为 False。
     for (int retry = 0; retry < 3 && !g_mpu_addr; retry++) {
         if (retry > 0) {
             mp_printf(&mp_plat_print, "[imu] retry %d...\n", retry);
@@ -183,8 +188,8 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
         for (uint8_t a=0x68; a<=0x69; a++) {
             uint8_t ww;
             if (r(a,MPU_WHO_AM_I,&ww,1)!=ESP_OK) continue;
-            if (ww==0x71||ww==0x73) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_9250;
-                mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X\n",a); break;}
+            if (ww==0x71||ww==0x73||ww==0x70) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_9250;
+                mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X (WHO_AM_I=0x%02X)\n",a,ww); break;}
             if (ww==0x68||ww==0x69) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_6050;
                 mp_printf(&mp_plat_print,"[imu] MPU6050@0x%02X\n",a); break;}
         }
