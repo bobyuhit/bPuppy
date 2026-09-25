@@ -257,3 +257,91 @@ motion 任务在 50Hz 里也在驱动**同样这 8 路** LEDC 通道
 - `led_batt_stop()` 只 `vTaskDelete` + 关灯，没有 `rmt_driver_uninstall`、也没释放 GPIO48
 - `voltage.read_v()` 改为直接返回 `bpuppy_led.batt_v()` —— 电压读数与电池 LED 监控任务耦合
 - `frozen/pwm_ext.py` 模块注释关于"与电池检测同脚"的描述不准确
+
+### 8.3 每次 `git commit` 都会触发 265 步真重编（ccache 救不了）
+
+**现象**：只改了 `drivers/imu_driver.c` 一个文件，`bash build.sh` 却跑了 1409 步、
+耗时约 54 分钟。而 `docs/README.md:67` 写的是「增量编译从 1356 步降到 ~10 步，几秒完成」。
+
+**先排除的**：ccache 本身没问题。用 `compile_commands.json` 里**原封不动**的命令跑两次：
+
+```
+第 1 次  Result: cache miss
+第 2 次  Result: cache hit (direct)
+```
+
+ccache 3.7.7（镜像 `espressif/idf:v5.1.2` 自带，走 ESP-IDF 的 `CCACHE_ENABLE=1`）
+工作完全正常 —— 注意它用 `RULE_LAUNCH_COMPILE` 挂载，所以 `compile_commands.json`
+和 `CMakeCache.txt` 里**看不到** `ccache` 前缀，但 `build.ninja` 的命令里有。
+排查时别据此以为 ccache 没接上。
+
+**根因**：`build.ninja` 把 **`.git/refs/heads/master` 当成了依赖**：
+
+```
+$ ninja -C build -n -d explain
+ninja explain: output build.ninja older than most recent input
+               /workspace/.git/refs/heads/master (1790352448289128600 vs 1790352822453215600)
+[0/1] Re-running CMake...
+```
+
+`.git` 就在挂进容器的 `/workspace` 里，所以**每次 commit 都会改这个文件的 mtime**，
+于是 ninja 重跑 CMake；而 `py/makeversionhdr.py` 会把 `git describe` 的结果写进
+`build/genhdr/mpversion.h`：
+
+```
+#define MICROPY_GIT_TAG "v3.0-41.g0af06b8.dirty"   ← 每 commit 都变
+#define MICROPY_BUILD_DATE "2026-09-25"            ← 每跨一天都变
+```
+
+`mpversion.h` 被 `py/mpconfig.h` 包含，等于被所有 MicroPython 源文件包含。
+它一变，`ninja -d explain` 显示：
+
+```
+239  build/genhdr/qstrdefs.generated.h is dirty
+216  build/genhdr/root_pointers.h is dirty
+  6  build/genhdr/moduledefs.h is dirty
+  7  build/genhdr/mpversion.h is dirty
+```
+
+合计 **265 步**。这一步 ccache **救不了** —— 不是缓存失效，是源码文本真的变了，
+必须重编。实测：重跑一次 CMake 本身只要几秒，重跑之后脏步数正好 **265**（不是 1409）。
+
+**修法（已验证，未实施）**：`py/makeversionhdr.py:89` 和 `:101` 本来就支持环境变量覆盖：
+
+```python
+git_tag = None
+if "MICROPY_GIT_TAG" in os.environ:          # ← 设了就完全跳过 git 调用
+    git_tag = os.environ["MICROPY_GIT_TAG"]
+if git_tag is None:
+    git_tag = get_version_info_from_git(repo_path)
+...
+build_date = datetime.date.today()
+if "SOURCE_DATE_EPOCH" in os.environ:        # ← 钉死日期
+    build_date = datetime.datetime.utcfromtimestamp(int(os.environ["SOURCE_DATE_EPOCH"])).date()
+```
+
+脚本本身**内容没变就不重写文件**（`:114` 起 `write_file` 判断），所以只要
+`build.sh` 的 `docker run` 加两个 `-e` 就能让 `mpversion.h` 恒定居。
+
+实测（容器内直接跑 `makeversionhdr.py`）：
+
+```
+不设环境变量 → MICROPY_GIT_TAG "v3.0-42.gd3508df.dirty"   （commit 一变就变）
+设两个变量   → MICROPY_GIT_TAG "bPuppy-fixed"
+               MICROPY_BUILD_DATE "1970-01-01"
+               连跑两次不重写文件（mtime 不变）
+```
+
+**取舍（2026-09-26 决定：先不改）**：钉死 tag 的代价是启动 banner 不再显示
+commit 号（`MicroPython v3.0-41.g0af06b8.dirty on 2026-09-25` 是排查"烧进去的
+到底是不是这份代码"时的直接依据）。要提速又不想丢 commit 号，可以让
+`build.sh` 写成 `MICROPY_GIT_TAG="${MICROPY_GIT_TAG:-bPuppy}"`，平时走固定值、
+需要时可 `MICROPY_GIT_TAG=v3.0-42.gd3508df bash build.sh` 手动带真 tag 全量重编。
+
+**未解释的部分**：2026-09-26 那次 1409 步比 265 大得多，多出来的约 1144 步是
+ESP-IDF 组件全量重编（`xtensa` / `efuse` / `driver` … 从第 1 步就开始）。这是
+**一次性**的，之后 `ninja -n` 只剩 265 步，触发源没有定位到 —— 不编故事。
+若再次出现，第一步查 `ninja -C build -n -d explain` 里 "is dirty" 的都是谁。
+
+**副作用**：`docs/README.md:67` 那句「增量编译从 1356 步降到 ~10 步，几秒完成」
+是**不准确**的 —— 1356 → ~10 只在"没有 commit、也没跨天"的理想情况下成立。
