@@ -22,29 +22,6 @@ _HINTS = (
 )
 
 
-_STALL_MS = 5000   # 连续多久读不到有效样本算卡死 (正常 ~50Hz, 5s ≈ 250 次)
-
-
-def _stall_abort(count):
-    """采集卡死的兜底出路。
-
-    两个 while 都靠 mag_cal_collect() 返回 ok=True 推进。一旦磁力计读不到
-    (掉线 / start_mag_cal 没生效), ok 就**恒为 False**, 循环永远不会结束 ——
-    脚本卡住且不报错。所以连续 _STALL_MS 没样本就直接退出。
-
-    ⚠ 只在样本不足时调 finish_mag_cal(): 它的作用是把 g_mc_active 清掉、
-      把被 start_mag_cal 停掉的 AHRS 任务重启起来 (样本 <30 时返回 -1, 不写 NVS)。
-      样本已经够多时**不能调** —— 那会拿半圈数据拟合出一个假椭球存进 NVS, 比卡死更坏。
-    """
-    print('\n✗ 连续 %d 秒读不到磁力计数据 —— 校准中止。' % (_STALL_MS // 1000))
-    if count < 30:
-        bpuppy_imu.finish_mag_cal()   # 样本不足 → 返回 -1, 不写 NVS, 只做清理
-        print('  已放弃, 没有写入任何数据。检查磁力计接线后重试。')
-    else:
-        print('  已采 %d 个样本但中途断了 —— 未写入 (半圈数据拟合出来是错的)。' % count)
-        print('  注意 IMU 任务此时仍是停的, 重新跑一次校准即可恢复。')
-
-
 def _bar(pct, width=16):
     filled = int(pct / 100.0 * width)
     if filled > width:
@@ -98,14 +75,12 @@ def start():
         print('--- 阶段 %d/3: %s ---' % (axis_idx + 1, name))
         print('  %s\n' % hint)
 
-        stall_since = time.ticks_ms()   # 读到有效样本就重置, 见 _stall_abort
         while True:
             result = bpuppy_imu.mag_cal_collect()
             ok, count = result[0], result[1]
             rx, ry, rz = result[2], result[3], result[4]
 
             if ok:
-                stall_since = time.ticks_ms()
                 r_vals = (rx, ry, rz)
                 r_current = r_vals[axis_idx]
                 pct = min(r_current / _TARGETS[axis_idx] * 100.0, 100.0)
@@ -116,29 +91,19 @@ def start():
                     print('  ✓ 达标!\n')
                     break
 
-            elif time.ticks_diff(time.ticks_ms(), stall_since) > _STALL_MS:
-                _stall_abort(count)
-                return
-
             time.sleep_ms(20)  # ~50Hz 采集
 
     # 覆盖达标后, 补足最小样本数 (保证椭球拟合质量)
     if count < MIN_SAMPLES:
         print('\n--- 补充采样: 请继续自由旋转, 采够 %d 样本 (当前 %d) ---'
               % (MIN_SAMPLES, count))
-        stall_since = time.ticks_ms()
         while count < MIN_SAMPLES:
             result = bpuppy_imu.mag_cal_collect()
             ok, count = result[0], result[1]
-            if ok:
-                stall_since = time.ticks_ms()
-                if count % 25 == 0:
-                    pct = min(count / MIN_SAMPLES * 100.0, 100.0)
-                    print('  样本: %s %3.0f%%  %d/%d' %
-                          (_bar(pct), pct, count, MIN_SAMPLES))
-            elif time.ticks_diff(time.ticks_ms(), stall_since) > _STALL_MS:
-                _stall_abort(count)
-                return
+            if ok and count % 25 == 0:
+                pct = min(count / MIN_SAMPLES * 100.0, 100.0)
+                print('  样本: %s %3.0f%%  %d/%d' %
+                      (_bar(pct), pct, count, MIN_SAMPLES))
             time.sleep_ms(20)
         print('  样本已够: %d\n' % count)
 
