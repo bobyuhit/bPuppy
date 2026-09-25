@@ -57,10 +57,13 @@ void imu_init(uint8_t port, uint8_t sda_pin, uint8_t scl_pin, uint8_t addr);
 // 是否已初始化 (供依赖模块按需启动)
 bool imu_is_ready(void);
 
-// 已识别的芯片型号: "mpu6050" / "mpu9250" / "unknown" (init 后有效)
+// 已识别的芯片型号: "mpu6050" / "mpu6500" / "mpu9250" / "unknown" (init 后有效)
+//   ⚠ 只说核心是谁, **不代表有没有磁力计** —— 那由 imu_has_mag() 回答
 const char *imu_chip_name(void);
 
-// 是否有磁力计 (MPU9250=true, MPU6050=false)
+// 是否有磁力计 (init 时真去问 AK8963 的 WHO_AM_I, 认出来才为 true)
+//   ⚠ 别用 chip 名字推断: 实测有 0x70 (6500 核心) 的模块带真 AK8963,
+//     真 6500 又没有。判错会让磁力计校准死循环。
 bool imu_has_mag(void);
 
 // 停止 AHRS 任务, 释放 IMU (可重新 init)

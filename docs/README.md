@@ -730,7 +730,7 @@ GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对�
 | LH_HIP 左后大腿 | 2 | RH_HIP 右后大腿 | 39 |
 | LH_KNEE 左后小腿 | 41 | RH_KNEE 右后小腿 | 45 |
 
-IMU: I2C0 (SDA=GPIO14, SCL=GPIO21, addr=0x68)。双芯片自适应: WHO_AM_I 识别 MPU6050(6轴)/MPU9250(9轴), REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
+IMU: I2C0 (SDA=GPIO14, SCL=GPIO21, addr=0x68)。芯片自适应: WHO_AM_I 识别 MPU6050(0x68)/MPU6500(0x70)/MPU9250(0x71,0x73), 也可以什么都不接。**有没有磁力计不看芯片型号** —— 一律由 `bpuppy_imu.has_mag()` 回答 (它看 AK8963 真被认出来没有); REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
 UART2: GPIO20=RX, 19=TX (CI-33T / micro:bit, ⚠ 2026-08-19 起反转 TX=19/RX=20; ⚠ GPIO19/20=USB_D-/D+, 固件已关 TinyUSB 释放, 见 docs/硬件连接.md)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。

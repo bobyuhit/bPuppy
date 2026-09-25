@@ -67,7 +67,7 @@
 #define MAG_SI_NVS_KEY   "mag_si"
 #define MAG_MIN_DIST2    (2.0f * 2.0f)   // 相邻样本最小距离² (μT²), 滤掉停留重复点
 
-typedef enum { IMU_CHIP_UNKNOWN=0, IMU_CHIP_6050, IMU_CHIP_9250 } imu_chip_t;
+typedef enum { IMU_CHIP_UNKNOWN=0, IMU_CHIP_6050, IMU_CHIP_9250, IMU_CHIP_6500 } imu_chip_t;
 
 static bool g_imu_ready, g_mag_ready, g_i2c_installed;
 static i2c_port_t g_i2c_port;
@@ -144,6 +144,7 @@ bool imu_is_ready(void) { return g_imu_ready; }
 const char *imu_chip_name(void) {
     switch (g_imu_chip) {
         case IMU_CHIP_6050: return "mpu6050";
+        case IMU_CHIP_6500: return "mpu6500";
         case IMU_CHIP_9250: return "mpu9250";
         default:            return "unknown";
     }
@@ -176,10 +177,11 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
     // 扫描识别 MPU6050/MPU6500/MPU9250 — 上电初期传感器未稳定可能扫不到, 延时重试最多 3 次
     // WHO_AM_I: 6050=0x68, 6500=0x70, 9250=0x71, 9255=0x73
     //   ⚠ 下面 a 扫的 0x68/0x69 是 **I2C 地址** (跟随 AD0), 别和 WHO_AM_I 的**值**搞混。
-    //   ⚠ 0x70 也走 9250 分支 —— 0x70 只说明是 6500 核心, **有没有磁力计不能据此断定**:
-    //      实测有模块报 0x70 却带着真的 AK8963 (WHO_AM_I=0x48), 9 轴功能完好。
-    //      这条路会配好 I2C 主模式, 由 ak8963_init() 自己去问磁力计 —— 问了才知道, 不猜。
-    //      所以真 6500 (无磁力计) 走这里也安全: ak8963_init() 返回 FAIL, has_mag() 如实为 False。
+    //   ⚠ chip 只回答"谁是核心", **不回答有没有磁力计** —— 有没有一律由 has_mag() 回答:
+    //      has_mag() 看的是 ak8963_init() 真的问出 WHO_AM_I=0x48 没有, 不猜。
+    //      实测有模块 WHO_AM_I=0x70 (6500 核心) 却带着真的 AK8963, 9 轴功能完好;
+    //      而真 6500 (无磁力计) 走同一条路也安全: ak8963_init() 返回 FAIL, has_mag() 如实为 False。
+    //      所以 6500 和 9250 只会让 get_chip() 的字符串不同, 行为完全一致。
     for (int retry = 0; retry < 3 && !g_mpu_addr; retry++) {
         if (retry > 0) {
             mp_printf(&mp_plat_print, "[imu] retry %d...\n", retry);
@@ -188,8 +190,10 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
         for (uint8_t a=0x68; a<=0x69; a++) {
             uint8_t ww;
             if (r(a,MPU_WHO_AM_I,&ww,1)!=ESP_OK) continue;
-            if (ww==0x71||ww==0x73||ww==0x70) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_9250;
+            if (ww==0x71||ww==0x73) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_9250;
                 mp_printf(&mp_plat_print,"[imu] MPU9250@0x%02X (WHO_AM_I=0x%02X)\n",a,ww); break;}
+            if (ww==0x70) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_6500;
+                mp_printf(&mp_plat_print,"[imu] MPU6500@0x%02X (WHO_AM_I=0x70)\n",a); break;}
             if (ww==0x68||ww==0x69) {g_mpu_addr=a; g_imu_chip=IMU_CHIP_6050;
                 mp_printf(&mp_plat_print,"[imu] MPU6050@0x%02X\n",a); break;}
         }
@@ -201,8 +205,9 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
     w(g_mpu_addr, MPU_ACCEL_CONFIG2, 0x03);
     w(g_mpu_addr, MPU_GYRO_CONFIG, 0x08);
     w(g_mpu_addr, MPU_ACCEL_CONFIG, 0x10);
-    if (g_imu_chip == IMU_CHIP_9250) {
-        // 仅 9250: 使能 I2C 主模式 (AUX 总线) 桥接内部 AK8963 磁力计
+    if (g_imu_chip != IMU_CHIP_6050) {
+        // 9250 和 6500 都要走这段: 6500 模块**可能**带 AK8963, 配好 AUX 总线让它自己去认领。
+        // 真 6500 (无磁力计) 白配一次 I2C 主模式, 无害; 6050 则确定没有, 跳过。
         w(g_mpu_addr, MPU_USER_CTRL, I2C_MST_EN); vTaskDelay(pdMS_TO_TICKS(5));
         w(g_mpu_addr, MPU_USER_CTRL, I2C_MST_EN|I2C_MST_RST); vTaskDelay(pdMS_TO_TICKS(5));
         w(g_mpu_addr, MPU_INT_PIN_CFG, 0x00);
@@ -214,7 +219,7 @@ void imu_init(uint8_t port, uint8_t sda, uint8_t scl, uint8_t addr) {
     xTaskCreatePinnedToCore(imu_task_main,"imu_ahrs",IMU_TASK_STACK,NULL,IMU_TASK_PRIO,&g_imu_task,1);
     g_imu_ready = true;
     mp_printf(&mp_plat_print,"[imu] ready %s mag=%s\n",
-              g_imu_chip==IMU_CHIP_9250?"MPU9250":"MPU6050", g_mag_ready?"OK":"NO");
+              imu_chip_name(), g_mag_ready?"OK":"NO");
 }
 
 static bool read_all(imu_raw_data_t *d) {
