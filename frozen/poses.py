@@ -138,6 +138,15 @@ def _move_to(targets, step=3.0):
         if targets[ch] is not None:
             cur[ch] = _read(ch)      # 扩展舵机未启用会在这里报错 (不自动开)
 
+    # ★ 本次是否有主舵机参与 —— 决定要不要碰 bpuppy_servo。
+    #   主舵机走 group_commit, 而它会强制切 MODE_POSE (停步态):
+    #       group_commit → motion_python_servo_write → motion_set_mode(MODE_POSE)
+    #       → g_motion.enabled=false → motion_task 每帧 continue (原地冻结)
+    #   注意那个钩子**只看"有没有人调 group_commit", 不看传了什么值** ——
+    #   哪怕只是把当前角度原样写回, 也照样把步态停掉。
+    #   所以只动扩展舵机时绝不能走这段 (oscillate() 已经是这个行为)。
+    has_main = any(t is not None for t in targets[:_EXT_BASE])
+
     while True:
         done = True
         for ch in range(_CH_COUNT):
@@ -149,12 +158,16 @@ def _move_to(targets, step=3.0):
             done = False
             cur[ch] += max(-step, min(step, diff))
 
-        # 主舵机: 一帧内批量提交 (group), 未参与的通道从舵机读回原位
-        bpuppy_servo.group_begin()
-        for ch in range(8):
-            v = cur[ch] if cur[ch] is not None else bpuppy_servo.get_angle(ch)
-            bpuppy_servo.group_add(ch, v)
-        bpuppy_servo.group_commit()
+        # 主舵机: 一帧内批量提交 (group), 未参与的通道从舵机读回原位。
+        # 没有主舵机参与就**整段跳过** —— 不写就不会切 POSE, 步态继续跑。
+        # (跳过是安全的: 位置舵机不写就保持原位, 且 MODE_MOTION 下 motion_task
+        #  本来就在驱动它们 —— 跳过正是"让步态继续管主舵机"这个本意。)
+        if has_main:
+            bpuppy_servo.group_begin()
+            for ch in range(8):
+                v = cur[ch] if cur[ch] is not None else bpuppy_servo.get_angle(ch)
+                bpuppy_servo.group_add(ch, v)
+            bpuppy_servo.group_commit()
 
         # 扩展舵机: 逐个写 (MCPWM 无批量接口), 只写参与本次的
         for ch in range(_EXT_BASE, _CH_COUNT):
