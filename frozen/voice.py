@@ -16,23 +16,39 @@ bPuppy 语音控制 — Hiwonder CI-33T 语音识别/发声模块 (UART2, 9600)
    把两个脚让给 UART2。USB-CDC 虚拟串口因此不可用, 不是可以打开的功能 ——
    想恢复 USB 串口就得放弃本模块的 UART2 (REPL/烧录走 UART0=COM14, 不受影响)。
 
-2 字节数据区协议 <CMD> <PARAM>:
-  上行 (本系统 → CI-33T): AA 55 <CMD> <PARAM> 55 AA   (发声/反馈)
-  下行 (CI-33T → 本系统): 数据区命令码 0x30-0x3C (运动/姿态)
-                           实测 (2026-08-19) = 裸 2 字节, 无帧头帧尾
-                           → 打印 VOICE RX hex + 宽容扫描命令码转发事件
+协议 (2026-09-26 改):
+  上行 (本系统 → CI-33T): AA 55 <CMD> <PARAM> 55 AA   (发声/反馈, 6 字节)
+
+  下行 (CI-33T → 本系统): 4 字节定长帧, 两种, 靠**首字节取值范围**区分 ——
+    命令帧:  BB <CMD> <PARAM> EE    CMD = 0x30-0x3C (运动/姿态), PARAM 预留
+    角度帧:  <角度> 00 00 00        声源角度 (DOA), 0-180 度
+                                    ⚠ 模块侧格式固定, 本仓库不能改
+
+  判据: 首字节 0xBB = 命令帧; <= 0xB4 (=180) = 角度帧。两段取值不重叠
+  (0xBB=187 > 180), 所以**不可能互相误判**。既不改角度帧格式, 也彻底
+  根除了旧版逐字节扫 0x30-0x3C 时"角度 48-60 度被误当成运动指令"的 bug。
+
+  收不够 4 字节就留在缓冲里等下一轮 (_parse), 不做任何猜测 —— 因此
+  字节被 UART 切分/粘连都不影响解析。
 
 用法:
     import voice            # 上电默认: import 即启动 (UART2 + 后台线程)
     voice.play('汪汪')      # 播放预置声音 (汪汪/嘤嘤, 映射见 SND_WANG/SND_YING)
     voice.say(0x70, 1)      # 发狗叫声 2 号 (AA 55 70 01 55 AA)
+    voice.SoundAngle        # 最近一次声源角度 (度, 0-180); -1 = 开机后还没收到过
     voice.on_cmd(0x30, fn)  # 注册回调: 收到停止指令时执行 fn (KittenBlock 事件积木用)
     voice.stop()            # 停止 (后台线程退出, 下次 start 可重启)
 
-KittenBlock「语音」组事件积木 (2026-08-19 新增):
-    事件积木生成末尾函数 def voiceWhenX(): (X = Stop/Fwd/Back/...),
+KittenBlock「语音」组事件积木 (2026-08-19 新增, 2026-09-26 加声音角度):
+    事件积木生成末尾函数 def voiceWhenX(): (X = Stop/Fwd/Back/.../SoundDir),
     本模块后台线程扫描 __main__ 全局按名字 (voiceWhenX → 命令码)
     自动注册为事件回调 → 收到指令只触发用户程序, 固件自身不做动作。
+
+    声音角度做成**事件 + 变量**两件套 (用户要求):
+      事件「当收到 [声音角度] 指令」→ def voiceWhenSoundDir()
+      变量「(声音角度)」          → voice.SoundAngle
+    ⚠ 声源持续存在时模块会**连发**角度帧, 所以这个事件会连续触发 ——
+      要"一有声音就响应"用事件, 要"持续跟随声源"轮询 SoundAngle 变量。
 """
 
 import time
@@ -53,6 +69,22 @@ BAUD     = 9600
 FRAME_HEAD = b'\xAA\x55'
 FRAME_TAIL = b'\x55\xAA'
 
+# ---- 下行帧封装 (2026-09-26 新增) ----
+# 命令帧 BB <CMD> <PARAM> EE。0xBB/0xEE 都 > 180(0xB4), 与角度帧首字节
+# 取值范围不重叠 —— 这是两种帧唯一且充分的区分依据。
+# ⚠ 命名带 _CMD_: 上面的 FRAME_HEAD/FRAME_TAIL 是**上行**的 bytes 常量,
+#   这两个是**下行**的单字节 int, 别混。
+_FRAME_CMD_HEAD = 0xBB
+_FRAME_CMD_TAIL = 0xEE
+
+# 声源角度上限 (度)。角度帧首字节 <= 它 —— 用于和命令帧区分。
+ANGLE_MAX = 180         # = 0xB4
+
+# 角度事件的内部派发编号 —— 只在本模块内用, **不上线**。
+# 刻意选在单字节命令码之外 (命令帧 CMD 是 1 字节, 现有 0x30-0x3C,
+# 将来可能扩到 0x3D+); 用 0x100 保证永不与任何线上 CMD 冲突。
+CMD_SOUND_DIR = 0x100
+
 # ---- 下行: 运动/姿态命令 (数据区第一字节, 仅作事件信号, 不触发动作) ----
 CMD_STOP   = 0x30   # 停止
 CMD_FWD    = 0x31   # 前进
@@ -70,18 +102,24 @@ CMD_PLAY   = 0x3C   # 邀玩
 
 # ---- 上行: 发声/反馈命令 (数据区第一字节) ----
 SND_BARK = 0x70     # 狗叫声类 (PARAM: 0=1号, 1=2号, ...; 实测可用)
-SND_TTS  = 0x71     # 平台自定义发声段 (实测 2026-08-19: 0x01 = 嘤嘤)
+SND_TTS  = 0x71     # 平台自定义发声段 (实测 2026-09-26: 0x02 = 嘤嘤)
 SND_EXT  = 0x72     # 预留: 其他反馈
 
 # ---- 预置声音 (KittenBlock「语音播放汪汪/嘤嘤」) ----
-# 实测确认 (2026-08-19): 0x70 0x01 = 汪汪, 0x71 0x01 = 嘤嘤。
+# 实测确认: 0x70 0x01 = 汪汪 (2026-08-19); 0x71 0x02 = 嘤嘤 (2026-09-26 改, 原 0x01)。
 # 若平台固件另有映射, 改下面常量即可, voice.play / 积木代码不用动。
 SND_WANG = (0x70, 0x01)     # 汪汪 (用户实测确认: 0x70 1 能响)
-SND_YING = (0x71, 0x01)     # 嘤嘤 (用户实测确认)
+SND_YING = (0x71, 0x02)     # 嘤嘤 (用户实测确认: 0x71 2 = 嘤嘤)
 
-# 下行命令码范围 (宽容扫描用; 帧头帧尾 AA/55/5A/A5 均不在段内, 不误触发)
+# 命令帧 CMD 字节的合法范围。2026-09-26 前是"逐字节扫描段", 现在是
+# **合法性校验**: 命令帧除帧头/帧尾外, 中间两个字节也得对得上才算数。
 _CMD_MIN = 0x30
 _CMD_MAX = 0x3C
+
+# ---- 声源角度 (KittenBlock 变量积木「(声音角度)」读它) ----
+# 初值 -1 而非 0: 0 度是**有效方向** (用户确认), 用 0 做初值的话用户没法
+# 区分"正前方"和"开机后一次都没收到过"。
+SoundAngle = -1
 
 _started = False
 
@@ -134,6 +172,9 @@ _EVT_FUNCS = {
     'voiceWhenSit':    CMD_SIT,
     'voiceWhenWave':   CMD_WAVE,
     'voiceWhenPlay':   CMD_PLAY,
+    # 声源角度 (2026-09-26): value 不是线上命令码, 是内部派发编号 CMD_SOUND_DIR。
+    # 角度值靠 SoundAngle 变量带出去 —— 13 条既有回调的 fn() 签名保持不变。
+    'voiceWhenSoundDir': CMD_SOUND_DIR,
 }
 
 def _scan_events():
@@ -161,28 +202,76 @@ def _scan_events():
 # 后台轮询线程
 # ================================================================
 
+_buf = b''
+
+def _parse():
+    """按结构切帧。**收不够 4 字节就原样留着等下一轮, 绝不猜。**
+
+    两种帧靠首字节取值范围区分 (见文件头):
+      0xBB            → 命令帧 BB <CMD> <PARAM> EE (CMD 还要在 0x30-0x3C 内)
+      <= ANGLE_MAX    → 角度帧 <角度> 00 00 00
+    都不是 → 丢掉 1 个字节重同步 (这样夹在中间的噪声能自动滑过去)。
+
+    旧版是逐字节扫 0x30-0x3C, 角度 48-60 度会被误当运动指令; 现在按帧结构
+    判定, 从根上没有了这个 bug。顺带: 帧被 UART 切分/粘连也不影响 ——
+    切开了就等字节到齐, 粘连了 while 循环自然逐个切出来。
+    """
+    global _buf
+    while len(_buf) >= 4:
+        b0 = _buf[0]
+        if b0 == _FRAME_CMD_HEAD and _buf[3] == _FRAME_CMD_TAIL \
+                and _CMD_MIN <= _buf[1] <= _CMD_MAX:
+            _dispatch(_buf[1], _buf[2])         # 命令帧
+            _buf = _buf[4:]
+        elif b0 <= ANGLE_MAX and _buf[1:4] == b'\x00\x00\x00':
+            _dispatch(CMD_SOUND_DIR, b0)        # 角度帧 → 存 SoundAngle + 触发事件
+            _buf = _buf[4:]
+        else:
+            _buf = _buf[1:]                     # 重同步
+    # 兜底清理。正常情况上面 while 每轮要么消费 4 字节要么丢 1 字节, 到这里
+    # 必 <4 字节 —— 所以这段几乎不会触发, 只在异常路径攒下垃圾时兜底。
+    # ⚠ 必须放在**解析之后**: 放前面会从头部截断, 把残帧自己的帧头切掉。
+    if len(_buf) > 64:
+        _buf = _buf[-3:]        # 3 = 最长可能的残帧前缀 (4 字节帧差 1 字节)
+
 def _pump():
+    global _buf
     while _started:
         try:
             _scan_events()          # 注册 KittenBlock 事件积木函数 (voiceWhen*)
             if bpuppy_uart.any():
-                data = bpuppy_uart.read(16)
+                data = bpuppy_uart.read(64)
                 if data:
-                    # 调试: 打印原始帧, 便于摸清 CI-33T 下行封装格式
+                    # 调试: 打印本次收到的原始字节 (可能是半帧 —— 拼起来才判定),
+                    # 保留原有的 VOICE RX 日志格式便于对照实测。
                     print("VOICE RX: %s" % data.hex())
-                    for b in data:
-                        if _CMD_MIN <= b <= _CMD_MAX:
-                            _dispatch(b)
+                    _buf += data
+            _parse()
         except Exception:
             pass
         time.sleep_ms(20)
 
-def _dispatch(cmd):
-    """只转发事件信号给用户回调, 固件自身不做任何动作"""
+def _dispatch(cmd, param=0):
+    """只转发事件信号给用户回调, 固件自身不做任何动作。
+
+    param 目前只有角度帧用。CMD_SOUND_DIR 时**先存变量再触发事件** ——
+    顺序很重要: 用户事件函数体里读 voice.SoundAngle 得读到本次的值。
+    存变量这一步不依赖有没有注册回调, 所以「(声音角度)」积木单独用也能读到值。
+
+    回调签名保持 fn() 不变 —— 角度靠变量带出去, 不给 13 条既有回调加参数。
+    """
+    global SoundAngle
+    if cmd == CMD_SOUND_DIR:
+        SoundAngle = param
     handlers = _handlers.get(cmd)
     if not handlers:
         return
-    print("VOICE CMD: 0x%02x -> event" % cmd)
+    if cmd == CMD_SOUND_DIR:
+        # 角度单独一行: 0x100 不在线上, 打成 "VOICE CMD: 0x100" 会让人对着协议表找不到。
+        # 也便于日志里区分"运动指令"和"声源角度"(角度是连发的, 别把 VOICE CMD 淹了)。
+        print("VOICE ANGLE: %d -> event" % param)
+    else:
+        print("VOICE CMD: 0x%02x -> event" % cmd)
     for fn in handlers:
         try:
             fn()

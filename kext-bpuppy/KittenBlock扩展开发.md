@@ -660,7 +660,8 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
 | 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |
 | 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
-| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，13 选项） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
+| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，14 选项 = 13 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
+| 语音 | (声音角度)（reporter，读变量） | `voice.SoundAngle`（0–180 度；`-1` = 还没收到过） |
 | 语音 | 语音播放汪汪 / 语音播放嘤嘤 | `voice.play('汪汪')` / `voice.play('嘤嘤')` |
 
 底层 API（固件 C 模块，MicroPython 可调）：

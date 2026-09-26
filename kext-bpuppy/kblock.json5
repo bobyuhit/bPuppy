@@ -303,6 +303,12 @@
       }
     },
     {
+      opcode: 'getSoundAngle',
+      blockType: 'reporter',
+      text: '$$getSoundAngle',
+      pycode: 'voice.SoundAngle'
+    },
+    {
       opcode: 'voiceBark',
       blockType: 'command',
       text: '$$voiceBark',
@@ -348,7 +354,8 @@
       { text: '$$voiceCmdCrouch', value: 'Crouch' },
       { text: '$$voiceCmdSit',    value: 'Sit' },
       { text: '$$voiceCmdWave',   value: 'Wave' },
-      { text: '$$voiceCmdPlay',   value: 'Play' }
+      { text: '$$voiceCmdPlay',   value: 'Play' },
+      { text: '$$voiceCmdSoundDir', value: 'SoundDir' }
     ]
   }
 }

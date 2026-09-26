@@ -66,6 +66,8 @@
     "voiceCmdSit": "坐下",
     "voiceCmdWave": "摇手",
     "voiceCmdPlay": "邀玩",
+    "voiceCmdSoundDir": "声音角度",
+    "getSoundAngle": "(声音角度)",
     "voiceBark": "语音播放汪汪",
     "voiceWhimper": "语音播放嘤嘤"
   },
@@ -136,6 +138,8 @@
     "voiceCmdSit": "sit",
     "voiceCmdWave": "wave",
     "voiceCmdPlay": "play",
+    "voiceCmdSoundDir": "sound direction",
+    "getSoundAngle": "(sound angle)",
     "voiceBark": "bark wang wang",
     "voiceWhimper": "whimper ying ying"
   },
@@ -206,6 +210,8 @@
     "voiceCmdSit": "坐下",
     "voiceCmdWave": "搖手",
     "voiceCmdPlay": "邀玩",
+    "voiceCmdSoundDir": "聲音角度",
+    "getSoundAngle": "(聲音角度)",
     "voiceBark": "語音播放汪汪",
     "voiceWhimper": "語音播放嚶嚶"
   }

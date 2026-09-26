@@ -438,9 +438,12 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 - **接线**（2026-08-19 起引脚反转）：`CI-33T PA2(TX)→GPIO20(UART2 RX)`、`PA3(RX)←GPIO19(UART2 TX)`、**9600 波特率**、5V 外部供电共地。
 - ⚠ **GPIO19/20 是 ESP32-S3 原生 USB_D-/USB_D+，且已归语音模块的 UART2 用**（`frozen/voice.py` 的 `UART_TX=19` / `UART_RX=20`）。MicroPython 默认启用 TinyUSB 会接管它们 → UART2 发不出，所以已在 `components/mr9you__micropython-helper/mpy_startup.c` 注释掉 `usb_init()`，把两个脚让给 UART2。**USB-CDC 虚拟串口因此不可用，这不是可以打开的功能** —— 想恢复 USB 串口就得放弃 UART2（REPL/烧录走 UART0=COM14 不受影响）。
-- **下行**（CI-33T→ESP32，语音指令）= **裸 2 字节数据区** `<CMD> <PARAM>`，实测**不带** AA 55 帧头帧尾（例：`31 00` = 前进）。
-- **上行**（ESP32→CI-33T，发声/反馈）= 帧 `AA 55 <CMD> <PARAM> 55 AA`（例：`AA 55 70 01 55 AA` = 汪汪）。
-- 命令码表（下行，0x30–0x3C）：
+- **下行**（CI-33T→ESP32）= **4 字节定长帧，两种**（2026-09-26 改，此前是裸 2 字节 `<CMD> <PARAM>`）：
+  - **命令帧** `BB <CMD> <PARAM> EE`（例：`BB 31 00 EE` = 前进）。CMD 表见下，PARAM 预留。
+  - **角度帧** `<角度> 00 00 00` = **声源角度（DOA）**，0–180 度。⚠ 模块侧格式固定，本仓库不能改。
+  - 判据只有首字节：`0xBB`(187)=命令帧；`≤0xB4`(180)=角度帧。**两段不重叠**，不可能互判。
+- **上行**（ESP32→CI-33T，发声/反馈）= 帧 `AA 55 <CMD> <PARAM> 55 AA`（例：`AA 55 70 01 55 AA` = 汪汪，`AA 55 71 02 55 AA` = 嘤嘤）。
+- 命令码表（下行命令帧的 CMD 字节，0x30–0x3C）：
 
 | CMD | 语音 | CMD | 语音 |
 |-----|------|-----|------|
@@ -453,7 +456,8 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 | 0x36 | 减速 | | |
 | 0x37 | 跳跃 | | |
 
-- CI-33T 平台（智能公元）配置：每个命令词配【串口发送】输出对应数据区字节；要狗发声时配【串口输入】词条匹配 `AA 55 <数据> 55 AA` 帧触发音效。
+- CI-33T 平台（智能公元）配置：每个命令词配【串口发送】输出**命令帧** `BB <CMD> 00 EE`；**角度输出保持原样 `<角度> 00 00 00` 不动**；要狗发声时配【串口输入】词条匹配 `AA 55 <数据> 55 AA` 帧触发音效。波特率两边都 9600。
+- > ⚠ **模块侧与固件必须同为 4 字节命令帧**：新固件认不出旧的裸 2 字节命令（拼不成帧，当残帧留着），13 条命令词会全哑。反向兼容（平台先改、固件还是旧的）没问题 —— 旧固件逐字节扫到帧内 CMD 照样派发。
 
 #### 1.2 固件层 — `frozen/voice.py`（事件转发核心）
 
@@ -461,14 +465,26 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 `_pump()` 每 20ms：
 1. `_scan_events()` — 扫描主全局 dict，把新出现的 `voiceWhenX` 函数注册为回调（**只注册不调用**）。
-2. `bpuppy_uart.any()` → `read(16)` → `print("VOICE RX: <hex>")` → 逐字节扫 0x30–0x3C → 命中就 `_dispatch(cmd)`。
-3. `_dispatch(cmd)` — 查 `_handlers[cmd]` 逐个调用用户函数（`print("VOICE CMD: 0x%02x -> event")`）。无回调则什么都不做。
+2. `bpuppy_uart.any()` → `read(64)` → `print("VOICE RX: <hex>")` → 追加到帧缓冲 `_buf`。
+3. `_parse()` — **按结构切帧**（2026-09-26 改，原先是逐字节扫 0x30–0x3C）：
+   命令帧 `BB CMD PARAM EE` 且 CMD 在 0x30–0x3C 内 → `_dispatch(CMD, PARAM)`；
+   角度帧 `<角度> 00 00 00`（首字节 ≤ 0xB4）→ `_dispatch(CMD_SOUND_DIR, 角度)`；
+   都不是 → 丢 1 字节重同步。**收不够 4 字节就 `while` 退出、留到下一轮**，所以切分/粘连都无害。
+4. `_dispatch(cmd, param=0)` — 若是 `CMD_SOUND_DIR`，**先写 `SoundAngle = param` 再触发事件**
+   （顺序要紧：用户函数体里读 `voice.SoundAngle` 得读到本次值；没有事件积木时变量也照写）；
+   然后查 `_handlers[cmd]` 逐个调用用户函数（`print("VOICE CMD: 0x%02x -> event")`）。无回调则什么都不做。
+   回调签名保持 `fn()` —— 角度靠变量带出去，不给既有回调加参数。
 
-对外接口：`voice.on_cmd(cmd, fn)` / `off_cmd` / `play('汪汪'|'嘤嘤')` / `say(cat, code)` / `start` / `stop`。
+对外接口：`voice.on_cmd(cmd, fn)` / `off_cmd` / `play('汪汪'|'嘤嘤')` / `say(cat, code)` / `start` / `stop` / 变量 `SoundAngle`。
+
+> **为什么改掉逐字节扫描**：角度帧第一字节就是角度值，旧版扫 0x30–0x3C 时 **角度 48–60 度会被误当运动指令**
+> （53° → `0x35` = 加速，48°–60° 覆盖全部 13 条）。现在靠首字节取值范围（命令 0xBB vs 角度 ≤0xB4）区分，
+> 不重叠 → 不可能误判，且不依赖时序/长度/延时。
 
 #### 1.3 用户层 — KittenBlock 扩展
 
-- 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 13 个后缀完全一致。
+- 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 14 个后缀完全一致（13 条指令 + `SoundDir`）。**加下拉项不用新增积木** —— `$$voiceCmdSoundDir` 那一项就复用了同一个 hat。
+- 1 个变量积木（reporter）：`getSoundAngle` → `pycode: 'voice.SoundAngle'`（读最近一次声源角度，度，0–180；初值 `-1` = 还没收到过）。
 - KittenBlock 离线代码生成：hat 积木把 `def voiceWhen<指令>():` 放**生成文件开头（正文之前）**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
 - 2 个发声积木：`voice.play('汪汪')` / `voice.play('嘤嘤')`。
 
@@ -478,13 +494,24 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 ```
 用户说"前进"
- → CI-33T 识别 → 串口发 31 00
+ → CI-33T 识别 → 串口发命令帧 BB 31 00 EE
  → GPIO20 (UART2 RX) → bpuppy_uart 缓冲
- → _pump() 轮询到 → print "VOICE RX: 3100"
- → 扫到 0x31 → _dispatch(0x31)
+ → _pump() 轮询到 → print "VOICE RX: bb3100ee" → 追加到 _buf
+ → _parse() 切出命令帧 → _dispatch(0x31, 0x00)
  → print "VOICE CMD: 0x31 -> event"
  → 调用户 def voiceWhenFwd()  ← 已由 _scan_events 注册
  → 函数体（积木翻译的动作）→ bpuppy_motion.set_gait('go') 等
+```
+
+声源角度走同一条链路，只是不触发 `voiceWhen*` 那一层：
+
+```
+拍手（声源在 120° 方向）
+ → CI-33T DOA 算法算出角度 → 串口发角度帧 78 00 00 00
+ → _pump() → print "VOICE RX: 78000000" → _parse() 切出角度帧
+ → _dispatch(CMD_SOUND_DIR, 120)
+ → voice.SoundAngle = 120          ← 先写变量（没事件积木也照写）
+ → 调用户 def voiceWhenSoundDir()  ← 有就触发
 ```
 
 #### 2.2 关键机制：函数在哪、怎么被找到
@@ -514,10 +541,10 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 动 4 处，缺一不可：
 
-1. **CI-33T 平台**（智能公元，用户侧）：配命令词"转圈" → 串口发送一个数据区字节，如 `0x3D 0x00`。
+1. **CI-33T 平台**（智能公元，用户侧）：配命令词"转圈" → 串口发送**命令帧** `BB 3D 00 EE`（帧头帧尾别漏）。
 2. **固件** `frozen/voice.py`：
    - 加常量（可选，注释更清晰）`CMD_SPIN = 0x3D`；
-   - `_CMD_MAX` 从 `0x3C` 扩到 `0x3D`（下行扫描段，**漏了这条指令会被忽略**）；
+   - `_CMD_MAX` 从 `0x3C` 扩到 `0x3D`（命令帧 CMD 字节的合法性校验，**漏了这条指令会被当成残帧丢弃**）；
    - `_EVT_FUNCS` 加一行 `'voiceWhenSpin': CMD_SPIN`。
    - 重编译固件 + 烧录。
 3. **扩展** `kext-bpuppy/kblock.json5`：**不再新增积木**，只在 `menus.voiceMenu` 加一项 `{ text: '$$voiceCmdSpin', value: 'Spin' }`。
@@ -527,7 +554,20 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 #### 3.2 换/加声音映射
 
-只改 `frozen/voice.py` 的 `SND_WANG` / `SND_YING`（= 上行 `(category, code)`，如 `(0x70, 0x01)`）。改完重编译烧录；积木代码不用动。
+只改 `frozen/voice.py` 的 `SND_WANG` / `SND_YING`（= 上行 `(category, code)`，如汪汪 `(0x70, 0x01)`、嘤嘤 `(0x71, 0x02)`）。改完重编译烧录；积木代码不用动。
+
+#### 3.2.1 加一个"读值型"积木（reporter，例：声源角度）
+
+1. **固件** `frozen/voice.py`：把值做成**模块级变量**（如 `SoundAngle`），在 `_dispatch` 里更新它。
+   重编译固件 + 烧录。
+2. **扩展** `kext-bpuppy/kblock.json5`：加 reporter 积木，`pycode` 直接读变量：
+   ```js
+   { opcode: 'getSoundAngle', blockType: 'reporter', text: '$$getSoundAngle', pycode: 'voice.SoundAngle' }
+   ```
+3. **本地化** `bpuppy.l10n.json`：加 `getSoundAngle` 的三语文案。重新打包 zip + 推送。
+
+> 与事件积木的分工：**事件**（hat）用于"一发生就响应"，**变量**（reporter）用于"随时读最新值"。
+> 声源角度两者都有，因为模块会连发角度帧 —— 要"持续跟随"就轮询变量，避免事件被连发打爆。
 
 #### 3.3 让固件对某指令有"默认动作"（不推荐）
 
@@ -543,23 +583,29 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 1. **`sys.modules['__main__']` 为 None** → 必须 `set_main_globals(globals())`，三条路径都传（见 2.3）。
 2. **下拉 value ≠ `_EVT_FUNCS` 后缀** → 注册不上。函数名 = `pycode` 里的 `def voiceWhen<value>()`（value 裸代入，如 `Fwd` → `def voiceWhenFwd()`）。
-3. **命令码超出扫描段**（> `_CMD_MAX`）→ 收得到但被忽略。加指令必须同步扩段。
+3. **命令码超出 `_CMD_MIN`–`_CMD_MAX`**（现 0x30–0x3C）→ 命令帧被判非法、当残帧丢掉。加指令必须同步扩 `_CMD_MAX`。
 4. **GPIO19/20 被 TinyUSB 占** → UART2 发不出。必须关 `usb_init()`（已在固件里关了）。
-5. **下行是裸 2 字节**（无 AA 55 帧）→ 解析按数据区字节扫描，别等帧头。
+5. **下行命令帧必须是 4 字节 `BB <CMD> <PARAM> EE`** → 帧头帧尾缺一不可，CMD 还得在 0x30–0x3C 内。
+   ⚠ **旧的裸 2 字节 `<CMD> <PARAM>` 已不被识别**（2026-09-26 起）：2 字节拼不成 4 字节帧，会被当残帧
+   留在 `_buf` 里直到被后来的字节挤掉 —— **平台侧不改就会全部失灵**。反之平台先改、固件还是旧的则无碍。
 6. **上行必须带帧** `AA 55 <CMD> <PARAM> 55 AA` → CI-33T 才认。
-7. **KittenBlock 在线绿旗不传 hat def** → 语音事件**只能 upload+RESET**（或手动贴函数）；在线调试只对 command 积木有效。
-8. **Ctrl-D 软复位不重跑 frozen app** → 改了固件后必须**物理 RESET**（或重新烧录）。
-9. **改 frozen 文件≠传 /main.py** → frozen 打进固件，重编译 + 烧录才生效。
-10. **`afterConnect` / `libs` import 里维护同一份参数与 `set_main_globals`** → 两处都动，别只改一处。
+7. **别再用"逐字节扫命令码"那套解析**（2026-09-26 前的做法）→ 角度帧第一字节就是角度值，
+   **48–60 度会落在 0x30–0x3C 里被误当运动指令**。必须按帧结构判定（首字节 `0xBB` vs `≤0xB4`）。
+8. **角度帧格式归 CI-33T 管，本仓库改不了** → 只能 `≤0xB4` 一个字节，别指望加帧头或改长度；
+   真要改就得动模块侧配置，届时两个判据要一起重算。
+9. **KittenBlock 在线绿旗不传 hat def** → 语音事件**只能 upload+RESET**（或手动贴函数）；在线调试只对 command 积木有效。
+10. **Ctrl-D 软复位不重跑 frozen app** → 改了固件后必须**物理 RESET**（或重新烧录）。
+11. **改 frozen 文件≠传 /main.py** → frozen 打进固件，重编译 + 烧录才生效。
+12. **`afterConnect` / `libs` import 里维护同一份参数与 `set_main_globals`** → 两处都动，别只改一处。
 
 **用户程序执行类（与语音无关，但都会撞上）**：
 
-11. **键盘积木（「按下x键?」「当按下x键」）只能在线** → 按键检测在**浏览器**里做，板子上没有键盘也没有这个功能。点绿旗在线跑正常；**点「下载」后这些积木退化成恒假的 `if False:`**（`lib.min.js` 的 `control_if`：`valueToCode(...) || 'False'`），按键全废。键盘遥控类程序**只能在线玩，不要下载**。
-12. **下载的程序里若有顶格「重复执行」→ 板子失联** → 生成顶格 `while True:`，且循环体常全是恒假的 `if False:`（空转、无 sleep）→ 原实现里主线程 `exec` 永不返回、REPL 起不来 → KittenBlock 点什么都没反应，**每次复位都卡**。
+13. **键盘积木（「按下x键?」「当按下x键」）只能在线** → 按键检测在**浏览器**里做，板子上没有键盘也没有这个功能。点绿旗在线跑正常；**点「下载」后这些积木退化成恒假的 `if False:`**（`lib.min.js` 的 `control_if`：`valueToCode(...) || 'False'`），按键全废。键盘遥控类程序**只能在线玩，不要下载**。
+14. **下载的程序里若有顶格「重复执行」→ 板子失联** → 生成顶格 `while True:`，且循环体常全是恒假的 `if False:`（空转、无 sleep）→ 原实现里主线程 `exec` 永不返回、REPL 起不来 → KittenBlock 点什么都没反应，**每次复位都卡**。
     - **2026-09-16 起已加固**：用户程序改在**后台线程**执行（`frozen/main.py`）—— `while True:` 只空转，REPL 照常可用。失败模式从"板子变砖"降级为"程序没反应"，KittenBlock 一直连得上、能重新下载覆盖。
     - **加固前的救援步骤**（老固件 / 仍遇到失联时）：串口发 `Ctrl-C`（`\x03`）打断 → 进 REPL → `import os; os.remove('/main.py')` → 复位。
     - ⚠ **重烧 app 分区（`write-flash 0x10000`）不会清 `/main.py`** —— 它住在 `vfs` 分区，所以重烧救不回来，必须走 REPL 删文件。
-13. **加固带来的行为变化（2026-09-16）** → ① **`Ctrl-C` 不再能停住后台跑的用户程序**（`py/scheduler.c` 的 KeyboardInterrupt 只投递主线程）—— **停止程序的唯一手段是复位**（物理 RESET / `machine.reset()` / REPL 里 `machine.soft_reset()`）。② 用户程序里的 `machine.soft_reset()` 变成空操作（SystemExit 只在线程内被吞）。③ 用户程序与 REPL **共享同一个全局 dict**，REPL 里改同名变量会直接影响正在跑的程序（调试时是特性，也是坑）。④ 顶格死循环会拖慢（GIL 每 32 个 VM 分支换手一次），空转循环尤其明显。
+15. **加固带来的行为变化（2026-09-16）** → ① **`Ctrl-C` 不再能停住后台跑的用户程序**（`py/scheduler.c` 的 KeyboardInterrupt 只投递主线程）—— **停止程序的唯一手段是复位**（物理 RESET / `machine.reset()` / REPL 里 `machine.soft_reset()`）。② 用户程序里的 `machine.soft_reset()` 变成空操作（SystemExit 只在线程内被吞）。③ 用户程序与 REPL **共享同一个全局 dict**，REPL 里改同名变量会直接影响正在跑的程序（调试时是特性，也是坑）。④ 顶格死循环会拖慢（GIL 每 32 个 VM 分支换手一次），空转循环尤其明显。
 
 > 📌 **语音程序的推荐写法**：绿旗下面**只放初始化**（如「站立」），其余全用「当收到xx指令」回调，**不要用「重复执行」** —— 语音事件是回调式的，本来就不需要循环。这是 2026-09-16 实测可用并下载验证过的范式。
 
@@ -890,8 +936,11 @@ idf.py flash monitor       # 烧录并监控
 - [ ] KittenBlock 模式 (`BPUPPY_BLE_KEBLOCK`): 广播 `bPuppy_XXXX`，KittenBlock 蓝牙可连（安卓/iPad Bluefy/PC）
 - [ ] Hiwonder 模式 (`BPUPPY_BLE_HIWONDER`): 广播 `mechdog_XX`，Wonderbot App 可连
 - [ ] 蓝牙 REPL：`os.dupterm(None)` 返回 BLE 流对象（C 层自动注册）
-- [ ] 语音: 开机日志出现 `voice: CI-33T ready`；说"前进" → 串口 `VOICE RX: 3100` + `VOICE CMD: 0x31 -> event` → 狗走
+- [ ] 语音: 开机日志出现 `voice: CI-33T ready`；说"前进" → 串口 `VOICE RX: bb3100ee` + `VOICE CMD: 0x31 -> event` → 狗走
+      （⚠ 前提：平台侧 13 条命令词已改成 `BB <CMD> 00 EE`；旧裸 2 字节命令不再被识别，见踩坑 #5）
 - [ ] 语音: 开机日志出现 `voice: event 0x31 -> voiceWhenFwd`（事件函数已注册）
+- [ ] 语音: **声源角度** —— 拍手/说话 → 串口 `VOICE RX: <角度>000000`，REPL 里 `voice.SoundAngle` 变 0–180
+      （没收到过是 `-1`）。**关键回归**：角度 48–60 度时**不应**出现 `VOICE CMD: 0x30/0x35/0x3c` 之类误派发
 - [ ] 相机: 开图传后串口出现 `cam_hal: PSRAM DMA mode enabled` + 两行 `frame buffer in PSRAM`（**串口**看，蓝牙看不到）
 
 ---
