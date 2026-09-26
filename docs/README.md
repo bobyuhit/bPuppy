@@ -486,7 +486,10 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 - 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 14 个后缀完全一致（13 条指令 + `SoundDir`）。**加下拉项不用新增积木** —— `$$voiceCmdSoundDir` 那一项就复用了同一个 hat。
 - 1 个变量积木（reporter）：`getSoundAngle` → `pycode: 'voice.SoundAngle'`（读最近一次声源角度，度，0–180；初值 `-1` = 还没收到过）。
 - KittenBlock 离线代码生成：hat 积木把 `def voiceWhen<指令>():` 放**生成文件开头（正文之前）**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
-- 2 个发声积木：`voice.play('汪汪')` / `voice.play('嘤嘤')`。
+- 2 个发声积木：`pycode` 为 `voice.say(*voice.SND_WANG)` / `voice.say(*voice.SND_YING)`。
+  ⚠ **`pycode` 必须纯 ASCII** —— KittenBlock 生成代码时会抹掉非 ASCII 字符，写成
+  `voice.play('汪汪')` 会变成 `voice.play('')`，两个积木就都汪汪了。用 `*voice.SND_*`
+  取值而非写死 hex，是为了保住"换发声段只改固件常量、积木不用动"这条性质。
 
 ### 2. 事件注册机制（核心难点，含坑）
 

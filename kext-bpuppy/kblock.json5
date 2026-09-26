@@ -308,17 +308,22 @@
       text: '$$getSoundAngle',
       pycode: 'voice.SoundAngle'
     },
+    // ⚠ 这两个积木的 pycode 必须是**纯 ASCII**。KittenBlock 生成/下发代码时会把非 ASCII
+    //   字符抹掉: 写成 voice.play('汪汪') 会变成 voice.play('') → play() 查不到名字回退到
+    //   汪汪, 结果两个积木都只会汪汪 (实测 2026-09-26)。所以这里用 voice.say(*voice.SND_xxx)
+    //   而不是名字 —— 码值的唯一真源仍在 frozen/voice.py 的 SND_WANG / SND_YING,
+    //   换发声段只改固件常量、这两个积木不用动。
     {
       opcode: 'voiceBark',
       blockType: 'command',
       text: '$$voiceBark',
-      pycode: "voice.play('汪汪')"
+      pycode: 'voice.say(*voice.SND_WANG)'
     },
     {
       opcode: 'voiceWhimper',
       blockType: 'command',
       text: '$$voiceWhimper',
-      pycode: "voice.play('嘤嘤')"
+      pycode: 'voice.say(*voice.SND_YING)'
     }
   ],
   menus: {

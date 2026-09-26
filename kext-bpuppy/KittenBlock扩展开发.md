@@ -470,7 +470,12 @@ machine.reset()
 
 1. 更新 `kext-bpuppy/` 下文件
 2. **清理旧版本**：删掉 `extpath` 和 `local-ext` 里所有旧 bPuppy（`kittenblock189.json` 的 extpath/extraext 指向）
-3. 重新打包 zip：`Compress-Archive -Path extension.json,kblock.json5,bpuppy.png -DestinationPath bpuppy-kittenblock.zip -Force`（**进入文件夹选文件压缩，不要压文件夹本身**）
+3. 重新打包 zip（**4 个文件，一个都不能少**，尤其别漏 `bpuppy.l10n.json` —— 漏了三语文本会回退成 key）：
+   ```powershell
+   Compress-Archive -Path extension.json,kblock.json5,bpuppy.png,bpuppy.l10n.json `
+                    -DestinationPath bpuppy-kittenblock.zip -Force
+   ```
+   （**进入文件夹选文件压缩，不要压文件夹本身**；zip 顶层必须是这 4 个文件平铺）
 4. 重启 KittenBlock
 5. zip 导入 → 硬件列表出现 bPuppy
 6. 拖 `当绿旗被点击 → 前进`，检查代码面板：
@@ -535,6 +540,35 @@ machine.reset()
 **现象**：积木出现在面板，能拖，但生成的代码只有 import 没有积木代码。
 **原因**：多为格式问题（如 `pycode` 用了 `\\n` 字面量、`defaultValue` 类型不对、`gen` 字段误用）。
 **解法**：对照第 5 节格式；用最小版本（单个积木）排除法。
+
+### 9.10 `pycode` 含中文 → 字符被抹掉（2026-09-26 实测）
+
+**现象**：「语音播放汪汪」和「语音播放嘤嘤」两个积木**点哪个都只汪汪**；看代码面板，
+两个积木生成的**都是** `voice.play('')` —— 引号里是空的。
+
+**原因**：这两个积木的 `pycode` 原本写的是中文字面量 `voice.play('汪汪')` / `voice.play('嘤嘤')`。
+**KittenBlock 生成/下发代码时会把非 ASCII 字符抹掉**，到板上真的就是 `voice.play('')`；
+而 `voice.play()` 对认不出的名字会**回退到汪汪**（`frozen/voice.py` 里 `m.get(name, SND_WANG)`
+的兜底），于是两个积木都出汪汪。
+
+**判据**（怎么确认是这个问题，而不是模块码值不对）：
+
+1. 代码面板里字符串字面量变成 `''`（不是乱码，是**整个没了**）→ 就是被抹掉。
+2. 板上 `import voice; voice.say(0x71, 2)` 能正常嘤嘤 → 排除"模块侧码值不对"。
+
+**解法**：**积木的 `pycode` 一律写纯 ASCII**，不要把中文写进去。发声积木改用
+
+```js
+{ opcode: 'voiceBark',    pycode: 'voice.say(*voice.SND_WANG)' }
+{ opcode: 'voiceWhimper', pycode: 'voice.say(*voice.SND_YING)' }
+```
+
+用 `*voice.SND_xxx` 解包而不是写死 `voice.say(0x70, 0x01)`，是为了保住
+「换发声段只改 `frozen/voice.py` 的 `SND_WANG`/`SND_YING`、积木不用动」这条性质。
+
+> ⚠ 显示文本不受影响 —— 积木上显示的中文来自 `bpuppy.l10n.json`，能正常渲染；
+> 会被抹的只有**生成代码里的 `pycode`**。
+> `libs` 头串（`kblock.json5` 顶部）里也有中文注释，同样会被抹，但那是注释，不影响执行。
 
 ---
 
@@ -662,7 +696,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
 | 语音 | 当收到 [指令]（1 个 hat，下拉选指令，14 选项 = 13 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
 | 语音 | (声音角度)（reporter，读变量） | `voice.SoundAngle`（0–180 度；`-1` = 还没收到过） |
-| 语音 | 语音播放汪汪 / 语音播放嘤嘤 | `voice.play('汪汪')` / `voice.play('嘤嘤')` |
+| 语音 | 语音播放汪汪 / 语音播放嘤嘤 | `voice.say(*voice.SND_WANG)` / `voice.say(*voice.SND_YING)`（⚠ pycode 必须纯 ASCII，见 §9.10） |
 
 底层 API（固件 C 模块，MicroPython 可调）：
 - `bpuppy_motion.set_params(speed, stride, height)` — speed 0~10, stride 正前负后, height mm
