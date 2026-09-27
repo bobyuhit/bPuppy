@@ -36,45 +36,41 @@
     },
     "---",
     "## $$cat_gait",
-    // ===== 组合块: 一次设完所有运动参数 (2026-09-27) =====
-    // ⚠ 「高级运动」的 text 写成数组**并不会竖排** —— 2026-09-27 实测, 见 §5.3。
-    //   数组确实让每个元素成为独立的 messageN/argsN (参数照常解析), 但 KittenBlock
-    //   给每个扩展积木都硬写了 inputsInline: true, scratch-blocks 见到它就把值输入
-    //   挤回同一行 ⇒ 块上出来的是**横排单行** (两行文案首尾相接, 7 个参数全在)。
-    //   能强制换行的只有语句输入槽 (SUBSTACK), 也就是 conditional + branchCount 那条路,
-    //   代价是行间多一个空 C 形槽。这里**故意保持横排单行** —— 空槽更难看。
-    //   数组写法本身留着: 它无害、参数解析正常, 将来若要改 conditional 直接换 blockType 即可。
+    // ===== 组合块: 一次设完 步长/身体高度/抬脚高度 (2026-09-27 改版) =====
+    // 2026-09-27 用户改版: 原 7 槽的「高级运动」拆开 —— 本块只管三个身体尺寸;
+    //   步态/速度/方向/转弯率回归单参数小块 (「速度设为」并入方向下拉, 见下面 setSpeed),
+    //   对应的「步长设为」「身体高度设为」「抬脚高度设为」三个块已删除。
+    //   (分类名 `cat_gait` 也改叫「高级运动」了, 块本身叫「运动参数」。)
+    // ⚠ 这个块的 text 是**一行**(单个 $$key)。就算写成数组也**不会竖排** —— 2026-09-27 实测,
+    //   见 §5.3: KittenBlock 给每个扩展积木硬写了 inputsInline: true, scratch-blocks 就把
+    //   所有值输入挤回同一行。能强制换行的只有语句输入槽 (SUBSTACK), 那要 conditional +
+    //   branchCount, 代价是行间多一个空 C 形槽 —— 不值。**要让积木短, 靠缩文案, 别指望换行。**
     // ⚠ 一行只能有一个 $$key: maybeFormatMessage 只有在**整行**以 $$ 开头时才查表,
-    //   且把 $$ 之后的整串当一个 key ⇒ 两行 = 两个 key (advMotion / advMotion2)。
+    //   且把 $$ 之后的整串当一个 key。
     // pycode 用数组 (join("\r\n")), 因为单行 `if c: a; b` 里 b 也会被算进 if 体。
     {
       opcode: 'advMotion',
       blockType: 'command',
-      text: ['$$advMotion', '$$advMotion2'],
+      text: '$$advMotion',
       arguments: {
-        GAIT:   { type: 'string', menu: 'gaitMenu', defaultValue: 'go' },
-        SPEED:  { type: 'number', defaultValue: '2.5' },
-        DIR:    { type: 'value',  menu: 'dirMenu',  defaultValue: '1' },
         STRIDE: { type: 'number', defaultValue: '70' },
         HEIGHT: { type: 'number', defaultValue: '70' },
-        LIFT:   { type: 'number', defaultValue: '30' },
-        TURN:   { type: 'number', defaultValue: '0' }
+        LIFT:   { type: 'number', defaultValue: '30' }
       },
       // 顺序耦合 (docs/error.md §2.2 #7): set_params 用**当前** lift 校验, set_lift 用**当前**
       // stride/height 校验。先 lift → params → 读回 lift 不对就补一次, 可覆盖全部情况。
-      // [DIR] 是 value 型菜单 (裸代入) ⇒ 1=前进 / -1=后退; _stride 存正数 (旧的「后退」块用 -abs(_stride))。
-      // 必须回写 _speed/_stride/_height 三个模块全局, 否则之后拖「前进/后退」会被旧值覆盖。
-      // 步态放最后执行: 狗是用新参数起步的 (与现有「前进/后退」块一致)。
+      // ⚠ 方向**不在这个块里**: 本块只改尺寸, 前后沿用板上当前步长的符号
+      //   (get_params()[1] >= 0 即前进) —— 所以「后退」之后再来改步长, 狗不会掉头。
+      // 必须回写 _stride/_height 两个模块全局 (正数), 否则之后拖「前进/后退」会被旧值覆盖。
+      // 步态**不在这里设**: 改尺寸不打断当前步态, 狗该怎么走还怎么走。
       pycode: [
-        '_speed = [SPEED]',
         '_stride = abs([STRIDE])',
         '_height = [HEIGHT]',
+        '_dir = 1 if bpuppy_motion.get_params()[1] >= 0 else -1',
         'bpuppy_motion.set_lift([LIFT])',
-        'bpuppy_motion.set_params(_speed, ([DIR]) * _stride, _height)',
+        'bpuppy_motion.set_params(_speed, _dir * _stride, _height)',
         'if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:',
-        '    bpuppy_motion.set_lift([LIFT])',
-        'bpuppy_motion.set_turn([TURN])',
-        'bpuppy_motion.set_gait([GAIT])'
+        '    bpuppy_motion.set_lift([LIFT])'
       ]
     },
     // ⚠ set_body_pose 的签名是 (roll, pitch, yaw) —— 函数里 roll 在前, 而块上文字是
@@ -114,6 +110,11 @@
       },
       pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_gait([GAIT])"
     },
+    // 2026-09-27 改版: 原「速度设为」并入「方向」下拉 ⇒ 「速度 [SPEED] 方向 [DIR]」。
+    //   方向 = 步长的符号: [DIR] 是 value 型菜单 (值裸代入) ⇒ 1=前进 / -1=后退。
+    //   只动速度/方向 —— 高度/抬脚/转弯率/步态都不碰; 狗在走的话是**边走边改**。
+    //   速度不打断步态, 也**不会**让站着的狗起步 (要起步还是用「前进/后退」)。
+    //   同一次改版删掉了「步长设为」「身体高度设为」「抬脚高度设为」(并入「运动参数」)。
     {
       opcode: 'setSpeed',
       blockType: 'command',
@@ -122,45 +123,14 @@
         SPEED: {
           type: 'number',
           defaultValue: '2.5'
+        },
+        DIR: {
+          type: 'value',
+          menu: 'dirMenu',
+          defaultValue: '1'
         }
       },
-      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, _stride, _height)'
-    },
-    {
-      opcode: 'setStride',
-      blockType: 'command',
-      text: '$$setStride',
-      arguments: {
-        STRIDE: {
-          type: 'number',
-          defaultValue: '70'
-        }
-      },
-      pycode: '_stride = [STRIDE]; bpuppy_motion.set_params(_speed, _stride, _height)'
-    },
-    {
-      opcode: 'setHeight',
-      blockType: 'command',
-      text: '$$setHeight',
-      arguments: {
-        HEIGHT: {
-          type: 'number',
-          defaultValue: '70'
-        }
-      },
-      pycode: '_height = [HEIGHT]; bpuppy_motion.set_params(_speed, _stride, _height)'
-    },
-    {
-      opcode: 'setLift',
-      blockType: 'command',
-      text: '$$setLift',
-      arguments: {
-        LIFT: {
-          type: 'number',
-          defaultValue: '30'
-        }
-      },
-      pycode: 'bpuppy_motion.set_lift([LIFT])'
+      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, ([DIR]) * abs(_stride), _height)'
     },
     {
       opcode: 'setTurn',

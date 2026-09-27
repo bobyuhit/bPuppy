@@ -235,7 +235,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
 | `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
-| `kext-bpuppy/` | KittenBlock 硬件扩展 (38 积木 + 蓝牙配置 + 开发文档) |
+| `kext-bpuppy/` | KittenBlock 硬件扩展 (35 积木 + 蓝牙配置 + 开发文档) |
 | `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序在**后台线程**里 exec (不阻塞 REPL) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
