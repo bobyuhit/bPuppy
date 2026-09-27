@@ -24,6 +24,7 @@ typedef enum {
     GAIT_WALK,          // 猫步 (speed>0前进, speed<0后退)
     GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
     GAIT_GO,            // 自适应 (speed≤4.0→walk, speed≥6.0→trot, 之间插值; 见 motion_task_main 的 GO 分支)
+                        // ★ GO 自己定 步长/站高/抬脚 —— 用户设的 stride/lift/height 只有 stride 的符号当方向用
     GAIT_COUNT
 } gait_type_t;
 
@@ -45,7 +46,6 @@ typedef struct {
     float       lift_height;    // 抬腿高度 (mm)
     float       body_roll;      // 身体目标横滚角 (deg)
     float       body_pitch;     // 身体目标俯仰角 (deg)
-    float       body_yaw;       // 身体目标偏航角 (deg)
     float       ik_L1;          // IK 大腿长度校准 (mm)
     float       ik_L2;          // IK 小腿长度校准 (mm)
     float       omega_base;     // 基准角频率 (rad/s), 默认 2.0
@@ -60,7 +60,8 @@ typedef struct {
     bool        enabled;        // 运动使能
 
     /* ---- 姿态过渡 (预备位切换) ---- */
-    // 0=无过渡  1=起步过渡 (站立→预备位→行走)
+    // 0=无过渡  1=已废弃 (起步过渡改由 motion_task.cpp 的 g_stand_up 阶段 A 承担,
+    //            原因见那里的注释: 旧实现从写死的 (0, eff_height) 起步)
     //            2=停步过渡 (行走→预备位→站立)
     // 预备位 = gait 全踩地相位中点, 从站立进入或退回时在此缓动
     uint8_t     pose_trans;       // 姿态过渡状态
@@ -78,11 +79,14 @@ const motion_state_t *motion_get_state(void);
 // 设置步态（自动填充 duty/gap/dir/turn）
 void motion_set_gait(gait_type_t gait);
 
-// 设置运动参数
-void motion_set_params(float speed, float stride, float height);
+// 设置运动参数: 步长(mm, 正=前 零=原地 负=后), 抬脚高度(mm), 站立高度(mm)
+// 三者是同一条足端轨迹的三个维度, **一起校验、一起写入** —— 天然自洽, 无顺序耦合。
+// 返回是否写入成功 (false=超限被拒, 三个字段全部保持原值)
+bool motion_set_params(float stride, float lift, float height);
 
-// 校验参数（不写入），返回 0=OK, 1=超限
-int motion_check_params(float stride, float height);
+// 设置目标速度/步频 (0~10)。与轨迹无关, 任意时刻可单独设, 不影响 stride/lift/height。
+// 返回是否写入成功 (false=超出 0~10 或 NaN 被拒, 保持原值)
+bool motion_set_speed(float speed);
 
 // IK 校准：调整大腿/小腿长度
 // 返回是否写入成功 (false=非法被拒, 保持原值)
@@ -107,17 +111,24 @@ void motion_ensure_geometry_loaded(void);
 // 设置基准角频率 (rad/s)
 void motion_set_omega(float omega);
 
-// 设置抬腿高度 (mm), 返回是否写入成功 (false=超限被拒)
-bool motion_set_lift(float lift);
-
-// 设置身体姿态
-void motion_set_body_pose(float roll, float pitch, float yaw);
+// 设置身体姿态 (deg): 俯仰(前低后高为负) / 横滚
+// ★ 参数顺序 = 俯仰在前 —— 跟积木文案「俯仰 [PITCH]…滚转 [ROLL]」一致。
+//   旧签名是 (roll, pitch, yaw), 且 yaw 是死字段(只写不读), 已一并删掉。
+// 返回是否写入成功 (false=跟当前 stride/height/lift/重心组合后足端够不着或入地, 被拒,
+// 俯仰和横滚都保持原值)。
+// ★ 姿态补偿是逐腿叠加进 z 的, 所以它能改变可达性 —— 必须跟 set_params 一样做组合校验
+//   (pitch=-12° → 前腿 d=90.3 > 84)。2026-09-28 起补上, 顺序耦合消失 (docs/error.md §2.2 #2)。
+bool motion_set_body_pose(float pitch, float roll);
 
 // 设置转弯系数 (-1=左, +1=右, 0=直)
-void motion_set_turn(float turn);
+// 返回是否原样采纳 (false=超出 ±1 已**钳位**, 注意此时仍写入了钳位后的值, 不是拒绝)
+bool motion_set_turn(float turn);
 
 // 设置脚中位偏移 (正=前移, 负=后移)
-// 返回是否写入成功 (false=超出 ±大腿长/2 被拒, 保持原值且不写 NVS)
+// 返回是否写入成功 (false=被拒, 保持原值且不写 NVS)。被拒有两种原因:
+//   (1) 量级超 ±大腿长/2 = ±20mm;
+//   (2) 量级没超, 但跟当前 stride/height/lift 组合后足端够不着
+//       (默认 stride=70 height=70 时实际上限只有 11.4mm, 见 docs/error.md §2.2 #2)
 bool motion_set_center(float offset);
 
 // 检查运动任务是否正在运行（enabled 且未急停）

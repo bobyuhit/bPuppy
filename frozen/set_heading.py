@@ -35,7 +35,11 @@ def start(target=57.0):
     if not bpuppy_imu.is_ready():
         bpuppy_imu.init(0, 14, 21, 0x68)  # V3.0 硬件: SDA=14, SCL=21 (电池检测走 GPIO3=ADC1)
 
-    bpuppy_motion.set_params(2.5, 70, 70)
+    # 步频与步长/站高各归各的函数 (set_params 现在收的是 步长/抬脚/站高)。
+    # 抬脚高度从板上读回 —— 本函数以前根本不碰 lift, 写死 30 会把用户设的值静默重置。
+    _lift = bpuppy_motion.get_params()[3]
+    bpuppy_motion.set_speed(2.5)
+    bpuppy_motion.set_params(70, _lift, 70)
     bpuppy_motion.set_gait("go")
 
     print("Heading lock: target=%.0f°  (ctrl-C to stop)" % _target)

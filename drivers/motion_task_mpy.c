@@ -37,23 +37,37 @@ STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_gait_obj, mp_motion_set_gait);
 
-STATIC mp_obj_t mp_motion_set_params(mp_obj_t speed_obj, mp_obj_t stride_obj,
+// 运动参数: (步长, 抬脚高度, 站立高度) —— 同一条足端轨迹的三个维度, 一起判一起写。
+// ★ 以前这里先调 motion_check_params() 预检一遍来打中文日志, 然后 C 侧被拒时又打一遍
+//   (同一件事报两次)。现在直接用 C 侧的 bool 返回值判 —— 判据只有一份, 不会漂。
+// ★ 返回值透传给 MicroPython 调用方: True=已生效, False=整组被拒且保持原值。
+STATIC mp_obj_t mp_motion_set_params(mp_obj_t stride_obj, mp_obj_t lift_obj,
                                       mp_obj_t height_obj) {
     float stride = mp_obj_get_float(stride_obj);
+    float lift   = mp_obj_get_float(lift_obj);
     float height = mp_obj_get_float(height_obj);
-    // ★ 不再带 (stride > 0 || height > 0) 前置条件 —— 要和 C 侧 motion_set_params()
-    //   的判据完全一致, 否则"打了被拒日志其实写进去了"。C 侧现在无条件校验。
-    if (motion_check_params(stride, height)) {
+    if (!motion_set_params(stride, lift, height)) {
         const motion_state_t *m = motion_get_state();
-        mp_printf(&mp_plat_print, "⚠ 参数超限! stride=%.0f height=%.0f lift=%.0f 被拒, "
-                  "保持原值 speed=%.1f stride=%.0f height=%.0f lift=%.0f\n",
-                  stride, height, m->lift_height,
-                  m->target_speed, m->stride, m->height, m->lift_height);
+        mp_printf(&mp_plat_print, "⚠ 参数超限! stride=%.0f lift=%.0f height=%.0f 被拒, "
+                  "保持原值 stride=%.0f lift=%.0f height=%.0f\n",
+                  stride, lift, height, m->stride, m->lift_height, m->height);
+        return mp_const_false;
     }
-    motion_set_params(mp_obj_get_float(speed_obj), stride, height);
-    return mp_const_none;
+    return mp_const_true;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_3(mp_motion_set_params_obj, mp_motion_set_params);
+
+// 速度/步频 (0~10) —— 与轨迹无关, 独立于 stride/lift/height
+STATIC mp_obj_t mp_motion_set_speed(mp_obj_t speed_obj) {
+    float speed = mp_obj_get_float(speed_obj);
+    if (!motion_set_speed(speed)) {
+        mp_printf(&mp_plat_print, "⚠ 速度超限! speed=%.1f (允许 0~10) 被拒, 保持原值 %.2f\n",
+                  speed, motion_get_state()->target_speed);
+        return mp_const_false;
+    }
+    return mp_const_true;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_speed_obj, mp_motion_set_speed);
 
 STATIC mp_obj_t mp_motion_cal_ik(mp_obj_t L1_obj, mp_obj_t L2_obj) {
     float L1 = mp_obj_get_float(L1_obj);
@@ -76,26 +90,28 @@ STATIC mp_obj_t mp_motion_set_omega(mp_obj_t omega_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_omega_obj, mp_motion_set_omega);
 
-STATIC mp_obj_t mp_motion_set_lift(mp_obj_t lift_obj) {
-    float lift = mp_obj_get_float(lift_obj);
-    if (!motion_set_lift(lift)) {
-        const motion_state_t *m = motion_get_state();
-        mp_printf(&mp_plat_print, "⚠ 抬腿超限! lift=%.0f (stride=%.0f height=%.0f) 被拒, "
-                  "保持原值 lift=%.0f\n",
-                  lift, m->stride, m->height, m->lift_height);
-    }
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_lift_obj, mp_motion_set_lift);
+// ★ set_lift 已删除 —— 抬脚高度并入 set_params 第 2 参。板上残留的旧程序调它会得到
+//   AttributeError, 这是预期行为 (见 docs/操作指南.md 「升固件后必须重新下载程序」)。
 
-STATIC mp_obj_t mp_motion_set_body_pose(mp_obj_t roll_obj, mp_obj_t pitch_obj,
-                                         mp_obj_t yaw_obj) {
-    motion_set_body_pose(mp_obj_get_float(roll_obj),
-                         mp_obj_get_float(pitch_obj),
-                         mp_obj_get_float(yaw_obj));
-    return mp_const_none;
+// 身体姿态: (俯仰, 横滚) —— 顺序跟积木文案「俯仰 [PITCH]…滚转 [ROLL]」一致。
+// 返回 True=已采纳, False=被拒 (跟当前 stride/height/lift/重心组合后足端够不着或入地,
+// 俯仰和横滚都保持原值)。2026-09-28 起 C 侧做组合校验, 不再是"没有'被拒'这回事"。
+STATIC mp_obj_t mp_motion_set_body_pose(mp_obj_t pitch_obj, mp_obj_t roll_obj) {
+    float pitch = mp_obj_get_float(pitch_obj);
+    float roll  = mp_obj_get_float(roll_obj);
+    bool ok = motion_set_body_pose(pitch, roll);
+    if (!ok) {
+        motion_ensure_geometry_loaded();   // 保证下面报的"原值"是真实值 (任务未起时 NVS 还没载入)
+        const motion_state_t *m = motion_get_state();
+        mp_printf(&mp_plat_print, "⚠ 机身姿态 (俯仰 %.1f 滚转 %.1f) 被拒, 保持原值 "
+                  "(俯仰 %.1f 滚转 %.1f): 当前 stride=%.0f height=%.0f lift=%.0f center=%.1f "
+                  "下这个姿态会把足端推出可达范围\n",
+                  pitch, roll, m->body_pitch, m->body_roll,
+                  m->stride, m->height, m->lift_height, m->center_offset);
+    }
+    return mp_obj_new_bool(ok);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_3(mp_motion_set_body_pose_obj, mp_motion_set_body_pose);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(mp_motion_set_body_pose_obj, mp_motion_set_body_pose);
 
 STATIC mp_obj_t mp_motion_is_running(void) {
     return mp_obj_new_bool(motion_is_running());
@@ -107,22 +123,34 @@ STATIC mp_obj_t mp_motion_get_mode(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_get_mode_obj, mp_motion_get_mode);
 
+// 返回 True=原样采纳, False=超出 ±1 已被**钳位** (此时仍然写入了 ±1, 不是拒绝)
 STATIC mp_obj_t mp_motion_set_turn(mp_obj_t turn_obj) {
-    motion_set_turn(mp_obj_get_float(turn_obj));
-    return mp_const_none;
+    float turn = mp_obj_get_float(turn_obj);
+    bool ok = motion_set_turn(turn);
+    if (!ok) {
+        mp_printf(&mp_plat_print, "⚠ 转弯率 %.1f 超出 ±1, 已钳位到 %.1f\n",
+                  turn, motion_get_state()->turn);
+    }
+    return mp_obj_new_bool(ok);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_turn_obj, mp_motion_set_turn);
 
+// 返回 True=已采纳, False=被拒。被拒有两种原因, 这里**不猜是哪一种** ——
+// 判据只有 C 侧一套 (traj_combo_bad), 在 Python 侧重写一遍就是第二个会漂移的判据
+// (motion_check_params 当初正是因此被删掉)。具体原因看 C 侧 ESP_LOGW (friendly REPL 可见)。
 STATIC mp_obj_t mp_motion_set_center(mp_obj_t obj) {
     float off = mp_obj_get_float(obj);
-    if (!motion_set_center(off)) {
+    bool ok = motion_set_center(off);
+    if (!ok) {
         motion_ensure_geometry_loaded();   // 保证下面报的"原值"是真实值 (任务未起时 NVS 还没载入)
         const motion_state_t *m = motion_get_state();
-        mp_printf(&mp_plat_print, "⚠ 重心偏移非法! %.1fmm 超出 ±%.1fmm (大腿 %.1f 的一半) 被拒, "
-                  "保持原值 %.1fmm\n",
-                  off, m->ik_L1 * 0.5f, m->ik_L1, m->center_offset);
+        mp_printf(&mp_plat_print, "⚠ 重心偏移 %.1fmm 被拒, 保持原值 %.1fmm —— 要么超 "
+                  "±%.1fmm (大腿 %.1f 的一半), 要么跟当前 stride=%.0f height=%.0f lift=%.0f "
+                  "组合后足端够不着\n",
+                  off, m->center_offset, m->ik_L1 * 0.5f, m->ik_L1,
+                  m->stride, m->height, m->lift_height);
     }
-    return mp_const_none;
+    return mp_obj_new_bool(ok);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_center_obj, mp_motion_set_center);
 
@@ -163,8 +191,19 @@ STATIC mp_obj_t mp_motion_load_geometry(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_load_geometry_obj, mp_motion_load_geometry);
 
-// 读取当前运动参数 (speed=目标步频, stride, height, lift, omega, turn, gait)
-// speed 返回 target_speed (用户设定值, 停止时不被清零), 供网页滑块显示
+// 读取当前运动参数, 7 元组 (定序, 消费者按索引取, 不要重排):
+//     [0] speed       目标步频 (target_speed, 停止时不被清零, 供网页滑块显示)
+//     [1] stride      步长 mm (正=前 负=后)
+//     [2] height      站立高度 mm
+//     [3] lift        抬脚高度 mm
+//     [4] omega       基准角频率 rad/s
+//     [5] turn        转弯系数 (-1~+1)
+//     [6] gait        步态枚举 (无人读, 保留)
+// ★ 注意读写的**顺序不一样**, 这是本模块最容易踩的坑:
+//     读 = (speed, stride, height, lift, omega, turn, gait)
+//     写 = set_params(stride, lift, height)  /  set_speed(speed)
+//   即 lift 在 get_params 里是第 4 个、在 set_params 里是第 2 个。重排元组能"看起来整齐",
+//   但会让 camera_stream.py / 5 个读数积木 / 所有 REPL 片段静默错位, 所以定死不动。
 STATIC mp_obj_t mp_motion_get_params(void) {
     const motion_state_t *m = motion_get_state();
     mp_obj_t items[7] = {
@@ -225,9 +264,9 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_start),          MP_ROM_PTR(&mp_motion_start_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_gait),       MP_ROM_PTR(&mp_motion_set_gait_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_params),     MP_ROM_PTR(&mp_motion_set_params_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_speed),      MP_ROM_PTR(&mp_motion_set_speed_obj) },
     { MP_ROM_QSTR(MP_QSTR_cal_ik),         MP_ROM_PTR(&mp_motion_cal_ik_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_omega),      MP_ROM_PTR(&mp_motion_set_omega_obj) },
-    { MP_ROM_QSTR(MP_QSTR_set_lift),      MP_ROM_PTR(&mp_motion_set_lift_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_body_pose),  MP_ROM_PTR(&mp_motion_set_body_pose_obj) },
     { MP_ROM_QSTR(MP_QSTR_is_running),    MP_ROM_PTR(&mp_motion_is_running_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_mode),      MP_ROM_PTR(&mp_motion_get_mode_obj) },

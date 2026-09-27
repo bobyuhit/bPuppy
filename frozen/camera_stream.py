@@ -371,8 +371,9 @@ def _parse_cmd(path):
                 _g_speed = float(params["speed"])
                 _speed_set = True
                 try:
-                    cur = bpuppy_motion.get_params()          # (speed, stride, height, ...)
-                    bpuppy_motion.set_params(_g_speed, cur[1], cur[2])  # 写 g_motion
+                    # 速度独立成函数后不必再把 stride/height 读回来透传 ——
+                    # 以前 set_params 是个三元组, 改速度被迫连带重发那两项。
+                    bpuppy_motion.set_speed(_g_speed)
                 except Exception:
                     pass
             if "turn" in params:
@@ -410,7 +411,11 @@ def _parse_cmd(path):
 
         # 切 go (set_gait 自动启动 motion + 显式 set_turn, 保证转弯状态被正确设置)
         _g_gait = "go"
-        bpuppy_motion.set_params(abs(_effective_speed()), _g_stride, _g_height)
+        # set_params 现在收 (步长, 抬脚, 站高); 本页没有抬脚滑块, 从板上读回当前值 ——
+        # 跟 _effective_speed() 同一套做法, 避免把用户用积木设的抬脚高度冲掉。
+        _lift = bpuppy_motion.get_params()[3]
+        bpuppy_motion.set_params(_g_stride, _lift, _g_height)
+        bpuppy_motion.set_speed(abs(_effective_speed()))
         bpuppy_motion.set_turn(_g_turn)
         bpuppy_motion.set_gait("go")
 
