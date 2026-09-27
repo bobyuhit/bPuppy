@@ -9,6 +9,7 @@
  *
  * 由 bpuppy_adc.init() 激活 (adc_driver.c 挂钩 led_batt_start()):
  * 初始化 ADC 后自动启动电池监控任务 (core 1, 100ms 轮询), 颜色随电压变化。
+ * 每拍连采 BATT_AVG_N(=16) 次取平均 (均值滤波, 压 ADC 白噪声) —— 见 BATT_AVG_N 处。
  *
  * 驱动: ESP-IDF **legacy RMT API** (driver/rmt.h) — 与 MicroPython 的
  *   machine_bitstream.c 完全同款 (clk_div=2 → 40MHz)。
@@ -37,6 +38,7 @@
  *   bpuppy_led.off()               # 熄灭
  *   bpuppy_led.batt(on=True)       # 手动启停电池监控任务
  *   bpuppy_led.batt_v()            # 最近一次已标定电池电压 (V); 监控未跑时返回 -1.0
+ *                                  #   (每拍 16 次均值滤波后的值)
  *   bpuppy_led.batt_pct()          # 电量百分比 (整数 0-100); 7.4V=100%, 6.6V=0%, 读不到返回 0
  *   bpuppy_led.get_cal()           # → (a, b) 当前生效的标定系数
  *   bpuppy_led.set_cal(a, b)       # 设置并写入 NVS (掉电保留)
@@ -85,6 +87,23 @@ static const char *TAG = "led";
 #define MONITOR_STACK     2048
 #define MONITOR_PRIO      1
 #define MONITOR_CORE      1      /* core 1: 与 VM/IMU 同核, 不占 core 0 步态实时性 */
+
+/* ---- 均值滤波 ----
+ * 每拍连采 BATT_AVG_N 次取平均, 压 ADC 白噪声 (单次转换的噪声是白噪声, 平均 ÷√N)。
+ * 实测依据 (2026-09-27, 电压稳在 7.0V 连读 50 拍): 不做滤波时单拍极差 ~12 个 ADC
+ * 计数 (电池电压 55mV) ⇒ 百分比在两个数字间跳。N=16 → 噪声 ÷4。
+ *
+ * ⚠ 为什么这里不影响运动控制:
+ *   1. 采样全在**本任务内**(core 1, prio 1) —— 步态在 core 0 (motion_task.cpp:29),
+ *      核都不共享, 谈不上抢时间。
+ *   2. 多出的开销是每 100ms 多 15 次转换 (每次几十 µs), 相对 100ms 周期可忽略。
+ *   3. **不跨拍保存状态** —— 每次读数都是这一拍 N 次采样的平均, 不改滤波系数、
+ *      不加滞后, 也就不需要在别的任务里做任何配合。
+ *   4. 不加新锁: adc1_get_raw() 自带 ADC1 互斥量, 而全固件只有本任务调它。
+ *   5. 全固件没有任何运动/步态代码读电池值 (只有 voltage/voice/标定工具读) ⇒
+ *      即使读数有变化也传不到运动控制里去。
+ */
+#define BATT_AVG_N        16
 
 /* 复用 adc_driver.c 的读数 (外部符号) */
 extern int adc_read_mv(void);
@@ -153,13 +172,27 @@ static void led_set_rgb(uint8_t r, uint8_t g, uint8_t b)
  * 电池监控任务
  * ================================================================ */
 
+/* 均值滤波: 连采 BATT_AVG_N 次取平均 (见文件头 BATT_AVG_N 处的说明)。
+ * 任一次读失败 (ADC 未就绪) → 整次作废返回 -1, 跟以前单次读的行为一致
+ * (LED 灭 + s_batt_v = -1), 不会拿半截和去除以 N。 */
+static int batt_read_avg(void)
+{
+    int sum = 0;
+    for (int i = 0; i < BATT_AVG_N; i++) {
+        int mv = adc_read_mv();
+        if (mv < 0) return -1;
+        sum += mv;
+    }
+    return sum / BATT_AVG_N;   /* 整数除法, 截断误差 <1mV, 远小于噪声 */
+}
+
 static void batt_monitor_task(void *arg)
 {
     int blink_on = 1;
     uint32_t blink_ms = 0;
 
     for (;;) {
-        int mv = adc_read_mv();
+        int mv = batt_read_avg();
 
         if (mv < 0) {
             led_set_rgb(0, 0, 0);        /* ADC 未就绪 → 熄灭 */
