@@ -37,13 +37,13 @@
     "---",
     "## $$cat_gait",
     // ===== 组合块: 一次设完所有运动参数 (2026-09-27) =====
-    // 「高级运动」的 text 是**数组** ⇒ 每个元素渲染成一行 (竖排)。
-    //   依据 (KittenBlock 自带 resources/app/web/lib.min.js): 生成块 JSON 的
-    //   `while (inTextNum < blockText.length || inBranchNum < branchCount)` 循环在 switch
-    //   **之外**, 而 branchCount 只在 conditional/loop 里赋值 ⇒ command 块的 branchCount 是
-    //   undefined, 子堆栈那支永不执行, 数组的每一项就各自成为 messageN/argsN 一行,
-    //   且每行同样走 `replace(/\[(.+?)]/g, convertPlaceholders)` —— 参数照常解析, 无空槽。
-    //   (conditional 路线也能竖排, 但每个分支会插一个空子堆栈槽, 不如这个干净。)
+    // ⚠ 「高级运动」的 text 写成数组**并不会竖排** —— 2026-09-27 实测, 见 §5.3。
+    //   数组确实让每个元素成为独立的 messageN/argsN (参数照常解析), 但 KittenBlock
+    //   给每个扩展积木都硬写了 inputsInline: true, scratch-blocks 见到它就把值输入
+    //   挤回同一行 ⇒ 块上出来的是**横排单行** (两行文案首尾相接, 7 个参数全在)。
+    //   能强制换行的只有语句输入槽 (SUBSTACK), 也就是 conditional + branchCount 那条路,
+    //   代价是行间多一个空 C 形槽。这里**故意保持横排单行** —— 空槽更难看。
+    //   数组写法本身留着: 它无害、参数解析正常, 将来若要改 conditional 直接换 blockType 即可。
     // ⚠ 一行只能有一个 $$key: maybeFormatMessage 只有在**整行**以 $$ 开头时才查表,
     //   且把 $$ 之后的整串当一个 key ⇒ 两行 = 两个 key (advMotion / advMotion2)。
     // pycode 用数组 (join("\r\n")), 因为单行 `if c: a; b` 里 b 也会被算进 if 体。

@@ -203,35 +203,37 @@ libs: {
 |------|------|
 | `opcode` | 积木唯一 ID，全文件唯一 |
 | `blockType` | `command`（执行）/ `reporter`（返回值）/ `boolean`（布尔）/ `hat`（事件触发） |
-| `text` | 积木显示文字，参数用 `[参数名]` 占位。**可以是数组 ⇒ 竖排多行**，见下 |
+| `text` | 积木显示文字，参数用 `[参数名]` 占位。**可以是数组** —— 会生成 `message0`/`message1`… 但**渲染多半还挤在一行**，见下 |
 | `arguments` | 参数定义，键名对应 text 里的 `[参数名]` |
 | `pycode` | **生成的 MicroPython 代码**，参数用 `[参数名]` 引用。**可以是数组 ⇒ 多行代码**，见下 |
 
-#### `text` 写成数组 = 竖排多行（2026-09-27 读 `web/lib.min.js` 确认）
+#### `text` 写成数组 ≠ 竖排（2026-09-27 实测否掉了我的推论）
 
-普通 `command` 积木默认只有一行（横排）。想竖排，把 `text` 写成**数组**，每个元素一行：
+想知道怎么竖排，先看**数组到底做了什么**：它确实让每一行各自成为 `messageN` / `argsN`
+（依据 `resources/app/web/lib.min.js` 生成块 JSON 的循环，`command` 块的 `branchCount`
+是 `undefined`，子堆栈那支不执行），每行也照常走 `replace(/\[(.+?)]/g, convertPlaceholders)`
+解析参数。**但生成的对 ≠ 画出来的样子。**
 
-```json5
-{
-  opcode: 'advMotion',
-  blockType: 'command',
-  text: ['$$advMotion', '$$advMotion2'],   // → 两行
-  ...
-}
-```
+⚠ **KittenBlock 给每个扩展积木都硬写了 `inputsInline: true`**（同一个文件里
+`blockJSON = { type: extendedOpcode, inputsInline: true, ... }`）。scratch-blocks 见到它
+就把**值输入尽量挤在同一行** —— 于是 `message0`、`message1` 被并回一行。
+2026-09-27 实测（`advMotion` 两行文案 + 7 个参数）：块上出来的是
+`高级运动 步态 [▼] 速度 [2.5] 方向 [▼] 步长 [70] mm … 转弯率 [0]`，**一整行**，
+两行文案首尾相接、参数全在、顺序也对 —— 就是没换行。
 
-依据（KittenBlock 自带 `resources/app/web/lib.min.js` 里生成块 JSON 的循环）：
-`while (inTextNum < blockText.length || inBranchNum < blockInfo.branchCount)` 在 `switch` **之外**，
-而 `branchCount` 只在 `conditional` / `loop` 里赋值 ⇒ `command` 块的 `branchCount` 是 `undefined`，
-子堆栈那一支永不执行，数组的每一项就各自成为 `messageN` / `argsN` 一行。每行同样走
-`lineText.replace(/\[(.+?)]/g, convertPlaceholders)` ⇒ **每行的参数照常解析**，且**没有多余的空槽**。
+**能强制换行的只有语句输入槽（`SUBSTACK`）。** 这正是内置 `arduino` 的
+`void setup(){}` / `void loop(){}` 能竖排的原因 —— 靠的是它俩中间那个 `{}`，不是数组。
+所以 `conditional` + `branchCount` 是唯一能做出多行的路，**代价是行间会多出空的 C 形槽**
+（`branchCount: 1` + 两行文案 → 渲染成「文案 / 空槽 / 文案」三行）。
+要不要接受这个空槽，得看积木值不值得。
 
-> `conditional` + `branchCount` 也能竖排（内置 `arduino` 的 `void setup()` 就这么做的），
-> 但每个分支会往行间插一个空子堆栈槽，块上多个缺口，不划算。
+> 结论：**要让积木短，靠缩短文案，别指望换行。** 现有 [`advMotion`](#12-bpuppy-现有扩展积木清单)
+> 就是横排单行的，7 个槽约 1030px 宽（会超出积木区，能用但要拖动看）。
 
 ⚠ **一行只能有一个 `$$key`**：`maybeFormatMessage` 只在**整行**以 `$$` 开头时才查表，
 并且把 `$$` 之后的**整串**当作一个 key（`.replace("$$", '')` 只去掉第一个）。
 所以 `'$$a $$b'` 会去查 key `"a $$b"` —— 查不到。**几行就几个 key。**
+（这条在数组写法下依然成立：每个数组元素是一个独立 key。）
 
 #### `pycode` 写成数组 = 多行代码
 
@@ -738,7 +740,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(0); set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
 | 参数 | 速度设为 / 步长设为 / 高度设为 / 抬腿高度 | `_speed = [SPEED]; set_params(...)` / `set_lift` |
 | 步态 | 切换步态 [下拉] | `set_turn(0); set_gait([GAIT])` |
-| **组合** | **高级运动**（步态+速度+方向+步长+身体高度+抬脚高度+转弯率，**竖排两行**，7 个槽） | 见下方代码块（`text` 用数组，见 §5.3） |
+| **组合** | **高级运动**（步态+速度+方向+步长+身体高度+抬脚高度+转弯率，7 个槽，**横排单行** 约 1030px） | 见下方代码块（`text` 用数组，但实测**不换行**，见 §5.3） |
 | **组合** | **身体姿态**（俯仰 + 滚转） | `set_body_pose([ROLL], [PITCH], 0)` ⚠ 函数签名是 `(roll, pitch, yaw)`，块上文字却是"先俯仰后滚转" ⇒ pycode 里 `[ROLL]` 必须在前，写反不报错、只是两者对调 |
 | **组合** | **重心偏移 [OFFSET]** mm | `set_center([OFFSET])` ⚠ **会写 NVS**（`motion_task.cpp:983` 调 `motion_save_geometry`），值跨重启保留；上限 ±`L1/2`（默认 20mm） |
 
