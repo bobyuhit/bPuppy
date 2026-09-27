@@ -3,7 +3,7 @@
 ## 产品概述
 
 bPuppy 是基于 ESP32-S3 的 8 自由度四足机器狗（4腿 × 2DOF：髋+膝），运行 MicroPython v1.22.1 + ESP-IDF v5.1.2。
-底层 C 驱动（舵机、IMU、BLE、IK、步态），上层 Python 应用，兼容 Hiwonder Wonderbot App 蓝牙遥控。
+底层 C 驱动（舵机、IMU、BLE、IK、步态），上层 Python 应用，支持 KittenBlock 图形化编程（蓝牙 / USB）。
 
 | 项目 | 规格 |
 |------|------|
@@ -239,7 +239,6 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序在**后台线程**里 exec (不阻塞 REPL) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
-| `frozen/ble_hiwonder.py` | BLE 遥控协议 — GO 自适应, speed 0~10 |
 | `frozen/voice.py` | 语音「事件」转发核心 — UART2 收发 + 后台线程 + 事件注册/分发（无内置动作，见下方「语音事件系统」节） |
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
@@ -388,7 +387,7 @@ lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平�
   ⚠ 该文件必须**纯 ASCII**（蓝牙上传会丢非 ASCII 字节，中文注释会截断文件）。
   实现: `frozen/main.py` 每次开机读 `/camera_on.py` 并丢进后台线程执行。用法见 [操作指南.md](操作指南.md) 2.2。
 - IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
-- BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式 `HiwonderBLE()` 构造时启动
+- BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式原由 `ble_hiwonder.py` 驱动，**该文件已删除**，故当前只有 KittenBlock 模式可用
 
 > **蓝牙编译互斥**：两个蓝牙模式（KittenBlock Nordic / Hiwonder FFE0）**不要同时编译**，同一固件只能启用其一。由 `drivers/micropython.cmake` 的 `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 宏二选一，详见 `kext-bpuppy/KittenBlock扩展开发.md` 第 11 节。
 
@@ -442,8 +441,10 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
   - **命令帧** `BB <CMD> <PARAM> EE`（例：`BB 31 00 EE` = 前进）。CMD 表见下，PARAM 预留。
   - **角度帧** `<角度> 00 00 00` = **声源角度（DOA）**，0–180 度。⚠ 模块侧格式固定，本仓库不能改。
   - 判据只有首字节：`0xBB`(187)=命令帧；`≤0xB4`(180)=角度帧。**两段不重叠**，不可能互判。
-- **上行**（ESP32→CI-33T，发声/反馈）= 帧 `AA 55 <CMD> <PARAM> 55 AA`（例：`AA 55 70 01 55 AA` = 汪汪，`AA 55 71 02 55 AA` = 嘤嘤）。
-- 命令码表（下行命令帧的 CMD 字节，0x30–0x3C）：
+- **上行**（ESP32→CI-33T，发声/反馈）= 帧 `AA 55 <CMD> <PARAM> 55 AA`（例：`AA 55 70 01 55 AA` = 汪汪，`AA 55 70 02 55 AA` = 嘤嘤）。
+  ⭐ **狗叫类第一字节统一 `0x70`，靠第 4 个数字选声音**（见 §3.2）。
+  另有 `AA 55 72 <数字> 55 AA` = **播报数字**（数字 0–100，见 §3.2.2）。
+- 命令码表（下行命令帧的 CMD 字节，0x30–0x3F；`0x3D`/`0x3E` 暂未使用）：
 
 | CMD | 语音 | CMD | 语音 |
 |-----|------|-----|------|
@@ -452,12 +453,12 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 | 0x32 | 后退 | 0x3A | 坐下 |
 | 0x33 | 左转 | 0x3B | 摇手 |
 | 0x34 | 右转 | 0x3C | 邀玩 |
-| 0x35 | 加速 | | |
-| 0x36 | 减速 | | |
-| 0x37 | 跳跃 | | |
+| 0x35 | 加速 | 0x3D | （未用） |
+| 0x36 | 减速 | 0x3E | （未用） |
+| 0x37 | 点头 | 0x3F | 播报电压 |
 
 - CI-33T 平台（智能公元）配置：每个命令词配【串口发送】输出**命令帧** `BB <CMD> 00 EE`；**角度输出保持原样 `<角度> 00 00 00` 不动**；要狗发声时配【串口输入】词条匹配 `AA 55 <数据> 55 AA` 帧触发音效。波特率两边都 9600。
-- > ⚠ **模块侧与固件必须同为 4 字节命令帧**：新固件认不出旧的裸 2 字节命令（拼不成帧，当残帧留着），13 条命令词会全哑。反向兼容（平台先改、固件还是旧的）没问题 —— 旧固件逐字节扫到帧内 CMD 照样派发。
+- > ⚠ **模块侧与固件必须同为 4 字节命令帧**：新固件认不出旧的裸 2 字节命令（拼不成帧，当残帧留着），14 条命令词会全哑。反向兼容（平台先改、固件还是旧的）没问题 —— 旧固件逐字节扫到帧内 CMD 照样派发。
 
 #### 1.2 固件层 — `frozen/voice.py`（事件转发核心）
 
@@ -467,7 +468,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 1. `_scan_events()` — 扫描主全局 dict，把新出现的 `voiceWhenX` 函数注册为回调（**只注册不调用**）。
 2. `bpuppy_uart.any()` → `read(64)` → `print("VOICE RX: <hex>")` → 追加到帧缓冲 `_buf`。
 3. `_parse()` — **按结构切帧**（2026-09-26 改，原先是逐字节扫 0x30–0x3C）：
-   命令帧 `BB CMD PARAM EE` 且 CMD 在 0x30–0x3C 内 → `_dispatch(CMD, PARAM)`；
+   命令帧 `BB CMD PARAM EE` 且 CMD 在 0x30–0x3F 内 → `_dispatch(CMD, PARAM)`；
    角度帧 `<角度> 00 00 00`（首字节 ≤ 0xB4）→ `_dispatch(CMD_SOUND_DIR, 角度)`；
    都不是 → 丢 1 字节重同步。**收不够 4 字节就 `while` 退出、留到下一轮**，所以切分/粘连都无害。
 4. `_dispatch(cmd, param=0)` — 若是 `CMD_SOUND_DIR`，**先写 `SoundAngle = param` 再触发事件**
@@ -477,19 +478,22 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 对外接口：`voice.on_cmd(cmd, fn)` / `off_cmd` / `play('汪汪'|'嘤嘤')` / `say(cat, code)` / `start` / `stop` / 变量 `SoundAngle`。
 
-> **为什么改掉逐字节扫描**：角度帧第一字节就是角度值，旧版扫 0x30–0x3C 时 **角度 48–60 度会被误当运动指令**
-> （53° → `0x35` = 加速，48°–60° 覆盖全部 13 条）。现在靠首字节取值范围（命令 0xBB vs 角度 ≤0xB4）区分，
+> **为什么改掉逐字节扫描**：角度帧第一字节就是角度值，逐字节扫命令码段时 **角度 48–63 度会被误当运动指令**
+> （53° → `0x35` = 加速，48–63 度覆盖整个 `0x30`–`0x3F` 段）。现在靠首字节取值范围（命令 0xBB vs 角度 ≤0xB4）区分，
 > 不重叠 → 不可能误判，且不依赖时序/长度/延时。
 
 #### 1.3 用户层 — KittenBlock 扩展
 
-- 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 14 个后缀完全一致（13 条指令 + `SoundDir`）。**加下拉项不用新增积木** —— `$$voiceCmdSoundDir` 那一项就复用了同一个 hat。
+- 1 个语音事件积木（hat，`kblock.json5` `## $$cat_voice` 组）：`pycode: ['def voiceWhen[VOICE]()']`，下拉选指令（`type:'value'` 参数**裸代入**函数名，KittenBlock 不加引号）。下拉 value 必须与 `_EVT_FUNCS` 的 15 个后缀完全一致（14 条指令 + `SoundDir`）。**加下拉项不用新增积木** —— `$$voiceCmdSoundDir` 那一项就复用了同一个 hat。
 - 1 个变量积木（reporter）：`getSoundAngle` → `pycode: 'voice.SoundAngle'`（读最近一次声源角度，度，0–180；初值 `-1` = 还没收到过）。
 - KittenBlock 离线代码生成：hat 积木把 `def voiceWhen<指令>():` 放**生成文件开头（正文之前）**，用户积木体做函数体。**没有任何代码调用它**——注册全靠固件 `_scan_events()` 按函数名找到它。
-- 2 个发声积木：`pycode` 为 `voice.say(*voice.SND_WANG)` / `voice.say(*voice.SND_YING)`。
+- 1 个发声积木（`voiceSound`，积木文字「狗叫 [SOUND]」）：下拉 `soundMenu`（值 `WANG`/`YING`）**裸代入**属性名，
+  `pycode: 'voice.say(*voice.SND_[SOUND])'`（2026-09-27 由「语音播放汪汪」/「语音播放嘤嘤」两个积木合并成一个下拉）。
   ⚠ **`pycode` 必须纯 ASCII** —— KittenBlock 生成代码时会抹掉非 ASCII 字符，写成
-  `voice.play('汪汪')` 会变成 `voice.play('')`，两个积木就都汪汪了。用 `*voice.SND_*`
-  取值而非写死 hex，是为了保住"换发声段只改固件常量、积木不用动"这条性质。
+  `voice.play('汪汪')` 会变成 `voice.play('')`，点哪个声音都汪汪。用 `*voice.SND_*`
+  取值而非写死 hex，是为了保住"换声音只改固件常量和下拉一行、积木不用动"这条性质。
+- 1 个播报数字积木（`voiceSayNum`，「播报数字 [NUM]」）：滑块 0–100，`pycode: 'voice.say_num([NUM])'`
+  → 发 `AA 55 72 <数字> 55 AA`。范围与钳位见 §3.2.2。
 
 ### 2. 事件注册机制（核心难点，含坑）
 
@@ -544,10 +548,11 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 动 4 处，缺一不可：
 
-1. **CI-33T 平台**（智能公元，用户侧）：配命令词"转圈" → 串口发送**命令帧** `BB 3D 00 EE`（帧头帧尾别漏）。
+1. **CI-33T 平台**（智能公元，用户侧）：配命令词"转圈" → 串口发送**命令帧** `BB 40 00 EE`（帧头帧尾别漏）。
 2. **固件** `frozen/voice.py`：
-   - 加常量（可选，注释更清晰）`CMD_SPIN = 0x3D`；
-   - `_CMD_MAX` 从 `0x3C` 扩到 `0x3D`（命令帧 CMD 字节的合法性校验，**漏了这条指令会被当成残帧丢弃**）；
+   - 加常量（可选，注释更清晰）`CMD_SPIN = 0x40`；
+   - `_CMD_MAX` 从 `0x3F` 扩到 `0x40`（命令帧 CMD 字节的合法性校验，**漏了这条指令会被当成残帧丢弃**）。
+     ⚠ 现有的 `0x3D`/`0x3E` 已经落在合法区间内 —— 想省事可以直接用这两个码，不用动 `_CMD_MAX`；
    - `_EVT_FUNCS` 加一行 `'voiceWhenSpin': CMD_SPIN`。
    - 重编译固件 + 烧录。
 3. **扩展** `kext-bpuppy/kblock.json5`：**不再新增积木**，只在 `menus.voiceMenu` 加一项 `{ text: '$$voiceCmdSpin', value: 'Spin' }`。
@@ -557,7 +562,13 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 #### 3.2 换/加声音映射
 
-只改 `frozen/voice.py` 的 `SND_WANG` / `SND_YING`（= 上行 `(category, code)`，如汪汪 `(0x70, 0x01)`、嘤嘤 `(0x71, 0x02)`）。改完重编译烧录；积木代码不用动。
+改 `frozen/voice.py` 的 `SND_WANG` / `SND_YING`（= 上行帧里**第一个数据字节**和**第 4 个数字**）。
+
+⭐ **狗叫类第一字节统一 `0x70`，靠第 4 个数字区分具体声音**：`(0x70, 0x01)` = 汪汪、`(0x70, 0x02)` = 嘤嘤
+（2026-09-27 用户实测：嘤嘤从 `(0x71, 0x02)` 改为 `(0x70, 0x02)`，两个声音归到同一类）。
+
+加新声音 = 固件加一个 `SND_xxx = (0x70, n)` + `kblock.json5` 的 `soundMenu` 加一行 + `bpuppy.l10n.json` 加三语文案；
+`voiceSound` 积木的 `pycode` 不用动。改完重编译烧录 + 重新打包扩展。
 
 #### 3.2.1 加一个"读值型"积木（reporter，例：声源角度）
 
@@ -571,6 +582,18 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 > 与事件积木的分工：**事件**（hat）用于"一发生就响应"，**变量**（reporter）用于"随时读最新值"。
 > 声源角度两者都有，因为模块会连发角度帧 —— 要"持续跟随"就轮询变量，避免事件被连发打爆。
+
+#### 3.2.2 播报数字（上行 `0x72`）
+
+「播报数字 [NUM]」积木 → `voice.say_num(NUM)` → 帧 `AA 55 72 <数字> 55 AA`（数字就是第 4 个字节）。
+
+- 范围 **0–100**：积木用 `slider`（`min: 0` / `max: 100`），固件 `say_num()` 里再钳一道 ——
+  REPL 手敲、变量传值都可能越界。越界**钳到边界 + 打印**，非数字**忽略 + 打印**，不抛异常
+  （积木/后台线程调用都不能炸）。
+- 码值真源在 `frozen/voice.py`：`SND_NUM = 0x72` / `NUM_MIN = 0` / `NUM_MAX = 100`。
+  ⚠ 改范围要**三处同步**：这两个常量 + `kblock.json5` 里滑块的 `min`/`max`。
+- **平台侧必须配对应词条**：CI-33T 的【串口输入】匹配 `AA 55 72 <数据> 55 AA` 并把数据当数字播报。
+  没配 = 帧照发、没声音（和 §3.2 的声音同理）。
 
 #### 3.3 让固件对某指令有"默认动作"（不推荐）
 
@@ -586,14 +609,14 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 
 1. **`sys.modules['__main__']` 为 None** → 必须 `set_main_globals(globals())`，三条路径都传（见 2.3）。
 2. **下拉 value ≠ `_EVT_FUNCS` 后缀** → 注册不上。函数名 = `pycode` 里的 `def voiceWhen<value>()`（value 裸代入，如 `Fwd` → `def voiceWhenFwd()`）。
-3. **命令码超出 `_CMD_MIN`–`_CMD_MAX`**（现 0x30–0x3C）→ 命令帧被判非法、当残帧丢掉。加指令必须同步扩 `_CMD_MAX`。
+3. **命令码超出 `_CMD_MIN`–`_CMD_MAX`**（现 0x30–0x3F，其中 `0x3D`/`0x3E` 尚未使用）→ 命令帧被判非法、当残帧丢掉。加指令必须同步扩 `_CMD_MAX`。
 4. **GPIO19/20 被 TinyUSB 占** → UART2 发不出。必须关 `usb_init()`（已在固件里关了）。
-5. **下行命令帧必须是 4 字节 `BB <CMD> <PARAM> EE`** → 帧头帧尾缺一不可，CMD 还得在 0x30–0x3C 内。
+5. **下行命令帧必须是 4 字节 `BB <CMD> <PARAM> EE`** → 帧头帧尾缺一不可，CMD 还得在 0x30–0x3F 内。
    ⚠ **旧的裸 2 字节 `<CMD> <PARAM>` 已不被识别**（2026-09-26 起）：2 字节拼不成 4 字节帧，会被当残帧
    留在 `_buf` 里直到被后来的字节挤掉 —— **平台侧不改就会全部失灵**。反之平台先改、固件还是旧的则无碍。
 6. **上行必须带帧** `AA 55 <CMD> <PARAM> 55 AA` → CI-33T 才认。
 7. **别再用"逐字节扫命令码"那套解析**（2026-09-26 前的做法）→ 角度帧第一字节就是角度值，
-   **48–60 度会落在 0x30–0x3C 里被误当运动指令**。必须按帧结构判定（首字节 `0xBB` vs `≤0xB4`）。
+   **48–63 度会落在 0x30–0x3F 里被误当运动指令**。必须按帧结构判定（首字节 `0xBB` vs `≤0xB4`）。
 8. **角度帧格式归 CI-33T 管，本仓库改不了** → 只能 `≤0xB4` 一个字节，别指望加帧头或改长度；
    真要改就得动模块侧配置，届时两个判据要一起重算。
 9. **KittenBlock 在线绿旗不传 hat def** → 语音事件**只能 upload+RESET**（或手动贴函数）；在线调试只对 command 积木有效。
@@ -904,7 +927,7 @@ diff /tmp/sdkconfig.before build/sdkconfig  # 应当只有你改的那几行不�
 | 修改 IK 腿长/髋距/限位 | 推荐运行 `cal_ik()` / `set_body_dims()` / `set_joint_limits()` → NVS 持久化；改默认值则 `drivers/ik.h` |
 | 添加 MicroPython C 函数 | 对应 `drivers/*.c` + 注册到模块表 |
 | 修改 Python 启动逻辑 | `frozen/main.py` |
-| 修改 BLE 协议 | `frozen/ble_hiwonder.py` |
+| 修改 BLE 协议 | `drivers/ble_driver.c`（GATT 服务）+ `drivers/ble_stream.c`（dupterm 桥接）。原 `frozen/ble_hiwonder.py` 已删除 |
 | 修改语音事件/命令码映射 | `frozen/voice.py`（固件侧，需重编译烧录）+ `kext-bpuppy/kblock.json5`（扩展侧，重打包 zip） |
 | 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送） |
 | 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |
@@ -937,10 +960,10 @@ idf.py flash monitor       # 烧录并监控
 - [ ] 上电自动站立，无跳动
 - [ ] `import bpuppy; bpuppy.version()` 返回版本号
 - [ ] KittenBlock 模式 (`BPUPPY_BLE_KEBLOCK`): 广播 `bPuppy_XXXX`，KittenBlock 蓝牙可连（安卓/iPad Bluefy/PC）
-- [ ] Hiwonder 模式 (`BPUPPY_BLE_HIWONDER`): 广播 `mechdog_XX`，Wonderbot App 可连
+- [ ] ~~Hiwonder 模式 (`BPUPPY_BLE_HIWONDER`): 广播 `mechdog_XX`，Wonderbot App 可连~~ —— 已废弃：`ble_hiwonder.py` 已删除，切到该模式也没人解析 App 报文
 - [ ] 蓝牙 REPL：`os.dupterm(None)` 返回 BLE 流对象（C 层自动注册）
 - [ ] 语音: 开机日志出现 `voice: CI-33T ready`；说"前进" → 串口 `VOICE RX: bb3100ee` + `VOICE CMD: 0x31 -> event` → 狗走
-      （⚠ 前提：平台侧 13 条命令词已改成 `BB <CMD> 00 EE`；旧裸 2 字节命令不再被识别，见踩坑 #5）
+      （⚠ 前提：平台侧 14 条命令词已改成 `BB <CMD> 00 EE`；旧裸 2 字节命令不再被识别，见踩坑 #5）
 - [ ] 语音: 开机日志出现 `voice: event 0x31 -> voiceWhenFwd`（事件函数已注册）
 - [ ] 语音: **声源角度** —— 拍手/说话 → 串口 `VOICE RX: <角度>000000`，REPL 里 `voice.SoundAngle` 变 0–180
       （没收到过是 `-1`）。**关键回归**：角度 48–60 度时**不应**出现 `VOICE CMD: 0x30/0x35/0x3c` 之类误派发

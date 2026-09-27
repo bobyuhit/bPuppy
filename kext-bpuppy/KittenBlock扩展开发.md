@@ -100,7 +100,7 @@ KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本�
 | `color1/2/3` | `#2DD4BF` 等 | 积木主体/下拉框/边框颜色 |
 | `filesystem` | `"pyboard"` | 文件系统类型：disk/microbit/pyboard |
 | `masterExt` | `"bpuppy"` | 主扩展名，一般等于 id |
-| `io` | `["serial"]` | 通信方式：serial/tcp/ble |
+| `io` | `["serial","ble"]` | 通信方式：serial/tcp/ble（本项目串口 + 蓝牙两条通道都启用） |
 | `connect` | `{baudrate:115200, batch:48, wait:5000}` | 串口连接参数（见 4） |
 | `file` | `"kblock.json5"` | **主积木文件路径** |
 | `ending` | `"\r\n"` | **关键**。发送到 REPL 的每行结尾 |
@@ -130,7 +130,7 @@ KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本�
     "color3": "#0D9488",
     "filesystem": "pyboard",
     "masterExt": "bpuppy",
-    "io": ["serial"],
+    "io": ["serial", "ble"],
     "connect": { "baudrate": 115200, "batch": 48, "wait": 5000 },
     "file": "kblock.json5",
     "ending": "\r\n",
@@ -250,7 +250,7 @@ menus: {
   arguments: {
     GAIT: { type: 'string', menu: 'gaitMenu', defaultValue: 'go' }
   },
-  pycode: "bpuppy_motion.set_gait('[GAIT]')"
+  pycode: "bpuppy_motion.set_gait([GAIT])"   // ★ menu 参数不加引号, 见 5.7
 }
 ```
 
@@ -262,7 +262,11 @@ menus: {
 - 数字参数直接替换：`pycode: 'bpuppy_motion.set_lift([LIFT])'`
 - `value` 类型参数：直接替换变量引用，不加引号
 
-### 5.8 完整积木示例（本项目 15 块）
+### 5.8 积木定义示例
+
+> 语法演示用。**当前实际生效的完整积木清单见 [§12](#12-bpuppy-现有扩展积木清单)** ——
+> `kblock.json5` 里的 `text` 用的是 `$$xxx` 多语言 key（文案在 `bpuppy.l10n.json`），
+> 下面为便于阅读直接写中文。
 
 ```json5
 blocks: [
@@ -271,13 +275,13 @@ blocks: [
     opcode: 'forward',
     blockType: 'command',
     text: '前进',
-    pycode: "bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
   },
   {
     opcode: 'backward',
     blockType: 'command',
     text: '后退',
-    pycode: "bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
+    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
   },
   {
     opcode: 'turnLeft',
@@ -315,7 +319,7 @@ blocks: [
     arguments: {
       STRIDE: { type: 'number', defaultValue: '70' }
     },
-    pycode: '_stride = [STRIDE]'
+    pycode: '_stride = [STRIDE]; bpuppy_motion.set_params(_speed, _stride, _height)'
   },
   {
     opcode: 'setHeight',
@@ -344,29 +348,32 @@ blocks: [
     arguments: {
       GAIT: { type: 'string', menu: 'gaitMenu', defaultValue: 'go' }
     },
-    pycode: "bpuppy_motion.set_gait('[GAIT]')"
+    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_gait([GAIT])"   // ★ menu 参数不加引号, 见 5.7
   },
   "---",
   "## 姿态动作",
+  // ⚠ 姿态是 poses.py 的**函数**, 不是步态 —— 绝不能写 bpuppy_motion.set_gait('stand')。
+  //   set_gait 只认 8 个合法步态名 (stop/walk/walkfwd/walkbck/go/trot/trotfwd/trotbck),
+  //   收到别的名字会 fail-safe 停车 + 打印 "⚠ 未知步态"。
+  {
+    opcode: 'stand', blockType: 'command', text: '站立',
+    pycode: "poses.stand()"
+  },
   {
     opcode: 'crouch', blockType: 'command', text: '蹲下',
-    pycode: "bpuppy_motion.set_gait('crouch')"
+    pycode: "poses.crouch()"
   },
   {
     opcode: 'sit', blockType: 'command', text: '坐下',
-    pycode: "bpuppy_motion.set_gait('sit')"
-  },
-  {
-    opcode: 'stand', blockType: 'command', text: '站立',
-    pycode: "bpuppy_motion.set_gait('stop')"
+    pycode: "poses.sit()"
   },
   {
     opcode: 'playBow', blockType: 'command', text: '邀玩',
-    pycode: "bpuppy_motion.set_gait('play')"
+    pycode: "poses.play()"
   },
   {
     opcode: 'waveBlock', blockType: 'command', text: '挥手',
-    pycode: "bpuppy_motion.set_gait('wave')"
+    pycode: "poses.wave()"
   }
 ],
 
@@ -375,8 +382,8 @@ menus: {
     { text: '自适应', value: 'go' },
     { text: '猫步',   value: 'walk' },
     { text: '小跑',   value: 'trot' },
-    { text: '站立',   value: 'stand' },
-    { text: '蹲下',   value: 'crouch' }
+    { text: '停止',   value: 'stop' }
+    // ⚠ 不要放 'stand' / 'crouch' —— 它们不是合法步态名 (见上), 选中会 fail-safe 停车
   ]
 }
 ```
@@ -406,7 +413,7 @@ _stride = 70
 _height = 70
 # 原厂已 init_all + 站姿待命 (不重复初始化)
 # ===== 用户积木 =====
-bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')
+bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')
 ```
 
 ---
@@ -543,7 +550,7 @@ machine.reset()
 
 ### 9.10 `pycode` 含中文 → 字符被抹掉（2026-09-26 实测）
 
-**现象**：「语音播放汪汪」和「语音播放嘤嘤」两个积木**点哪个都只汪汪**；看代码面板，
+**现象**：（当时是两个积木）「语音播放汪汪」和「语音播放嘤嘤」**点哪个都只汪汪**；看代码面板，
 两个积木生成的**都是** `voice.play('')` —— 引号里是空的。
 
 **原因**：这两个积木的 `pycode` 原本写的是中文字面量 `voice.play('汪汪')` / `voice.play('嘤嘤')`。
@@ -554,17 +561,20 @@ machine.reset()
 **判据**（怎么确认是这个问题，而不是模块码值不对）：
 
 1. 代码面板里字符串字面量变成 `''`（不是乱码，是**整个没了**）→ 就是被抹掉。
-2. 板上 `import voice; voice.say(0x71, 2)` 能正常嘤嘤 → 排除"模块侧码值不对"。
+2. 板上 `import voice; voice.say(0x70, 2)` 能正常嘤嘤 → 排除"模块侧码值不对"。
 
 **解法**：**积木的 `pycode` 一律写纯 ASCII**，不要把中文写进去。发声积木改用
 
 ```js
-{ opcode: 'voiceBark',    pycode: 'voice.say(*voice.SND_WANG)' }
-{ opcode: 'voiceWhimper', pycode: 'voice.say(*voice.SND_YING)' }
+{ opcode: 'voiceSound', pycode: 'voice.say(*voice.SND_[SOUND])' }   // [SOUND] 下拉裸代入
 ```
 
 用 `*voice.SND_xxx` 解包而不是写死 `voice.say(0x70, 0x01)`，是为了保住
-「换发声段只改 `frozen/voice.py` 的 `SND_WANG`/`SND_YING`、积木不用动」这条性质。
+「换声音只改 `frozen/voice.py` 的 `SND_*` 常量、积木不用动」这条性质。
+
+> 2026-09-27 起两个发声积木**合并成一个 `voiceSound`（「狗叫 [SOUND]」）**，下拉 `soundMenu`
+> 的值 `WANG`/`YING` 裸代入属性名 → `voice.say(*voice.SND_WANG)`。合并后这条教训照样适用：
+> 只要 pycode 里出现中文，它就会被抹掉。
 
 > ⚠ 显示文本不受影响 —— 积木上显示的中文来自 `bpuppy.l10n.json`，能正常渲染；
 > 会被抹的只有**生成代码里的 `pycode`**。
@@ -610,7 +620,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 宏 | 编译的蓝牙 | 用途 |
 |------|-----------|------|
 | `BPUPPY_BLE_KEBLOCK` | Nordic UART + dupterm REPL | KittenBlock 蓝牙编程 |
-| `BPUPPY_BLE_HIWONDER` | FFE0 + ble_hiwonder.py | Wonderbot App 遥控 |
+| `BPUPPY_BLE_HIWONDER` | FFE0（`ble_hiwonder.py` 已删除，无人解析报文） | Wonderbot App 遥控 —— **当前不可用** |
 
 - 切换：注释/取消注释 `micropython.cmake` 里两行 `target_compile_definitions(usermod INTERFACE ...)`，重编译
 - 同一固件**只能启用其一**，绝不共存编译
@@ -687,16 +697,17 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 | 分类 | 积木 | pycode 生成 |
 |------|------|------------|
-| 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
+| 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(0); set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
 | 参数 | 速度设为 / 步长设为 / 高度设为 / 抬腿高度 | `_speed = [SPEED]; set_params(...)` / `set_lift` |
-| 步态 | 切换步态 [下拉] | `set_turn(0); set_gait('[GAIT]')` |
+| 步态 | 切换步态 [下拉] | `set_turn(0); set_gait([GAIT])` |
 | 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
 | 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |
 | 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
-| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，14 选项 = 13 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
+| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，15 选项 = 14 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
 | 语音 | (声音角度)（reporter，读变量） | `voice.SoundAngle`（0–180 度；`-1` = 还没收到过） |
-| 语音 | 语音播放汪汪 / 语音播放嘤嘤 | `voice.say(*voice.SND_WANG)` / `voice.say(*voice.SND_YING)`（⚠ pycode 必须纯 ASCII，见 §9.10） |
+| 语音 | 狗叫 [汪汪/嘤嘤]（1 个积木，下拉选声音） | `voice.say(*voice.SND_[SOUND])`（码值真源 `frozen/voice.py` 的 `SND_WANG`/`SND_YING`；⚠ pycode 必须纯 ASCII，见 §9.10） |
+| 语音 | 播报数字 [NUM]（滑块 0–100） | `voice.say_num([NUM])` → 帧 `AA 55 72 <数字> 55 AA`（越界钳位、非数字忽略，均在固件侧） |
 
 底层 API（固件 C 模块，MicroPython 可调）：
 - `bpuppy_motion.set_params(speed, stride, height)` — speed 0~10, stride 正前负后, height mm

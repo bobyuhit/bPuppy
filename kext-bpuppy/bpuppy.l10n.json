@@ -60,16 +60,19 @@
     "voiceCmdRight": "右转",
     "voiceCmdFaster": "加速",
     "voiceCmdSlower": "减速",
-    "voiceCmdJump": "跳跃",
+    "voiceCmdNod": "点头",
     "voiceCmdStand": "站立",
     "voiceCmdCrouch": "蹲下",
     "voiceCmdSit": "坐下",
     "voiceCmdWave": "摇手",
     "voiceCmdPlay": "邀玩",
+    "voiceCmdVolt": "播报电压",
     "voiceCmdSoundDir": "声音角度",
     "getSoundAngle": "(声音角度)",
-    "voiceBark": "语音播放汪汪",
-    "voiceWhimper": "语音播放嘤嘤"
+    "voiceSound": "狗叫 [SOUND]",
+    "sndWang": "汪汪",
+    "sndYing": "嘤嘤",
+    "voiceSayNum": "播报数字 [NUM]"
   },
   "en": {
     "forward": "Forward",
@@ -132,16 +135,19 @@
     "voiceCmdRight": "turn right",
     "voiceCmdFaster": "speed up",
     "voiceCmdSlower": "speed down",
-    "voiceCmdJump": "jump",
+    "voiceCmdNod": "nod",
     "voiceCmdStand": "stand",
     "voiceCmdCrouch": "crouch",
     "voiceCmdSit": "sit",
     "voiceCmdWave": "wave",
     "voiceCmdPlay": "play",
+    "voiceCmdVolt": "report voltage",
     "voiceCmdSoundDir": "sound direction",
     "getSoundAngle": "(sound angle)",
-    "voiceBark": "bark wang wang",
-    "voiceWhimper": "whimper ying ying"
+    "voiceSound": "bark [SOUND]",
+    "sndWang": "wang wang",
+    "sndYing": "ying ying",
+    "voiceSayNum": "report number [NUM]"
   },
   "zh-tw": {
     "forward": "前進",
@@ -204,15 +210,18 @@
     "voiceCmdRight": "右轉",
     "voiceCmdFaster": "加速",
     "voiceCmdSlower": "減速",
-    "voiceCmdJump": "跳躍",
+    "voiceCmdNod": "點頭",
     "voiceCmdStand": "站立",
     "voiceCmdCrouch": "蹲下",
     "voiceCmdSit": "坐下",
     "voiceCmdWave": "搖手",
     "voiceCmdPlay": "邀玩",
+    "voiceCmdVolt": "播報電壓",
     "voiceCmdSoundDir": "聲音角度",
     "getSoundAngle": "(聲音角度)",
-    "voiceBark": "語音播放汪汪",
-    "voiceWhimper": "語音播放嚶嚶"
+    "voiceSound": "狗叫 [SOUND]",
+    "sndWang": "汪汪",
+    "sndYing": "嚶嚶",
+    "voiceSayNum": "播報數字 [NUM]"
   }
 }

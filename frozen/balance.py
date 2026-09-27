@@ -18,8 +18,8 @@ import math
 import time
 
 # ---- 机械参数 ----
-L1 = float(bpuppy_ik.L1)
-L2 = float(bpuppy_ik.L2)
+# ⚠ 腿长 L1/L2 不在这里写死: start() 里从 bpuppy_motion.get_geometry() 现读。
+#   bpuppy_ik.L1/L2 是编译期常量, cal_ik() 改不到它 (静默偏差 2°~16°)。
 HALF_L = 62.5
 HALF_W = 59.0
 MIN_Z = 15.0   # 最小足端高度
@@ -54,6 +54,9 @@ def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
     time.sleep_ms(30)   # group 写舵机会自动切 POSE (C 层检测), motion 停止
 
     dt = 0.02
+    # 腿长从板子现读 (cal_ik() 改的就是这一份; 每帧读没必要, 启动时取一次)
+    g = bpuppy_motion.get_geometry()
+    L1 = g[0]; L2 = g[1]
     br, bp = 0.0, 0.0
     i_r, i_p = 0.0, 0.0
     prev_er, prev_ep = 0.0, 0.0

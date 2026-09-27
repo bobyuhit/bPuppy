@@ -20,7 +20,7 @@ bPuppy 语音控制 — Hiwonder CI-33T 语音识别/发声模块 (UART2, 9600)
   上行 (本系统 → CI-33T): AA 55 <CMD> <PARAM> 55 AA   (发声/反馈, 6 字节)
 
   下行 (CI-33T → 本系统): 4 字节定长帧, 两种, 靠**首字节取值范围**区分 ——
-    命令帧:  BB <CMD> <PARAM> EE    CMD = 0x30-0x3C (运动/姿态), PARAM 预留
+    命令帧:  BB <CMD> <PARAM> EE    CMD = 0x30-0x3F (运动/姿态), PARAM 预留
     角度帧:  <角度> 00 00 00        声源角度 (DOA), 0-180 度
                                     ⚠ 模块侧格式固定, 本仓库不能改
 
@@ -34,12 +34,14 @@ bPuppy 语音控制 — Hiwonder CI-33T 语音识别/发声模块 (UART2, 9600)
 用法:
     import voice            # 上电默认: import 即启动 (UART2 + 后台线程)
     voice.play('汪汪')      # 播放预置声音 (汪汪/嘤嘤, 映射见 SND_WANG/SND_YING)
-    voice.say(0x70, 1)      # 发狗叫声 2 号 (AA 55 70 01 55 AA)
+    voice.say(0x70, 1)      # 发狗叫声 1 号 (AA 55 70 01 55 AA)
+    voice.say_num(73)       # 播报数字 73 (AA 55 72 49 55 AA, 0-100 越界钳位)
     voice.SoundAngle        # 最近一次声源角度 (度, 0-180); -1 = 开机后还没收到过
     voice.on_cmd(0x30, fn)  # 注册回调: 收到停止指令时执行 fn (KittenBlock 事件积木用)
     voice.stop()            # 停止 (后台线程退出, 下次 start 可重启)
 
-KittenBlock「语音」组事件积木 (2026-08-19 新增, 2026-09-26 加声音角度):
+KittenBlock「语音」组事件积木 (2026-08-19 新增, 2026-09-26 加声音角度,
+    2026-09-27 加「点头」/「播报电压」):
     事件积木生成末尾函数 def voiceWhenX(): (X = Stop/Fwd/Back/.../SoundDir),
     本模块后台线程扫描 __main__ 全局按名字 (voiceWhenX → 命令码)
     自动注册为事件回调 → 收到指令只触发用户程序, 固件自身不做动作。
@@ -81,8 +83,8 @@ _FRAME_CMD_TAIL = 0xEE
 ANGLE_MAX = 180         # = 0xB4
 
 # 角度事件的内部派发编号 —— 只在本模块内用, **不上线**。
-# 刻意选在单字节命令码之外 (命令帧 CMD 是 1 字节, 现有 0x30-0x3C,
-# 将来可能扩到 0x3D+); 用 0x100 保证永不与任何线上 CMD 冲突。
+# 刻意选在单字节命令码之外 (命令帧 CMD 是 1 字节, 现有 0x30-0x3F,
+# 以后还会往后扩); 用 0x100 保证永不与任何线上 CMD 冲突。
 CMD_SOUND_DIR = 0x100
 
 # ---- 下行: 运动/姿态命令 (数据区第一字节, 仅作事件信号, 不触发动作) ----
@@ -93,28 +95,39 @@ CMD_LEFT   = 0x33   # 左转
 CMD_RIGHT  = 0x34   # 右转
 CMD_FASTER = 0x35   # 加速
 CMD_SLOWER = 0x36   # 减速
-CMD_JUMP   = 0x37   # 跳跃
+CMD_NOD    = 0x37   # 点头 (原「跳跃」; 跳跃步态 2026-09-27 已从固件删除, 码位复用)
 CMD_STAND  = 0x38   # 站立 (姿态)
 CMD_CROUCH = 0x39   # 蹲下
 CMD_SIT    = 0x3A   # 坐下
 CMD_WAVE   = 0x3B   # 摇手
 CMD_PLAY   = 0x3C   # 邀玩
+CMD_VOLT   = 0x3F   # 播报电压 (0x3D/0x3E 暂空, 留着以后用)
 
 # ---- 上行: 发声/反馈命令 (数据区第一字节) ----
-SND_BARK = 0x70     # 狗叫声类 (PARAM: 0=1号, 1=2号, ...; 实测可用)
-SND_TTS  = 0x71     # 平台自定义发声段 (实测 2026-09-26: 0x02 = 嘤嘤)
-SND_EXT  = 0x72     # 预留: 其他反馈
+SND_BARK = 0x70     # 狗叫声类 (第 4 字节 = 声音编号, 实测可用)
+SND_TTS  = 0x71     # 平台自定义发声段 (预留, 当前没有声音用它)
+SND_NUM  = 0x72     # 播报数字 (第 4 字节 = 数字本身, 范围见 NUM_MIN/NUM_MAX)
 
-# ---- 预置声音 (KittenBlock「语音播放汪汪/嘤嘤」) ----
-# 实测确认: 0x70 0x01 = 汪汪 (2026-08-19); 0x71 0x02 = 嘤嘤 (2026-09-26 改, 原 0x01)。
-# 若平台固件另有映射, 改下面常量即可, voice.play / 积木代码不用动。
-SND_WANG = (0x70, 0x01)     # 汪汪 (用户实测确认: 0x70 1 能响)
-SND_YING = (0x71, 0x02)     # 嘤嘤 (用户实测确认: 0x71 2 = 嘤嘤)
+# 播报数字的取值范围 (KittenBlock「播报数字 [NUM]」滑块也是 0-100)。
+# 越界**钳位**到边界并打印一行 —— 不静默: 平台侧只会为 0-100 配词条,
+# 发个 200 过去那边匹配不上, 听感上就是"什么都没发生"。
+NUM_MIN = 0
+NUM_MAX = 100
+
+# ---- 预置声音 (KittenBlock「狗叫 [汪汪/嘤嘤]」积木) ----
+# 狗叫类**第一字节统一 0x70, 靠第 4 字节区分具体声音**。以后加新声音、或平台侧
+# 调了某个声音的编号, 只动这里的 (0x70, n) + 扩展下拉一行 (kblock.json5 的
+# soundMenu), 积木 pycode 不用动。
+# 实测确认 (2026-09-27 更新):
+#   0x70 0x01 = 汪汪   (2026-08-19 实测)
+#   0x70 0x02 = 嘤嘤   (2026-09-27 由 0x71 0x02 改来 —— 两个声音同属 0x70 狗叫类)
+SND_WANG = (0x70, 0x01)     # 汪汪
+SND_YING = (0x70, 0x02)     # 嘤嘤
 
 # 命令帧 CMD 字节的合法范围。2026-09-26 前是"逐字节扫描段", 现在是
 # **合法性校验**: 命令帧除帧头/帧尾外, 中间两个字节也得对得上才算数。
 _CMD_MIN = 0x30
-_CMD_MAX = 0x3C
+_CMD_MAX = 0x3F     # 0x3D/0x3E 暂未使用, 但已落在合法区间内 (收下后无事件, 静默)
 
 # ---- 声源角度 (KittenBlock 变量积木「(声音角度)」读它) ----
 # 初值 -1 而非 0: 0 度是**有效方向** (用户确认), 用 0 做初值的话用户没法
@@ -166,14 +179,15 @@ _EVT_FUNCS = {
     'voiceWhenRight':  CMD_RIGHT,
     'voiceWhenFaster': CMD_FASTER,
     'voiceWhenSlower': CMD_SLOWER,
-    'voiceWhenJump':   CMD_JUMP,
+    'voiceWhenNod':    CMD_NOD,
     'voiceWhenStand':  CMD_STAND,
     'voiceWhenCrouch': CMD_CROUCH,
     'voiceWhenSit':    CMD_SIT,
     'voiceWhenWave':   CMD_WAVE,
     'voiceWhenPlay':   CMD_PLAY,
+    'voiceWhenVolt':   CMD_VOLT,
     # 声源角度 (2026-09-26): value 不是线上命令码, 是内部派发编号 CMD_SOUND_DIR。
-    # 角度值靠 SoundAngle 变量带出去 —— 13 条既有回调的 fn() 签名保持不变。
+    # 角度值靠 SoundAngle 变量带出去 —— 14 条既有回调的 fn() 签名保持不变。
     'voiceWhenSoundDir': CMD_SOUND_DIR,
 }
 
@@ -208,7 +222,7 @@ def _parse():
     """按结构切帧。**收不够 4 字节就原样留着等下一轮, 绝不猜。**
 
     两种帧靠首字节取值范围区分 (见文件头):
-      0xBB            → 命令帧 BB <CMD> <PARAM> EE (CMD 还要在 0x30-0x3C 内)
+      0xBB            → 命令帧 BB <CMD> <PARAM> EE (CMD 还要在 0x30-0x3F 内)
       <= ANGLE_MAX    → 角度帧 <角度> 00 00 00
     都不是 → 丢掉 1 个字节重同步 (这样夹在中间的噪声能自动滑过去)。
 
@@ -258,7 +272,7 @@ def _dispatch(cmd, param=0):
     顺序很重要: 用户事件函数体里读 voice.SoundAngle 得读到本次的值。
     存变量这一步不依赖有没有注册回调, 所以「(声音角度)」积木单独用也能读到值。
 
-    回调签名保持 fn() 不变 —— 角度靠变量带出去, 不给 13 条既有回调加参数。
+    回调签名保持 fn() 不变 —— 角度靠变量带出去, 不给 14 条既有回调加参数。
     """
     global SoundAngle
     if cmd == CMD_SOUND_DIR:
@@ -288,6 +302,23 @@ def say(category, code):
         bpuppy_uart.send(FRAME_HEAD + bytes((category, code)) + FRAME_TAIL)
     except Exception as e:
         print("voice: say error: %s" % e)
+
+def say_num(n):
+    """上行: 播报数字 → 帧 AA 55 72 <n> 55 AA (KittenBlock「播报数字 [NUM]」积木走这里)。
+
+    滑块本身已限 0-100, 这里再兜一道 —— REPL 手敲、变量传进来都可能越界。
+    越界钳位到边界并打印; 非数字直接忽略并打印, 不抛异常 (后台线程/积木调用都不能炸)。
+    """
+    try:
+        v = int(round(float(n)))
+    except Exception:
+        print("voice: say_num 参数不是数字: %r" % (n,))
+        return
+    if v < NUM_MIN or v > NUM_MAX:
+        clamped = NUM_MIN if v < NUM_MIN else NUM_MAX
+        print("voice: say_num %d 超出 %d-%d, 已钳位到 %d" % (v, NUM_MIN, NUM_MAX, clamped))
+        v = clamped
+    say(SND_NUM, v)
 
 def play(name):
     """按名字播放预置声音: play('汪汪') / play('嘤嘤')。映射见 SND_WANG/SND_YING。"""

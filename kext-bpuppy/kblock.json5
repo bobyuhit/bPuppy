@@ -308,22 +308,41 @@
       text: '$$getSoundAngle',
       pycode: 'voice.SoundAngle'
     },
-    // ⚠ 这两个积木的 pycode 必须是**纯 ASCII**。KittenBlock 生成/下发代码时会把非 ASCII
+    // ⚠ 这个积木的 pycode 必须是**纯 ASCII**。KittenBlock 生成/下发代码时会把非 ASCII
     //   字符抹掉: 写成 voice.play('汪汪') 会变成 voice.play('') → play() 查不到名字回退到
-    //   汪汪, 结果两个积木都只会汪汪 (实测 2026-09-26)。所以这里用 voice.say(*voice.SND_xxx)
-    //   而不是名字 —— 码值的唯一真源仍在 frozen/voice.py 的 SND_WANG / SND_YING,
-    //   换发声段只改固件常量、这两个积木不用动。
+    //   汪汪, 结果点哪个声音都汪汪 (实测 2026-09-26)。所以这里用 voice.say(*voice.SND_xxx)
+    //   而不是声音名字 —— 码值的唯一真源仍在 frozen/voice.py 的 SND_WANG / SND_YING。
+    // 2026-09-27: 原「语音播放汪汪」/「语音播放嘤嘤」两个积木合并成这一个下拉积木。
+    //   加新声音 = frozen/voice.py 加一个 SND_xxx 常量 (第 4 字节不同) + 下面 soundMenu
+    //   加一行, 这个积木的 pycode 不用动。
     {
-      opcode: 'voiceBark',
+      opcode: 'voiceSound',
       blockType: 'command',
-      text: '$$voiceBark',
-      pycode: 'voice.say(*voice.SND_WANG)'
+      text: '$$voiceSound',
+      arguments: {
+        SOUND: {
+          type: 'value',
+          menu: 'soundMenu',
+          defaultValue: 'WANG'
+        }
+      },
+      pycode: 'voice.say(*voice.SND_[SOUND])'
     },
+    // 播报数字: 滑块 0-100 (与 frozen/voice.py 的 NUM_MIN/NUM_MAX 对应) → 帧 AA 55 72 <n> 55 AA。
+    // 固件侧还会再钳一道 (REPL 手敲 / 变量传值都可能越界), 所以滑块范围改了要同步改常量注释。
     {
-      opcode: 'voiceWhimper',
+      opcode: 'voiceSayNum',
       blockType: 'command',
-      text: '$$voiceWhimper',
-      pycode: 'voice.say(*voice.SND_YING)'
+      text: '$$voiceSayNum',
+      arguments: {
+        NUM: {
+          type: 'slider',
+          defaultValue: '0',
+          min: 0,
+          max: 100
+        }
+      },
+      pycode: 'voice.say_num([NUM])'
     }
   ],
   menus: {
@@ -354,13 +373,20 @@
       { text: '$$voiceCmdRight',  value: 'Right' },
       { text: '$$voiceCmdFaster', value: 'Faster' },
       { text: '$$voiceCmdSlower', value: 'Slower' },
-      { text: '$$voiceCmdJump',   value: 'Jump' },
+      { text: '$$voiceCmdNod',    value: 'Nod' },
       { text: '$$voiceCmdStand',  value: 'Stand' },
       { text: '$$voiceCmdCrouch', value: 'Crouch' },
       { text: '$$voiceCmdSit',    value: 'Sit' },
       { text: '$$voiceCmdWave',   value: 'Wave' },
       { text: '$$voiceCmdPlay',   value: 'Play' },
+      { text: '$$voiceCmdVolt',   value: 'Volt' },
       { text: '$$voiceCmdSoundDir', value: 'SoundDir' }
+    ],
+    // 「狗叫」积木的下拉。value 会被裸代入 pycode 的属性名 (voice.SND_[SOUND]),
+    // 所以必须与 frozen/voice.py 里 SND_<value> 常量名对得上; 加新声音在这里加一行。
+    soundMenu: [
+      { text: '$$sndWang', value: 'WANG' },
+      { text: '$$sndYing', value: 'YING' }
     ]
   }
 }

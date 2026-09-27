@@ -20,7 +20,7 @@ int  ble_recv_command(char *buf, int max_len);
 // 接收缓冲中可读字节数 (BLE REPL 流 poll 用)
 int  ble_available(void);
 
-// 发通知 (TX characteristic, 字符串版, 兼容 ble_hiwonder.py)
+// 发通知 (TX characteristic, 字符串版)
 void ble_send(const char *data);
 
 // 发通知 (TX characteristic, 带长度, BLE REPL 流用)

@@ -23,9 +23,7 @@ typedef enum {
     GAIT_STOP = 0,      // 停止站好 (运动模式, 高度随参数)
     GAIT_WALK,          // 猫步 (speed>0前进, speed<0后退)
     GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
-    GAIT_GO,            // 自适应 (speed≤4.0→walk, speed≥6.0→trot, 之间插值; 见 motion_task.cpp:329)
-    // 以下未暴露到 MicroPython
-    GAIT_JUMP,          // 跳跃：蹲→前腿弹→后腿弹→蹲
+    GAIT_GO,            // 自适应 (speed≤4.0→walk, speed≥6.0→trot, 之间插值; 见 motion_task_main 的 GO 分支)
     GAIT_COUNT
 } gait_type_t;
 
@@ -60,7 +58,6 @@ typedef struct {
     float       body_half_w;    // 左右髋半宽 (mm), 默认 59.0
     bool        emergency_stop; // 急停标志
     bool        enabled;        // 运动使能
-    float       stand_up_elapsed; // 跳跃计时 (复用, 秒)
 
     /* ---- 姿态过渡 (预备位切换) ---- */
     // 0=无过渡  1=起步过渡 (站立→预备位→行走)
@@ -88,18 +85,24 @@ void motion_set_params(float speed, float stride, float height);
 int motion_check_params(float stride, float height);
 
 // IK 校准：调整大腿/小腿长度
-void motion_cal_ik(float L1, float L2);
+// 返回是否写入成功 (false=非法被拒, 保持原值)
+bool motion_cal_ik(float L1, float L2);
 
 // 身体尺寸校准：调整前后/左右髋距
-void motion_set_body_dims(float half_l, float half_w);
+// 返回是否写入成功 (false=非法被拒, 保持原值)
+bool motion_set_body_dims(float half_l, float half_w);
 
 // 舵机极限校准：调整髋/膝舵机角度限位
-void motion_set_joint_limits(float hip_min, float hip_max,
+// 返回是否写入成功 (false=min/max 反了或非法, 保持原值)
+bool motion_set_joint_limits(float hip_min, float hip_max,
                               float knee_min, float knee_max);
 
 // 几何参数持久化：从 NVS 加载 / 保存到 NVS
 void motion_load_geometry(void);
 void motion_save_geometry(void);
+
+// 确保几何参数已从 NVS 载入 —— 运动任务未创建时代为加载 (Python 侧读取几何前调用)
+void motion_ensure_geometry_loaded(void);
 
 // 设置基准角频率 (rad/s)
 void motion_set_omega(float omega);
@@ -114,7 +117,8 @@ void motion_set_body_pose(float roll, float pitch, float yaw);
 void motion_set_turn(float turn);
 
 // 设置脚中位偏移 (正=前移, 负=后移)
-void motion_set_center(float offset);
+// 返回是否写入成功 (false=超出 ±大腿长/2 被拒, 保持原值且不写 NVS)
+bool motion_set_center(float offset);
 
 // 检查运动任务是否正在运行（enabled 且未急停）
 bool motion_is_running(void);
@@ -125,9 +129,6 @@ motion_mode_t motion_get_mode(void);
 
 // MicroPython servo 绑定调用: Python 动舵机 → 自动切 POSE
 void motion_python_servo_write(void);
-
-// 跳跃：蹲→前腿弹→后腿弹→回蹲
-void motion_jump(void);
 
 #ifdef __cplusplus
 }

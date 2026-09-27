@@ -94,7 +94,6 @@ __attribute__((weak)) motion_state_t g_motion = {
     .body_half_w    = IK_BODY_HALF_W_DEFAULT,
     .emergency_stop = false,
     .enabled        = false,
-    .stand_up_elapsed = 0.0f,
     .pose_trans     = 0,
     .pose_timer     = 0.0f,
 };
@@ -215,11 +214,6 @@ static void motion_task_main(void *pvParam)
         }
 
         bool is_stand    = (g_motion.gait == GAIT_STOP);
-        bool is_jump     = (g_motion.gait == GAIT_JUMP);
-
-        if (is_jump) {
-            g_motion.stand_up_elapsed += dt;
-        }
 
         /*
          * ============================================================
@@ -322,25 +316,24 @@ static void motion_task_main(void *pvParam)
         // 否则 TROT/WALK 含符号 stride + 符号 stride_sign 双重符号 → 后退变前进)
         float eff_stride = fabsf(g_motion.stride);
         float eff_height = g_motion.height;
-        // GO: speed≤4=walk  speed≥6=trot  → duty/gap/stride/pitch 插值
-        float eff_pitch = g_motion.body_pitch;
+        // GO: speed≤4=walk  speed≥6=trot  → duty/gap/stride/height 插值
+        // (body_pitch 不在此列: 它由 set_body_pose 手动设定, 三个步态一视同仁地生效,
+        //  在这里清零会让 GO 下"设了没反应" —— 只有 walk/trot 生效)
         if (g_motion.gait == GAIT_GO) {
             float s = eff_speed;
             if (s <= 4.0f) {
                 eff_duty=0.20f; eff_gap=0.04f;
-                eff_stride=70.0f; eff_height=70.0f; eff_pitch=0.0f;
+                eff_stride=70.0f; eff_height=70.0f;
             } else if (s >= 6.0f) {
                 eff_duty=0.40f; eff_gap=0.10f;
-                eff_stride=50.0f; eff_height=70.0f; eff_pitch=0.0f;
+                eff_stride=50.0f; eff_height=70.0f;
             } else {
                 float t = (s - 4.0f) / 2.0f;
                 eff_duty   = 0.20f + t * 0.20f;
                 eff_gap    = 0.04f + t * 0.06f;
                 eff_stride = 70.0f - t * 20.0f;
                 eff_height = 70.0f;
-                eff_pitch  = 0.0f;
             }
-            g_motion.body_pitch = eff_pitch;
         }
         // GO 起步首值注入: stride=0 且非停步 → 立刻给第1档 (不等半周期边界)
         if (g_motion.gait == GAIT_GO && g_stride_smooth < 0.05f
@@ -405,31 +398,7 @@ static void motion_task_main(void *pvParam)
         for (int leg = 0; leg < 4; leg++) {
             float foot_x, foot_z;
 
-            if (g_motion.gait == GAIT_JUMP) {
-                // 跳跃时序: 蹲(1s) → 前腿弹(0.1s) → 后腿弹(0.3s) → 回蹲→站
-                static const float crouch_z = 15.0f, jump_z = 78.0f;
-                float jt = g_motion.stand_up_elapsed;  // 复用计时器
-                float z;
-                bool front = (leg == 0 || leg == 2);
-
-                if (jt < 1.0f) {
-                    z = crouch_z;  // 蹲
-                } else if (jt < 1.1f) {
-                    z = front ? jump_z : crouch_z;  // 前腿弹
-                } else if (jt < 1.4f) {
-                    z = jump_z;  // 四腿全弹
-                } else {
-                    z = crouch_z;  // 回蹲
-                }
-                ik_result_t ik = ik_solve_2dof(0, z,
-                                    g_motion.ik_L1, g_motion.ik_L2,
-                                    leg_side[leg], leg_pair[leg]);
-                g_smooth_angles[leg_hip_ch[leg]]  = ik.hip_deg;
-                g_smooth_angles[leg_knee_ch[leg]] = ik.knee_deg;
-                servo_group_add(leg_hip_ch[leg],  ik.hip_deg);
-                servo_group_add(leg_knee_ch[leg], ik.knee_deg);
-                continue;
-            } else if (is_stand) {
+            if (is_stand) {
                 if (g_motion.pose_trans == 2) {
                     // 停止过渡: 从上一帧位置缓动到站姿
                     float t = g_motion.pose_timer / TRANS_TIME;
@@ -488,6 +457,15 @@ static void motion_task_main(void *pvParam)
                 }
             }
 
+            // 保存当前帧足端 (停过渡用)
+            // ★ 必须存在加偏移/加补偿**之前** —— 存的是轨迹原始值。
+            //   停过渡 (上面 is_stand + pose_trans==2 那段) 拿它插值, 插值完下面还会
+            //   再加一次偏移和补偿; 要是这里存的是加过的值, 那一帧就会偏移+补偿各算
+            //   两次 → 切 stop 时脚瞬跳 co (默认 0 看不出来) + z_pitch (pitch=-5°
+            //   时 5.5mm ≈ 2~3° 的抖)。
+            g_prev_fx[leg] = foot_x;
+            g_prev_fz[leg] = foot_z;
+
             // 脚中位偏移
             foot_x += g_motion.center_offset;
 
@@ -499,10 +477,6 @@ static void motion_task_main(void *pvParam)
                 foot_z -= z_roll;   else foot_z += z_roll;
             if (leg == 0 || leg == 2)  // front legs
                 foot_z += z_pitch;  else foot_z -= z_pitch;
-
-            // 保存当前帧足端 (停过渡用)
-            g_prev_fx[leg] = foot_x;
-            g_prev_fz[leg] = foot_z;
 
             ik_result_t ik = ik_solve_2dof(foot_x, foot_z,
                                 g_motion.ik_L1, g_motion.ik_L2,
@@ -519,16 +493,6 @@ static void motion_task_main(void *pvParam)
         }
 
         servo_group_commit();
-
-        if (is_jump && g_motion.stand_up_elapsed >= 1.5f) {
-            g_motion.gait = GAIT_STOP;
-            g_was_moving = false;
-            for (int i = 0; i < 4; i++) {
-                g_prev_fx[i] = 0.0f;
-                g_prev_fz[i] = g_motion.height;
-            }
-            ESP_LOGI(TAG, "Jump complete, now standing");
-        }
 
         vTaskDelayUntil(&last_wake, period);
     }
@@ -651,29 +615,54 @@ static bool motion_validate_params(float stride, float height, float lift)
         bad = true;
     }
 
+    // 机体姿态补偿量 —— 与运行时 (motion_task_main 里加 foot_z 的那段) 同一套符号,
+    //   逐腿算: 左腿 -z_roll / 右腿 +z_roll, 前腿 +z_pitch / 后腿 -z_pitch。
+    // ★ 必须算进来: 漏了它时校验看的是"没补偿的 z", 而狗实际走的是"补偿后的 z"。
+    //   实测在用的 pitch=-5° → z_pitch=5.5mm, 后腿实际比校验以为的低 5.5mm。
+    float deg2rad = 0.0174533f;
+    float z_roll  = g_motion.body_half_w * tanf(g_motion.body_roll  * deg2rad);
+    float z_pitch = g_motion.body_half_l * tanf(g_motion.body_pitch * deg2rad);
+
     // 遍历足端实际摆动轨迹采样点 (非笛卡尔积!)
     // 摆动相: x=-S/2+S·ease, z=height-lift·sin(ease·π)
     //   x 最远时 z=height(着地), 抬腿最高时 x 在中点 — 实际轨迹
-    if (stride != 0.0f) {
-        float ease_pts[5] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
-        for (int i = 0; i < 5; i++) {
-            float ease = ease_pts[i];
-            float xv = -x + 2.0f * x * ease;
-            xv += g_motion.center_offset;
-            float zv = height - lift * sinf(ease * (float)M_PI);
-            if (zv < 0.0f) {
-                ESP_LOGW(TAG, "⚠ 抬腿过度: height-lift=%.0f < 0, 参数未写入", zv);
+    // ★ 不加 if (stride != 0): stride=0 是**原地踏步**, 腿照样按 lift 抬起来
+    //   (foot_trajectory 的抬腿项与 stride 无关)。此时 x 退化成 center_offset,
+    //   正是真实足端位置。以前这层 if 把 stride=0 的校验整个跳过:
+    //   z 可以要求抬到负高度、高度也可以设到够不着, 全都静默放行。
+    float ease_pts[5] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+    float min_zf  = height;   // 补偿后最深的足端 (循环后统一报一次, 免得刷 20 行日志)
+    int   min_leg = 0;
+
+    for (int i = 0; i < 5; i++) {
+        float ease = ease_pts[i];
+        float xv = -x + 2.0f * x * ease;
+        xv += g_motion.center_offset;
+        float zv = height - lift * sinf(ease * (float)M_PI);
+        for (int k = 0; k < 4; k++) {
+            float zf = zv + ((leg_side[k] == IK_SIDE_LEFT) ? -z_roll : z_roll)
+                          + ((k == 0 || k == 2) ? z_pitch : -z_pitch);
+            if (zf < min_zf) { min_zf = zf; min_leg = k; }
+            if (zf < 0.0f) continue;   // 入地由循环后统一报一次, 这里跳过角度检查免得刷屏
+            if (ik_pos_check(xv, zf, leg_side[k], leg_pair[k], L1, L2)) {
+                ESP_LOGW(TAG, "⚠ 足端 (x=%.0f z=%.0f 腿%d) 髋/膝超限, 参数未写入 "
+                         "(stride=%.0f height=%.0f lift=%.0f roll=%.1f pitch=%.1f)",
+                         xv, zf, k, stride, height, lift,
+                         g_motion.body_roll, g_motion.body_pitch);
                 bad = true;
-                continue;
-            }
-            for (int k = 0; k < 4; k++) {
-                if (ik_pos_check(xv, zv, leg_side[k], leg_pair[k], L1, L2)) {
-                    ESP_LOGW(TAG, "⚠ 足端 (x=%.0f z=%.0f) 髋/膝超限, 参数未写入 (stride=%.0f height=%.0f lift=%.0f)",
-                             xv, zv, stride, height, lift);
-                    bad = true;
-                }
             }
         }
+    }
+
+    // 补偿后的 z 必须有下限: 上面只查了 ik_pos_check (可达距离 + 髋/膝角度),
+    //   它拦不住"略低于地面"的点 —— x 大、z 略负时 d=√(x²+z²) 仍在可达范围内,
+    //   角度也可能合规, 于是脚被要求插到地面以下。机体姿态压得狠时会碰到。
+    if (min_zf < 0.0f) {
+        ESP_LOGW(TAG, "⚠ 足端入地 (抬腿过度): 最深 z=%.1fmm (腿%d, 叠加姿态补偿后) —— "
+                 "lift=%.0f 超过 height=%.0f, 或姿态压太狠 (roll=%.1f pitch=%.1f), 参数未写入",
+                 min_zf, min_leg, lift, height,
+                 g_motion.body_roll, g_motion.body_pitch);
+        bad = true;
     }
     return bad;
 }
@@ -693,8 +682,12 @@ void motion_set_params(float speed, float stride, float height)
         return;
     }
 
-    // 校验步幅/高度 (含抬腿, 髋/膝角)
-    if (stride != 0 && motion_validate_params(stride, height, g_motion.lift_height)) {
+    // 校验步幅/高度 (含抬腿, 髋/膝角, 姿态补偿)
+    // ★ 不加任何前置条件 —— MicroPython 绑定层判"要不要打被拒日志"用的是同一句
+    //   motion_check_params()。两边条件不一致时日志会撒谎:
+    //   以前这里带 `stride != 0 &&`, 而那边带 `(stride > 0 || height > 0) &&`,
+    //   于是 set_params(2, 0, 20) 这组"抬腿超过站高"的参数**跳过校验直接写入**。
+    if (motion_validate_params(stride, height, g_motion.lift_height)) {
         ESP_LOGW(TAG, "→ 保持原值: speed=%.2f stride=%.0f height=%.0f",
                  g_motion.speed, g_motion.stride, g_motion.height);
         return;
@@ -709,25 +702,97 @@ void motion_set_params(float speed, float stride, float height)
              TWO_PI / (g_motion.omega_base * g_motion.speed + 0.001f));
 }
 
-void motion_cal_ik(float L1, float L2)
+/* ---- 几何 setter: 非法输入一律拒写并保持原值 ----
+ *
+ * 复用运动参数那套现成模式 (见 motion_set_lift): 返回 bool 表示是否写入成功,
+ * 由 MicroPython 绑定层 (motion_task_mpy.c) 把"被拒"打到用户看得见的地方。
+ *
+ * ⚠ 为什么必须校验: 这几个值直接进 NVS, 而 **NVS 跨固件升级存活** —— 一旦写坏,
+ *   重刷固件也救不回来 (每次开机 motion_load_geometry() 又会把坏值读回来),
+ *   所以读取那侧也必须校验, 见 motion_load_geometry()。
+ *   写坏的两种典型后果:
+ *     set_joint_limits(min>max) → ik_solve_2dof 的两句顺序钳位把所有角度压成 max,
+ *                                 四条腿卡在同一角, 且 ik_pos_check 拒绝一切采样
+ *                                 → 所有 set_params 被拒 → 狗完全不能动;
+ *     cal_ik(0, 0)              → ik.c 的 cos_knee 除以 0 → NaN 一路穿到舵机占空比。
+ *
+ * ⚠ 关于写法: 一律用 !(a >= min && a <= max) / !(a < b), 不用 (a < min || a > max)。
+ *   两者等价, 但前者对 NaN 也成立 (NaN 参与任何比较恒为假 → 取反为真), 顺带挡住 NaN。
+ */
+
+// 限位合法性: 每项都要落在舵机可达角度内, 且 min < max。
+// ★ 必须**配对**校验 —— 单看一个数看不出顺序反了 (0 和 180 各自都合法)。
+// setter 和 NVS 读取两条路径共用这一份判定, 避免"写入时收、重启后被盗回默认"的不对称。
+static bool geom_limits_valid(float hip_min, float hip_max,
+                              float knee_min, float knee_max)
 {
+    if (!(hip_min  >= SERVO_ANGLE_MIN && hip_min  <= SERVO_ANGLE_MAX)) return false;
+    if (!(hip_max  >= SERVO_ANGLE_MIN && hip_max  <= SERVO_ANGLE_MAX)) return false;
+    if (!(knee_min >= SERVO_ANGLE_MIN && knee_min <= SERVO_ANGLE_MAX)) return false;
+    if (!(knee_max >= SERVO_ANGLE_MIN && knee_max <= SERVO_ANGLE_MAX)) return false;
+    if (!(hip_min  < hip_max))  return false;
+    if (!(knee_min < knee_max)) return false;
+    return true;
+}
+
+// 脚中位偏移合法性: 上限 = 当前大腿长度的一半 (用 cal_ik 改腿长时上限跟着变)。
+// ★ 这是人定的**舒适区**, 不是物理极限 —— 站高 70mm 时腿其实能挪到约 ±46mm,
+//   但那样髋角已扭到 33°、腿接近伸直, 属于"够得着但姿态难看"。取 L1/2 时髋角
+//   不超过 16°, 姿态好看。
+// ★ 偏移超出可达范围时运行时**不报错** —— ik_solve_2dof 只把 d 钳到可达值,
+//   表现为腿静默失去伸展 (狗歪着走)。而 ik_pos_check 只在 motion_validate_params
+//   里被调用, 报的还是"stride/height/lift 超限", 骂错了参数。所以必须在这里拦。
+// NaN 也走到 false (NaN 参与比较恒为假) → 视为非法, 无需额外判断。
+static bool geom_center_offset_valid(float off)
+{
+    return fabsf(off) <= g_motion.ik_L1 * 0.5f;
+}
+
+bool motion_cal_ik(float L1, float L2)
+{
+    if (!(L1 >= IK_LEN_MIN && L1 <= IK_LEN_MAX) ||
+        !(L2 >= IK_LEN_MIN && L2 <= IK_LEN_MAX)) {
+        ESP_LOGW(TAG, "IK cal rejected: L1=%.2f L2=%.2f 超出 [%.0f, %.0f], "
+                 "保持原值 L1=%.1f L2=%.1f", L1, L2, IK_LEN_MIN, IK_LEN_MAX,
+                 g_motion.ik_L1, g_motion.ik_L2);
+        return false;
+    }
     g_motion.ik_L1 = L1;
     g_motion.ik_L2 = L2;
     motion_save_geometry();
     ESP_LOGI(TAG, "IK cal: L1=%.1f L2=%.1f (saved)", L1, L2);
+    return true;
 }
 
-void motion_set_body_dims(float half_l, float half_w)
+bool motion_set_body_dims(float half_l, float half_w)
 {
+    if (!(half_l >= IK_LEN_MIN && half_l <= IK_LEN_MAX) ||
+        !(half_w >= IK_LEN_MIN && half_w <= IK_LEN_MAX)) {
+        ESP_LOGW(TAG, "Body dims rejected: half_l=%.2f half_w=%.2f 超出 [%.0f, %.0f], "
+                 "保持原值 half_l=%.1f half_w=%.1f", half_l, half_w,
+                 IK_LEN_MIN, IK_LEN_MAX,
+                 g_motion.body_half_l, g_motion.body_half_w);
+        return false;
+    }
     g_motion.body_half_l = half_l;
     g_motion.body_half_w = half_w;
     motion_save_geometry();
     ESP_LOGI(TAG, "Body dims: half_l=%.1f half_w=%.1f (saved)", half_l, half_w);
+    return true;
 }
 
-void motion_set_joint_limits(float hip_min, float hip_max,
+bool motion_set_joint_limits(float hip_min, float hip_max,
                               float knee_min, float knee_max)
 {
+    if (!geom_limits_valid(hip_min, hip_max, knee_min, knee_max)) {
+        ESP_LOGW(TAG, "Joint limits rejected: hip[%.0f~%.0f] knee[%.0f~%.0f] "
+                 "(需 min<max 且落在舵机行程 [%d, %d] 内), 保持原值 "
+                 "hip[%.0f~%.0f] knee[%.0f~%.0f]",
+                 hip_min, hip_max, knee_min, knee_max,
+                 (int)SERVO_ANGLE_MIN, (int)SERVO_ANGLE_MAX,
+                 ik_hip_min, ik_hip_max, ik_knee_min, ik_knee_max);
+        return false;
+    }
     ik_hip_min  = hip_min;
     ik_hip_max  = hip_max;
     ik_knee_min = knee_min;
@@ -735,6 +800,7 @@ void motion_set_joint_limits(float hip_min, float hip_max,
     motion_save_geometry();
     ESP_LOGI(TAG, "Joint limits: hip[%.0f~%.0f] knee[%.0f~%.0f] (saved)",
              hip_min, hip_max, knee_min, knee_max);
+    return true;
 }
 
 /* ---- 几何参数 NVS 持久化 ---- */
@@ -752,16 +818,83 @@ void motion_load_geometry(void)
         return;
     }
 
+    // ★ 读进来也要校验, 不能只靠 setter 挡。
+    //   NVS 跨固件升级存活: 一块**旧固件**写坏的板子, 刷上新固件后每次开机照样把坏值
+    //   读回来 —— 不在这里回退, 那块板子就再也救不回来了。
     int32_t val;
-    if (nvs_get_i32(handle, "l1", &val) == ESP_OK) g_motion.ik_L1 = val / 100.0f;
-    if (nvs_get_i32(handle, "l2", &val) == ESP_OK) g_motion.ik_L2 = val / 100.0f;
-    if (nvs_get_i32(handle, "bl", &val) == ESP_OK) g_motion.body_half_l = val / 100.0f;
-    if (nvs_get_i32(handle, "bw", &val) == ESP_OK) g_motion.body_half_w = val / 100.0f;
-    if (nvs_get_i32(handle, "hmin", &val) == ESP_OK) ik_hip_min  = val / 100.0f;
-    if (nvs_get_i32(handle, "hmax", &val) == ESP_OK) ik_hip_max  = val / 100.0f;
-    if (nvs_get_i32(handle, "kmin", &val) == ESP_OK) ik_knee_min = val / 100.0f;
-    if (nvs_get_i32(handle, "kmax", &val) == ESP_OK) ik_knee_max = val / 100.0f;
-    if (nvs_get_i32(handle, "co",   &val) == ESP_OK) g_motion.center_offset = val / 100.0f;
+
+    if (nvs_get_i32(handle, "l1", &val) == ESP_OK) {
+        float v = val / 100.0f;
+        if (v >= IK_LEN_MIN && v <= IK_LEN_MAX) {
+            g_motion.ik_L1 = v;
+        } else {
+            g_motion.ik_L1 = IK_L1_DEFAULT;
+            ESP_LOGW(TAG, "NVS 里 L1=%.1f 非法 (需 %.0f~%.0f) -> 回退默认 %.1f",
+                     v, IK_LEN_MIN, IK_LEN_MAX, IK_L1_DEFAULT);
+        }
+    }
+    if (nvs_get_i32(handle, "l2", &val) == ESP_OK) {
+        float v = val / 100.0f;
+        if (v >= IK_LEN_MIN && v <= IK_LEN_MAX) {
+            g_motion.ik_L2 = v;
+        } else {
+            g_motion.ik_L2 = IK_L2_DEFAULT;
+            ESP_LOGW(TAG, "NVS 里 L2=%.1f 非法 (需 %.0f~%.0f) -> 回退默认 %.1f",
+                     v, IK_LEN_MIN, IK_LEN_MAX, IK_L2_DEFAULT);
+        }
+    }
+    if (nvs_get_i32(handle, "bl", &val) == ESP_OK) {
+        float v = val / 100.0f;
+        if (v >= IK_LEN_MIN && v <= IK_LEN_MAX) {
+            g_motion.body_half_l = v;
+        } else {
+            g_motion.body_half_l = IK_BODY_HALF_L_DEFAULT;
+            ESP_LOGW(TAG, "NVS 里 half_l=%.1f 非法 (需 %.0f~%.0f) -> 回退默认 %.1f",
+                     v, IK_LEN_MIN, IK_LEN_MAX, IK_BODY_HALF_L_DEFAULT);
+        }
+    }
+    if (nvs_get_i32(handle, "bw", &val) == ESP_OK) {
+        float v = val / 100.0f;
+        if (v >= IK_LEN_MIN && v <= IK_LEN_MAX) {
+            g_motion.body_half_w = v;
+        } else {
+            g_motion.body_half_w = IK_BODY_HALF_W_DEFAULT;
+            ESP_LOGW(TAG, "NVS 里 half_w=%.1f 非法 (需 %.0f~%.0f) -> 回退默认 %.1f",
+                     v, IK_LEN_MIN, IK_LEN_MAX, IK_BODY_HALF_W_DEFAULT);
+        }
+    }
+
+    // 限位: 四项先各自读出来, 读完再**配对**校验 (单看一个数看不出 min/max 反了 ——
+    // 0 和 180 各自都合法)。整套非法就四项一起回退出厂值: 只回退其中一项会配出一个
+    // 谁也没设过的组合。
+    float hmin = ik_hip_min, hmax = ik_hip_max;
+    float kmin = ik_knee_min, kmax = ik_knee_max;
+    if (nvs_get_i32(handle, "hmin", &val) == ESP_OK) hmin = val / 100.0f;
+    if (nvs_get_i32(handle, "hmax", &val) == ESP_OK) hmax = val / 100.0f;
+    if (nvs_get_i32(handle, "kmin", &val) == ESP_OK) kmin = val / 100.0f;
+    if (nvs_get_i32(handle, "kmax", &val) == ESP_OK) kmax = val / 100.0f;
+    if (geom_limits_valid(hmin, hmax, kmin, kmax)) {
+        ik_hip_min  = hmin;  ik_hip_max  = hmax;
+        ik_knee_min = kmin;  ik_knee_max = kmax;
+    } else {
+        ik_hip_min  = IK_HIP_MIN_DEFAULT;  ik_hip_max  = IK_HIP_MAX_DEFAULT;
+        ik_knee_min = IK_KNEE_MIN_DEFAULT; ik_knee_max = IK_KNEE_MAX_DEFAULT;
+        ESP_LOGW(TAG, "NVS 里限位非法: hip[%.0f~%.0f] knee[%.0f~%.0f] "
+                 "(需 min<max 且在 [%d, %d] 内) -> 回退默认 hip[%.0f~%.0f] knee[%.0f~%.0f]",
+                 hmin, hmax, kmin, kmax, (int)SERVO_ANGLE_MIN, (int)SERVO_ANGLE_MAX,
+                 ik_hip_min, ik_hip_max, ik_knee_min, ik_knee_max);
+    }
+
+    if (nvs_get_i32(handle, "co",   &val) == ESP_OK) {
+        float v = val / 100.0f;
+        if (geom_center_offset_valid(v)) {
+            g_motion.center_offset = v;
+        } else {
+            g_motion.center_offset = CENTER_OFFSET_DEFAULT;
+            ESP_LOGW(TAG, "NVS 里 offset=%.1f 非法 (上限 ±%.1f = 大腿 %.1f 的一半) -> 回退默认 %.0f",
+                     v, g_motion.ik_L1 * 0.5f, g_motion.ik_L1, CENTER_OFFSET_DEFAULT);
+        }
+    }
     nvs_close(handle);
 
     ESP_LOGI(TAG, "Geometry loaded from NVS: "
@@ -800,6 +933,16 @@ void motion_save_geometry(void)
              g_motion.center_offset);
 }
 
+void motion_ensure_geometry_loaded(void)
+{
+    // motion_load_geometry() 本来只在 motion_task_start() 里调一次, 而运动任务是
+    // **首次运动指令**才懒创建 (见 motion_set_mode 的 MODE_MOTION 分支)。开机的
+    // poses.stand() (frozen/main.py) 跑在任务创建之前, 那时 g_motion 里还是编译期
+    // 默认值 —— Python 若直接读就会拿到 40/45 而不是 NVS 里的真实腿长。
+    // 这里补上: 任务没起就自己加载一次; 任务已在跑就跳过 (避免重复读 flash)。
+    if (g_task_handle == NULL) motion_load_geometry();
+}
+
 void motion_set_omega(float omega)
 {
     g_motion.omega_base = omega;
@@ -833,11 +976,18 @@ void motion_set_turn(float turn)
     g_motion.turn = turn;
 }
 
-void motion_set_center(float offset)
+bool motion_set_center(float offset)
 {
+    if (!geom_center_offset_valid(offset)) {
+        ESP_LOGW(TAG, "Center offset rejected: %.1fmm 超出 ±%.1fmm (大腿 %.1f 的一半), "
+                 "保持原值 %.1fmm", offset, g_motion.ik_L1 * 0.5f, g_motion.ik_L1,
+                 g_motion.center_offset);
+        return false;
+    }
     g_motion.center_offset = offset;
     motion_save_geometry();
     ESP_LOGI(TAG, "Center offset: %.0f mm (saved)", offset);
+    return true;
 }
 
 bool motion_is_running(void)
@@ -880,12 +1030,4 @@ void motion_python_servo_write(void)
     if (g_mode != MODE_POSE) {
         motion_set_mode(MODE_POSE);
     }
-}
-
-void motion_jump(void)
-{
-    motion_set_mode(MODE_MOTION);
-    g_motion.gait = GAIT_JUMP;
-    g_motion.stand_up_elapsed = 0.0f;
-    ESP_LOGI(TAG, "Jump sequence started");
 }

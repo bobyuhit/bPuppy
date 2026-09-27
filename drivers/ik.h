@@ -25,6 +25,12 @@ extern "C" {
 #define IK_L1_DEFAULT  40.0f   // 大腿长度 (mm)
 #define IK_L2_DEFAULT  45.0f   // 小腿长度 (mm)
 
+// 腿长合法区间 (mm) —— 校验用。
+// 下限取 1 而不是 0: L1/L2 会做除数 (ik.c 的 2·L1·L2、2·L1·d), 0 会算出 NaN;
+// 且 L1=0 时可达区间 [|L2-L1|, L1+L2] 会退化成一点, 后面的钳位失去意义。
+#define IK_LEN_MIN     1.0f
+#define IK_LEN_MAX     500.0f
+
 #define IK_BODY_HALF_L_DEFAULT  62.5f   // 前后髋半距默认值 (mm)
 #define IK_BODY_HALF_W_DEFAULT  59.0f   // 左右髋半宽默认值 (mm)
 

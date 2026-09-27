@@ -23,8 +23,9 @@ import math
 D2R = 0.0174533
 
 # ---- POSE_STAND 机械参数 (Python IK 站姿) ----
-L1 = float(bpuppy_ik.L1)
-L2 = float(bpuppy_ik.L2)
+# ⚠ 腿长 L1/L2 不在这里写死: 运行时从 bpuppy_motion.get_geometry() 现读 (见 stand())。
+#   bpuppy_ik.L1/L2 是编译期常量, cal_ik() 改不到它 —— 若拿它算站姿, 改了板子上的
+#   腿长后站姿仍按旧值解算, 静默偏 2°~16°, 且无任何报错。
 CENTER = 0.0
 POSE_STAND_HEIGHT = 70.0   # 固定高度 (不随 set_params 运动高度变化)
 LEGS = [
@@ -236,6 +237,9 @@ def oscillate(ch, amp, hz, cycles):
 
 def stand():
     """POSE_STAND: Python IK 站姿 (固定高度 70), 留在姿态模式"""
+    # 每次调用现读腿长 (不在模块级缓存): import 之后再 cal_ik() 也能立刻跟上
+    g = bpuppy_motion.get_geometry()
+    L1 = g[0]; L2 = g[1]
     targets = [None] * 8
     for hip_ch, knee_ch, side, leg_pair in LEGS:
         hip, knee = bpuppy_ik.solve(CENTER, POSE_STAND_HEIGHT, L1, L2, side, leg_pair)

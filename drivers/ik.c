@@ -32,6 +32,21 @@ ik_result_t ik_solve_2dof(float foot_x, float foot_z,
                           float L1, float L2, int side, int leg_pair)
 {
     ik_result_t r;
+
+    // ---- 入口兜底 ----
+    // 这里是唯一能挡住所有调用方的地方: bpuppy_ik.solve(x, z, L1, L2, ...) 是公开的,
+    // Python 可以绕过所有 setter 直接传 L1/L2 进来 (也绕过 NVS 校验)。
+    // L1/L2 = 0 会让下面第 46 行除以 0 → acosf(±inf) = NaN, 而四句角度钳位都是
+    // 比较式 (NaN 参与比较恒为假), NaN 会一路穿到舵机占空比, 变成未定义行为。
+    // 用 !(a >= min && a <= max) 而不是 (a < min || a > max): 前者对 NaN 也为真。
+    if (!(L1 >= IK_LEN_MIN && L1 <= IK_LEN_MAX)) L1 = IK_L1_DEFAULT;
+    if (!(L2 >= IK_LEN_MIN && L2 <= IK_LEN_MAX)) L2 = IK_L2_DEFAULT;
+    // 足端坐标同理: NaN/inf 会污染 d, 钳位不会纠正它 (区间是有限的, 比较却恒假)。
+    // 这里是"是否有限"的判定 —— 用 !(fabsf(x) < 大数) 而非 isfinite(), 因为后者在新
+    // 库里是随 __STDC_VERSION__ 有条件定义的宏, 同仓库别的文件也没用过它。
+    if (!(fabsf(foot_x) < 1e6f)) foot_x = 0.0f;
+    if (!(fabsf(foot_z) < 1e6f)) foot_z = 0.0f;
+
     float L1L2_max = L1 + L2;
     float L2L1_min = fabsf(L2 - L1);
 
