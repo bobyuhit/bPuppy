@@ -22,7 +22,9 @@
 #
 #   PWM_EXT1  GPIO 3   shares pin with battery ADC   -> battery reading goes away
 #   PWM_EXT2  GPIO 47  free pin                      -> no side effect
-#   PWM_EXT3  GPIO 48  shares pin with WS2812 LED    -> battery LED goes away
+#   PWM_EXT3  GPIO 48  shares pin with WS2812 LED    -> battery reading AND LED go away
+#     (EXT3 goes through the same bpuppy_adc.stop() as EXT1, so it loses the
+#      voltage reading too -- not just the LED.  See frozen/pwm_ext.py, _NEED_ADC_STOP.)
 #
 #   If EXT1 or EXT3 is 1, the battery voltage reads -1.0 and the battery LED
 #   stays dark for the whole session -- the pin now belongs to PWM, that is

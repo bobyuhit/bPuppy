@@ -1,8 +1,15 @@
 """
 bPuppy 语音控制 — Hiwonder CI-33T 语音识别/发声模块 (UART2, 9600)
 
-⚠ 设计原则 (2026-08-19): 本模块对语音指令**只转发事件, 不做任何动作**。
-   动作全部交由 KittenBlock 程序完成 (事件积木 → 用户编程), 固件 py 代码不动作。
+⚠ 设计原则 (2026-08-19, 2026-09-27 修订): 本模块对语音指令**默认只转发事件, 不做任何动作**。
+   动作交由 KittenBlock 程序完成 (事件积木 → 用户编程), 固件 py 代码不动作。
+
+   **唯一例外: 0x3F「播报电压」** —— 收到该指令时固件**内置**播报电量百分比
+   (见 _say_batt_pct)。破例原因: 这个动作是"把固件自己采到的电池数据念出来",
+   属于固件自身状态的播报, 不是运动/姿态动作; 交给用户程序做的话还得让用户
+   自己拼电量计算 —— 而电压的唯一真源是 C 层, Python 抄不到。
+   ⚠ 因为是**无条件**内置: 用户程序里若再写一个「当收到 [播报电压] 指令」的事件
+   积木, 固件播报和用户动作**会同时触发** (听感上"报两次")。要避免就只用其中一个。
 
 接线 (2026-08-19, UART2 引脚反转 TX=GPIO19 / RX=GPIO20):
     CI-33T PA2 (UART1_TX) ──→ GPIO20 (UART2 RX)   语音指令进 ESP32
@@ -40,11 +47,18 @@ bPuppy 语音控制 — Hiwonder CI-33T 语音识别/发声模块 (UART2, 9600)
     voice.on_cmd(0x30, fn)  # 注册回调: 收到停止指令时执行 fn (KittenBlock 事件积木用)
     voice.stop()            # 停止 (后台线程退出, 下次 start 可重启)
 
+  ★ 收到「播报电压」(0x3F) 时固件会**自动**给 CI-33T 发「播报数字」报电量百分比
+    (来自 voltage.read_pct(), 7.4V=100% / 6.6V=0% / 读不到=0)。不需要任何用户代码。
+    前提是平台侧给 CI-33T 的【串口输入】配好 AA 55 72 <数据> 55 AA 的 0-100 词条,
+    否则模块收到帧也没声音可放 —— 见 docs/README.md:595。
+
 KittenBlock「语音」组事件积木 (2026-08-19 新增, 2026-09-26 加声音角度,
     2026-09-27 加「点头」/「播报电压」):
     事件积木生成末尾函数 def voiceWhenX(): (X = Stop/Fwd/Back/.../SoundDir),
     本模块后台线程扫描 __main__ 全局按名字 (voiceWhenX → 命令码)
     自动注册为事件回调 → 收到指令只触发用户程序, 固件自身不做动作。
+    例外只有一个: 0x3F「播报电压」有内置动作 (见文件头原则 + _say_batt_pct),
+    voiceWhenVolt 事件**照常**能注册 —— 两者会同时生效。
 
     声音角度做成**事件 + 变量**两件套 (用户要求):
       事件「当收到 [声音角度] 指令」→ def voiceWhenSoundDir()
@@ -101,7 +115,8 @@ CMD_CROUCH = 0x39   # 蹲下
 CMD_SIT    = 0x3A   # 坐下
 CMD_WAVE   = 0x3B   # 摇手
 CMD_PLAY   = 0x3C   # 邀玩
-CMD_VOLT   = 0x3F   # 播报电压 (0x3D/0x3E 暂空, 留着以后用)
+CMD_VOLT   = 0x3F   # 播报电压 ★ 有内置动作: 固件自动播报电量百分比 (_say_batt_pct)
+                    #   (0x3D/0x3E 暂空, 留着以后用)
 
 # ---- 上行: 发声/反馈命令 (数据区第一字节) ----
 SND_BARK = 0x70     # 狗叫声类 (第 4 字节 = 声音编号, 实测可用)
@@ -265,8 +280,28 @@ def _pump():
             pass
         time.sleep_ms(20)
 
+def _say_batt_pct():
+    """内置: 收到「播报电压」(0x3F) → 给 CI-33T 发「播报数字」报电量百分比。
+
+    ⚠ 本模块唯一的内置动作 —— 其余指令仍然只转发事件, 见文件头原则。
+    跑在语音后台线程里 (_pump → _parse → _dispatch)。
+    不加锁: say_num → bpuppy_uart.send 底层是**一次** uart_write_bytes
+    (uart_driver.c:54), IDF 带驱动互斥量 ⇒ 6 字节帧整帧发出, 不会跟主线程里
+    KittenBlock 调的 say_num 交错。
+
+    读不到数据时 batt_pct() 是 0, 按用户定的**照样播报 0**, 但多打一行日志 ——
+    否则 PWM_EXT 抢了 GPIO3 这种情况在板上完全看不出来 (听到的就是个 0)。
+    """
+    try:
+        import bpuppy_led
+        if bpuppy_led.batt_v() < 0.0:
+            print("voice: 播报电压 —— 电池读数无效 (ADC 未跑 / PWM_EXT 抢了 GPIO3), 按 0 播报")
+        say_num(bpuppy_led.batt_pct())
+    except Exception as e:
+        print("voice: 播报电压失败: %s" % e)
+
 def _dispatch(cmd, param=0):
-    """只转发事件信号给用户回调, 固件自身不做任何动作。
+    """转发事件信号给用户回调, 固件自身不做任何动作 —— 唯一例外见 _say_batt_pct。
 
     param 目前只有角度帧用。CMD_SOUND_DIR 时**先存变量再触发事件** ——
     顺序很重要: 用户事件函数体里读 voice.SoundAngle 得读到本次的值。
@@ -277,6 +312,11 @@ def _dispatch(cmd, param=0):
     global SoundAngle
     if cmd == CMD_SOUND_DIR:
         SoundAngle = param
+    if cmd == CMD_VOLT:
+        # ★ 全模块唯一的内置动作 (见文件头原则)。**无条件**执行 —— 放在事件
+        #   派发之前: 没注册 voiceWhenVolt 时也要播报 (空板说"播报电压"得有反应);
+        #   注册了则固件播报 + 用户动作都会跑 (用户已知并接受, 见文件头)。
+        _say_batt_pct()
     handlers = _handlers.get(cmd)
     if not handlers:
         return

@@ -11,6 +11,8 @@ read_v() 直接返回 C 缓存的同一个值。所以 LED 显示的颜色和这
 用法:
     import voltage          # 上电默认: import 即自动启动
     v = voltage.read_v()    # 已标定电压 (V); 未就绪返回 -1.0
+    p = voltage.read_pct()  # 电量百分比 0-100 (整数); 未就绪返回 0
+                            #   7.4V=100%, 6.6V=0% —— 跟 LED 蓝/红分界点重合
     voltage.stop()          # 停止监控 (LED 熄灭)
     voltage.start()         # 重新启动 (幂等)
 
@@ -43,6 +45,15 @@ def stop():
 def read_v():
     """已标定电池电压 (V); 监控未跑或 ADC 未就绪返回 -1.0"""
     return bpuppy_led.batt_v()
+
+
+def read_pct():
+    """电量百分比 (整数 0-100); 监控未跑或 ADC 未就绪返回 0
+
+    7.4V=100%, 6.6V=0% —— 端点就是 LED 的蓝/红分界点 (都在 C 层 led_driver.c,
+    本模块不作换算, 所以百分比和颜色不可能对不上)。低于 6.6V 一律 0。
+    """
+    return bpuppy_led.batt_pct()
 
 
 start()   # 上电默认: import 即自动启动

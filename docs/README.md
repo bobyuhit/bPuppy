@@ -230,7 +230,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/imu_driver.c` | MPU6050/MPU9250 双芯片自适应 (WHO_AM_I 识别, 6050 跳过磁力计), Mahony 姿态融合, 校准存 NVS |
 | `drivers/uart_driver.c` | UART2 (GPIO19/20) + UART1 (GPIO4/5) 通信驱动 |
 | `drivers/adc_driver.c` | ADC 电池检测 (GPIO3=ADC1_CH2, 分压 51k/10k) |
-| `drivers/led_driver.c` | WS2812 电池指示灯 (GPIO48, `bpuppy_adc.init()` 自动激活; 蓝=满电/红=低压/闪烁=危险)。**标定唯一实现** — 系数存 NVS, `bpuppy_led.batt_v()` 读电压, `set_cal/reset_cal` 改标定 |
+| `drivers/led_driver.c` | WS2812 电池指示灯 (GPIO48, `bpuppy_adc.init()` 自动激活; 蓝=满电/红=低压/闪烁=危险)。**标定唯一实现** — 系数存 NVS, `bpuppy_led.batt_v()` 读电压, `bpuppy_led.batt_pct()` 读电量 0-100 (7.4V=100%/6.6V=0%, 与 LED 分界点同源; 读不到返回 0), `set_cal/reset_cal` 改标定 |
 | `drivers/ble_driver.c` | NimBLE GATT 服务 — 编译互斥 (KittenBlock Nordic / Hiwonder FFE0) |
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
@@ -423,14 +423,22 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
                 bpuppy_motion / poses（用户积木里的动作）
 ```
 
-**设计铁律（2026-08-19 起）**：固件收到语音指令**只转发事件信号，不做任何动作**。要不要动、怎么动，完全由 KittenBlock 用户程序决定。这条铁律让"语音功能"和"机器狗动作"彻底解耦——换动作只改积木，不动固件。
+**设计铁律（2026-08-19 起，2026-09-27 修订）**：固件收到语音指令**默认只转发事件信号，不做任何动作**。要不要动、怎么动，完全由 KittenBlock 用户程序决定。这条铁律让"语音功能"和"机器狗动作"彻底解耦——换动作只改积木，不动固件。
+
+> ⭐ **唯一例外：`0x3F` 播报电压**。收到它时固件内置播报电量百分比（`_say_batt_pct`：读
+> `bpuppy_led.batt_pct()` → `say_num()` 发 `AA 55 72 <pct> 55 AA`）。
+> 破例理由：这是"把固件自己采到的电池数据念出来"，属于固件自身状态的播报，不是运动/姿态动作；
+> 而电压的唯一真源在 C 层 `led_driver.c`，用户程序侧抄不到那份标定。
+> **后果（已接受）**：因为是**无条件**执行，用户程序里若也写「当收到 [播报电压] 指令」积木，
+> 固件播报与用户动作**会同时触发**（听感上"报两次"）。
+> 平台侧前提：CI-33T 的【串口输入】要配 `AA 55 72 <数据> 55 AA` 的 0–100 词条。
 
 ### 1. 三层各自管什么
 
 | 层 | 文件 | 职责 |
 |----|------|------|
 | 硬件/协议 | 接线 + CI-33T 平台配置 | 语音词 ↔ 串口字节的转换 |
-| 固件 | `frozen/voice.py`（frozen 模块） | UART2 收发 + 后台线程扫描 + **事件注册与分发**（无内置动作） |
+| 固件 | `frozen/voice.py`（frozen 模块） | UART2 收发 + 后台线程扫描 + **事件注册与分发**（默认无内置动作，`0x3F` 除外） |
 | 用户 | KittenBlock 扩展 + 用户程序 | `voiceWhenX` 事件函数 → 动作积木 |
 
 #### 1.1 硬件层（接线 + 协议）
@@ -455,7 +463,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 | 0x34 | 右转 | 0x3C | 邀玩 |
 | 0x35 | 加速 | 0x3D | （未用） |
 | 0x36 | 减速 | 0x3E | （未用） |
-| 0x37 | 点头 | 0x3F | 播报电压 |
+| 0x37 | 点头 | 0x3F | 播报电压 ★固件内置动作 |
 
 - CI-33T 平台（智能公元）配置：每个命令词配【串口发送】输出**命令帧** `BB <CMD> 00 EE`；**角度输出保持原样 `<角度> 00 00 00` 不动**；要狗发声时配【串口输入】词条匹配 `AA 55 <数据> 55 AA` 帧触发音效。波特率两边都 9600。
 - > ⚠ **模块侧与固件必须同为 4 字节命令帧**：新固件认不出旧的裸 2 字节命令（拼不成帧，当残帧留着），14 条命令词会全哑。反向兼容（平台先改、固件还是旧的）没问题 —— 旧固件逐字节扫到帧内 CMD 照样派发。
@@ -494,6 +502,8 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
   取值而非写死 hex，是为了保住"换声音只改固件常量和下拉一行、积木不用动"这条性质。
 - 1 个播报数字积木（`voiceSayNum`，「播报数字 [NUM]」）：滑块 0–100，`pycode: 'voice.say_num([NUM])'`
   → 发 `AA 55 72 <数字> 55 AA`。范围与钳位见 §3.2.2。
+- ⭐ **没有"播报电量"积木**（2026-09-27 决定不做）：说「播报电压」由**固件内置**自动播报电量百分比
+  （`voice._say_batt_pct`），不需要 KittenBlock 参与 —— 见上文铁律的唯一例外。
 
 ### 2. 事件注册机制（核心难点，含坑）
 
@@ -806,7 +816,7 @@ IMU: I2C0 (SDA=GPIO14, SCL=GPIO21, addr=0x68)。芯片自适应: WHO_AM_I 识别
 UART2: GPIO20=RX, 19=TX (CI-33T / micro:bit, ⚠ 2026-08-19 起反转 TX=19/RX=20; ⚠ GPIO19/20=USB_D-/D+, 固件已关 TinyUSB 释放, 见 docs/硬件连接.md)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
-ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。`bpuppy_adc.init()` 同时激活 GPIO48 WS2812 电池指示灯 (≥7.4V 蓝 / 6.6~7.4V 渐变 / ≤6.6V 红 / <6.4V 闪烁)。
+ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。`bpuppy_adc.init()` 同时激活 GPIO48 WS2812 电池指示灯 (≥7.4V 蓝 / 6.6~7.4V 渐变 / ≤6.6V 红 / <6.4V 闪烁)。电量定标与之同源: **7.4V=100%, 6.6V=0%** (`bpuppy_led.batt_pct()` / `voltage.read_pct()`)。
 完整 GPIO 分配表见 `docs/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)
@@ -967,6 +977,11 @@ idf.py flash monitor       # 烧录并监控
 - [ ] 语音: 开机日志出现 `voice: event 0x31 -> voiceWhenFwd`（事件函数已注册）
 - [ ] 语音: **声源角度** —— 拍手/说话 → 串口 `VOICE RX: <角度>000000`，REPL 里 `voice.SoundAngle` 变 0–180
       （没收到过是 `-1`）。**关键回归**：角度 48–60 度时**不应**出现 `VOICE CMD: 0x30/0x35/0x3c` 之类误派发
+- [ ] 电量: REPL 里 `voltage.read_pct()` 与手算 `(read_v()-6.6)/0.8*100` 对得上（0–100 整数）；
+      `voltage.stop()` 后 `read_pct()` 是 **0**（不是 -1）
+- [ ] 语音: **播报电量内置动作** —— `voice._buf = bytes([0xBB,0x3F,0x00,0xEE]); voice._parse()`
+      或直接说"播报电压" → CI-33T 出声报出百分比。**关键回归**：`0x37`/`0x30` 等其它码
+      **仍然只打 `VOICE CMD` 日志、不出声**（例外只开了 `0x3F` 一个）
 - [ ] 相机: 开图传后串口出现 `cam_hal: PSRAM DMA mode enabled` + 两行 `frame buffer in PSRAM`（**串口**看，蓝牙看不到）
 
 ---

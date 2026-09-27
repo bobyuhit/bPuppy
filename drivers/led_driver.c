@@ -37,6 +37,7 @@
  *   bpuppy_led.off()               # 熄灭
  *   bpuppy_led.batt(on=True)       # 手动启停电池监控任务
  *   bpuppy_led.batt_v()            # 最近一次已标定电池电压 (V); 监控未跑时返回 -1.0
+ *   bpuppy_led.batt_pct()          # 电量百分比 (整数 0-100); 7.4V=100%, 6.6V=0%, 读不到返回 0
  *   bpuppy_led.get_cal()           # → (a, b) 当前生效的标定系数
  *   bpuppy_led.set_cal(a, b)       # 设置并写入 NVS (掉电保留)
  *   bpuppy_led.reset_cal()         # 清除 NVS 标定, 恢复默认常量
@@ -317,6 +318,18 @@ STATIC mp_obj_t mp_led_batt_v(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_led_batt_v_obj, mp_led_batt_v);
 
+/* 电量百分比 —— 从 s_batt_v 现算, 不另存缓存 (只有一份状态, 没有同步风险)。
+ * 端点直接复用 BATT_LOW_V / BATT_HIGH_V ⇒ 百分比的两个分界点和 LED 变色点永远重合 */
+STATIC mp_obj_t mp_led_batt_pct(void) {
+    float v = s_batt_v;
+    if (v < 0.0f) return mp_obj_new_int(0);      /* 无有效读数 → 0 */
+    float pct = (v - BATT_LOW_V) * 100.0f / (BATT_HIGH_V - BATT_LOW_V);
+    if (pct < 0.0f) pct = 0.0f;                  /* 低于 6.6V (含红闪区) 一律 0 */
+    if (pct > 100.0f) pct = 100.0f;              /* 高于 7.4V (真实满充 ~8.4V) 钳到 100 */
+    return mp_obj_new_int((int)(pct + 0.5f));    /* 四舍五入 */
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_led_batt_pct_obj, mp_led_batt_pct);
+
 STATIC mp_obj_t mp_led_get_cal(void) {
     mp_obj_t items[2] = {
         mp_obj_new_float(s_cal_a),
@@ -359,6 +372,7 @@ STATIC const mp_rom_map_elem_t bpuppy_led_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_off),       MP_ROM_PTR(&mp_led_off_obj) },
     { MP_ROM_QSTR(MP_QSTR_batt),      MP_ROM_PTR(&mp_led_batt_obj) },
     { MP_ROM_QSTR(MP_QSTR_batt_v),    MP_ROM_PTR(&mp_led_batt_v_obj) },
+    { MP_ROM_QSTR(MP_QSTR_batt_pct),  MP_ROM_PTR(&mp_led_batt_pct_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_cal),   MP_ROM_PTR(&mp_led_get_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_cal),   MP_ROM_PTR(&mp_led_set_cal_obj) },
     { MP_ROM_QSTR(MP_QSTR_reset_cal), MP_ROM_PTR(&mp_led_reset_cal_obj) },
