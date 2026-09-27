@@ -1,32 +1,39 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# _ok: 上一次设置类积木是否真的生效 (被拒时固件保持原值, 读回比对为 False)\n#   设置块尾部会把 get_params() 读回来比对并更新它; 「设置成功？」积木就是读这个值。\n_ok = True\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册\nvoice.set_main_globals(globals())   # 事件函数扫描用主全局 (sys.modules[__main__] 为 None)'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_lift = 30\n_height = 70\n\n# _ok: 上一次设置类积木是否真的生效 (被拒时固件保持原值)\n#   设置块直接用固件返回的 True/False (set_params / set_speed / set_turn 的返回值\n#   已透传到 MicroPython), 不再靠 get_params() 读回比对 —— 没有取整容差误判。\n#   「设置成功？」积木就是读这个值。\n_ok = True\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册\nvoice.set_main_globals(globals())   # 事件函数扫描用主全局 (sys.modules[__main__] 为 None)'},
   },
   blocks: [
     "## $$cat_motion",
+    // ⚠ 四个方向块都推一句 set_speed(_speed) —— 看着冗余, 但**别删**:
+    //   这一句是还原拆分前的行为 (旧 set_params 的第 1 参就是 speed, 按方向键顺手把速度设回去)。
+    //   删了的后果: 用网页遥控器/文本块把速度设成 7 之后按「前进」, 速度会一直是 7 而不是回到 _speed。
+    //   _speed 初值 2.5, 「设置速度」块会同步更新它 ⇒ 对纯积木用户两种写法等价。
+    // ★★ 2026-09-28 注意: 这四个块最后都推 set_gait('go'), 而 go 会**接管** stride/lift/height
+    //   ⇒ 这几句 set_params 在 go 下唯一的作用是**方向** (stride 的正负号), 数值被固件忽略。
+    //   真正决定速度的是上面那句 set_speed(_speed); 想让 _stride/_lift/_height 生效, 得用 walk/trot。
     {
       opcode: 'forward',
       blockType: 'command',
       text: '$$forward',
-      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'backward',
       blockType: 'command',
       text: '$$backward',
-      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
+      pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(-abs(_stride), _lift, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnLeft',
       blockType: 'command',
       text: '$$turnLeft',
-      pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'turnRight',
       blockType: 'command',
       text: '$$turnRight',
-      pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+      pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
     },
     {
       opcode: 'stop',
@@ -57,31 +64,42 @@
         HEIGHT: { type: 'number', defaultValue: '70' },
         LIFT:   { type: 'number', defaultValue: '30' }
       },
-      // 顺序耦合 (docs/error.md §2.2 #7): set_params 用**当前** lift 校验, set_lift 用**当前**
-      // stride/height 校验。先 lift → params → 读回 lift 不对就补一次, 可覆盖全部情况。
+      // 三个值 (步长/抬脚/站高) 是同一条足端轨迹的三个维度, 固件侧**一起判、一起写** ——
+      // 不存在"用谁的旧值校验谁"的顺序问题 (旧版那个 set_lift → params → 读回 → 补一次的
+      // 三段式补丁已随 set_lift 一起删掉, 见 docs/error.md §2.2 #7)。
       // ⚠ 方向**不在这个块里**: 本块只改尺寸, 前后沿用板上当前步长的符号
       //   (get_params()[1] >= 0 即前进) —— 所以「后退」之后再来改步长, 狗不会掉头。
-      // 必须回写 _stride/_height 两个模块全局 (正数), 否则之后拖「前进/后退」会被旧值覆盖。
+      // ★ 必须回写 _stride/_lift/_height **三个**模块全局 (都取正数), 否则之后按「前进/后退」
+      //   会拿旧全局覆盖 —— 尤其 _lift 漏掉时, 设过的抬脚高度会被静默写回 30。
       // 步态**不在这里设**: 改尺寸不打断当前步态, 狗该怎么走还怎么走。
-      // 尾部**读回比对**: 组合超限时固件整组拒绝并保持原值, 三个值对不上 ⇒ _ok = False + 嘤嘤叫。
-      // 容差 0.5mm 只为容忍固件取整 —— 被拒时差的是几十 mm, 必判 False。
+      // 返回值就是固件的判定结果 (整组被拒 ⇒ False + 嘤嘤叫), 不再读回比对。
+      // ★★ 2026-09-28: 走 `go` 步态时这三个值**固件侧一概不用** —— go 的步长/站高/抬脚
+      //    全由速度自己算 —— speed≤4: 步长70/站高70/抬脚30; speed≥6: 步长50/站高70/抬脚5;
+      //    中间线性插值 (见 docs/README.md「GO 自适应」表)。只拿 stride 的正负号当方向。
+      //    四个方向块用的都是 go ⇒ 本块设的值对「前进/后退/左转/右转」**没有影响**,
+      //    要让它生效得先用「切换步态」选 walk 或 trot。下面那句回写仍然必须留着:
+      //    walk/trot 下它就是真的在起作用。
       pycode: [
         '_stride = abs([STRIDE])',
+        '_lift = [LIFT]',
         '_height = [HEIGHT]',
         '_dir = 1 if bpuppy_motion.get_params()[1] >= 0 else -1',
-        'bpuppy_motion.set_lift([LIFT])',
-        'bpuppy_motion.set_params(_speed, _dir * _stride, _height)',
-        'if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:',
-        '    bpuppy_motion.set_lift([LIFT])',
-        '_p = bpuppy_motion.get_params()',
-        '_ok = abs(_p[1] - _dir * _stride) < 0.5 and abs(_p[2] - _height) < 0.5 and abs(_p[3] - [LIFT]) < 0.5',
+        '_ok = bpuppy_motion.set_params(_dir * _stride, _lift, _height)',
         'if not _ok:',
         '    voice.say(*voice.SND_YING)'
       ]
     },
-    // ⚠ set_body_pose 的签名是 (roll, pitch, yaw) —— 函数里 roll 在前, 而块上文字是
-    //   "先俯仰后滚转" ⇒ pycode 里 [ROLL] 必须写在 [PITCH] 前面。写反了不报错, 只是俯仰滚转对调。
-    //   它不校验、不写 NVS、设了就保持 (块里不复位, 与现有语义一致)。
+    // bodyPose 的 C 签名改成 (俯仰, 滚转) 了 —— 跟块上文字「俯仰 [PITCH]…滚转 [ROLL]」同序,
+    // 所以 pycode 按 [PITCH], [ROLL] 顺着写即可 (旧版是 (roll, pitch, yaw), 必须反着写才不串)。
+    // ★★ 2026-09-28: 它现在**校验**了 —— 姿态补偿是逐腿叠加进 z 的 (前腿 +z_pitch / 后腿
+    //    -z_pitch, 左 -z_roll / 右 +z_roll), 跟 stride/height/lift 一样决定足端够不够得着,
+    //    所以走同一条 traj_combo_bad()。够不着 ⇒ **俯仰横滚一个都不写、保持原值**、返回 False
+    //    ⇒ 嘤嘤叫 + 「设置成功？」为假。
+    //    **默认 stride70/height70 下 |俯仰| ≤ 5.81°、|横滚| ≤ 6.15°** (源码注释说"实测在用"
+    //    的 -5 能过, -6 就被拒) —— 想压更大姿态先减步长: stride 40 时 -10 能过。
+    //    也就是说"先设参数再压姿态"这个顺序耦合**没有了**, 反过来压也一样拦得住
+    //    (docs/error.md §2.2 #2)。
+    // 仍然不写 NVS、设了就保持 (块里不复位, 与现有语义一致)。
     {
       opcode: 'bodyPose',
       blockType: 'command',
@@ -90,12 +108,21 @@
         PITCH: { type: 'number', defaultValue: '0' },
         ROLL:  { type: 'number', defaultValue: '0' }
       },
-      pycode: 'bpuppy_motion.set_body_pose([ROLL], [PITCH], 0)'
+      pycode: [
+        '_ok = bpuppy_motion.set_body_pose([PITCH], [ROLL])',
+        'if not _ok:',
+        '    voice.say(*voice.SND_YING)'
+      ]
     },
-    // ⚠ 这个块会**写 NVS** (set_center 内部调 motion_save_geometry, motion_task.cpp:983),
-    //   每跑一次写一次 flash, 且值跨重启保留。上限 ±L1/2 (默认 20mm), 超了被拒并保持原值。
-    // ⚠ 它**不参与 `_ok`**: get_geometry() 只返回 (L1, L2, 半长, 半宽), 重心偏移没有读回接口
-    //   ⇒ 被拒时**没有**嘤嘤叫, 「设置成功？」也停在上一块设置的结果上。文档里写明。
+    // ⚠ 这个块会**写 NVS** (set_center 内部调 motion_save_geometry, motion_task.cpp:1052),
+    //   每跑一次写一次 flash, 且值跨重启保留。**被拒时不写** —— 两道校验都在 save 之前返回。
+    // ★★ 2026-09-28: 两道闸门 —— ① |偏移| ≤ L1/2 (默认 20mm, 只看量级); ② 跟当前
+    //    stride/height/lift/姿态**组合起来够不够得着**。默认 stride70/height70 下脚已伸到
+    //    78.3mm、离可达上限 84 只剩 5.7mm ⇒ 重心实际最多挪 **11.4mm**, 15 / 20 会被 ② 拒掉
+    //    (以前只判 ①, 会放行 ⇒ 静默够不着、脚在地上蹭)。想挪更多先减步长:
+    //    stride 60 时 15 能过, stride 50 时 19.4 能过。
+    // ★ 现在**参与 `_ok`** 了: set_center 返回 bool (以前无论成没成都返回 None, 在 mp 层被吞掉)。
+    //   它自己**没有读回接口** (get_geometry 只返回 L1/L2/半长/半宽) ⇒ 判它成没成只能靠这个返回值。
     {
       opcode: 'setCenter',
       blockType: 'command',
@@ -103,7 +130,11 @@
       arguments: {
         OFFSET: { type: 'number', defaultValue: '0' }
       },
-      pycode: 'bpuppy_motion.set_center([OFFSET])'
+      pycode: [
+        '_ok = bpuppy_motion.set_center([OFFSET])',
+        'if not _ok:',
+        '    voice.say(*voice.SND_YING)'
+      ]
     },
     {
       opcode: 'setGait',
@@ -123,7 +154,11 @@
     //   只动速度/方向 —— 高度/抬脚/转弯率/步态都不碰; 狗在走的话是**边走边改**。
     //   速度不打断步态, 也**不会**让站着的狗起步 (要起步还是用「前进/后退」)。
     //   同一次改版删掉了「步长设为」「身体高度设为」「抬脚高度设为」(并入「运动参数」)。
-    // 尾部读回比对: 速度超 0~10 时固件整组拒绝并保持原值 ⇒ _ok = False + 嘤嘤叫。
+    // 2026-09-27 二次改版 (固件 API 拆分): 速度走 set_speed, 方向仍走 set_params —— 方向就是
+    //   步长的符号, 而 set_params 现在收 (步长, 抬脚, 站高)。
+    // 速度独立成 set_speed 了 (不再跟 stride/height 绑在一个 set_params 里), 直接看返回值。
+    // DIR 仍是本块的活开关 —— 方向 = 步长的符号, 所以它走 set_params。
+    // ⚠ 两条语句分开写、不用 `and` 串联: 串联会在第一条失败时短路掉第二条, 方向就不改了。
     {
       opcode: 'setSpeed',
       blockType: 'command',
@@ -141,14 +176,15 @@
       },
       pycode: [
         '_speed = [SPEED]',
-        'bpuppy_motion.set_params(_speed, ([DIR]) * abs(_stride), _height)',
-        '_p = bpuppy_motion.get_params()',
-        '_ok = abs(_p[0] - _speed) < 0.05 and abs(_p[1] - ([DIR]) * abs(_stride)) < 0.5',
+        '_ok = bpuppy_motion.set_speed(_speed)',
+        'if not bpuppy_motion.set_params(([DIR]) * abs(_stride), _lift, _height):',
+        '    _ok = False',
         'if not _ok:',
         '    voice.say(*voice.SND_YING)'
       ]
     },
-    // ⚠ set_turn 把超范围的值**静默钳到 ±1** (不报错、不返回) ⇒ 只有读回比对才发现。
+    // ⚠ set_turn 超范围时**静默钳到 ±1** (行为未变), 但现在会返回 False ⇒ 直接就是 _ok,
+    //   不必再读回比对。注意 False 的含义是"没原样采纳", 值本身已经写进去了 (±1)。
     {
       opcode: 'setTurn',
       blockType: 'command',
@@ -160,8 +196,7 @@
         }
       },
       pycode: [
-        'bpuppy_motion.set_turn([TURN])',
-        '_ok = abs(bpuppy_motion.get_params()[5] - [TURN]) < 0.05',
+        '_ok = bpuppy_motion.set_turn([TURN])',
         'if not _ok:',
         '    voice.say(*voice.SND_YING)'
       ]
@@ -210,9 +245,12 @@
       pycode: 'bpuppy_motion.get_params()[5]'
     },
     // 「设置成功？」: 上一次设置类积木(运动参数/速度/转弯率)是否**真的生效**。
-    // 原理: 写完把 get_params() 读回来比对 —— 被拒时固件保持原值, 值对不上就是 False。
-    // 不依赖固件版本, 顺带能抓到 set_turn 的静默钳位(±1)。
-    // ⚠ 「重心偏移」没有读回接口 ⇒ 它不参与 _ok。
+    // 原理: 现在直接读固件返回的 True/False (set_params / set_speed / set_turn 的返回值
+    //   已透传到 MicroPython) —— 不再是"写完读回来比对", 所以没有取整容差误判。
+    //   set_turn 返回 False 表示"没原样采纳"(已钳到 ±1), 值本身是写进去了的。
+    // ⚠ 「重心偏移」没有读回接口, 但 set_center 现在**返回 bool** ⇒ 它跟别的设置块一样
+    //   参与 `_ok` (2026-09-28 起; 以前 mp 层把返回值吞了, 返回的是 None)。
+    //   同理「机身姿态」(bodyPose) 现在也参与。
     {
       opcode: 'setOk',
       blockType: 'boolean',

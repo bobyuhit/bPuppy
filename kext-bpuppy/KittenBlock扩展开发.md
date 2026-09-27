@@ -300,7 +300,7 @@ menus: {
 - `[参数名]` 会被实际值替换
 - **普通 string 文本框参数**（无 `menu`）：**手动加引号**。`pycode: "bpuppy_motion.set_gait('[GAIT]')"` → 生成 `set_gait('go')`
 - **menu 下拉参数**（有 `menu` 字段）：**不要手动加引号**！KittenBlock 自动加。`pycode: "bpuppy_motion.set_gait([GAIT])"` → 生成 `set_gait('go')`。若写了 `'[GAIT]'` 会生成 `set_gait(''go'')` 双层引号 → **SyntaxError**
-- 数字参数直接替换：`pycode: 'bpuppy_motion.set_lift([LIFT])'`
+- 数字参数直接替换：`pycode: 'bpuppy_motion.set_params([STRIDE], [LIFT], [HEIGHT])'`
 - `value` 类型参数：直接替换变量引用，不加引号
 
 ### 5.8 积木定义示例
@@ -316,25 +316,25 @@ blocks: [
     opcode: 'forward',
     blockType: 'command',
     text: '前进',
-    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
   },
   {
     opcode: 'backward',
     blockType: 'command',
     text: '后退',
-    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, -abs(_stride), _height); bpuppy_motion.set_gait('go')"
+    pycode: "bpuppy_motion.set_turn(0); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(-abs(_stride), _lift, _height); bpuppy_motion.set_gait('go')"
   },
   {
     opcode: 'turnLeft',
     blockType: 'command',
     text: '左转',
-    pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    pycode: "bpuppy_motion.set_turn(-0.8); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
   },
   {
     opcode: 'turnRight',
     blockType: 'command',
     text: '右转',
-    pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')"
+    pycode: "bpuppy_motion.set_turn(0.8); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
   },
   {
     opcode: 'stop',
@@ -358,12 +358,12 @@ blocks: [
     // pycode 用数组 (KittenBlock 用 join("\r\n")) —— 单行 `if c: a; b` 里 b 也会进 if 体
     pycode: [
       '_stride = abs([STRIDE])',
+      '_lift = [LIFT]',
       '_height = [HEIGHT]',
       '_dir = 1 if bpuppy_motion.get_params()[1] >= 0 else -1',
-      'bpuppy_motion.set_lift([LIFT])',
-      'bpuppy_motion.set_params(_speed, _dir * _stride, _height)',
-      'if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:',
-      '    bpuppy_motion.set_lift([LIFT])'
+      '_ok = bpuppy_motion.set_params(_dir * _stride, _lift, _height)',
+      'if not _ok:',
+      '    voice.say(*voice.SND_YING)'
     ]
   },
   {
@@ -374,7 +374,13 @@ blocks: [
       SPEED: { type: 'number', defaultValue: '2.5' },
       DIR:   { type: 'value', menu: 'dirMenu', defaultValue: '1' }
     },
-    pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, ([DIR]) * abs(_stride), _height)'
+    // ⚠ 两条语句分开写, 不用 `and` 串联 —— 串联会在第一条失败时短路掉第二条
+    pycode: [
+      '_speed = [SPEED]',
+      '_ok = bpuppy_motion.set_speed(_speed)',
+      'if not bpuppy_motion.set_params(([DIR]) * abs(_stride), _lift, _height):',
+      '    _ok = False'
+    ]
   },
   "---",
   "## 步态",
@@ -490,10 +496,11 @@ from time import sleep
 # ===== bPuppy 自动初始化 =====     ← libs 注入（最前，一次）
 _speed = 2.5
 _stride = 70
+_lift = 30
 _height = 70
 # 原厂已 init_all + 站姿待命 (不重复初始化)
 # ===== 用户积木 =====
-bpuppy_motion.set_turn(0); bpuppy_motion.set_params(_speed, _stride, _height); bpuppy_motion.set_gait('go')
+bpuppy_motion.set_turn(0); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')
 ```
 
 ---
@@ -806,20 +813,22 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 **为什么换 MCU 前能跑、现在不能**：与 MCU 无关。git 历史里 `_speed = 2.5; _stride = 70; _height = 70` 这条 40 字节 afterConnect 是 2026-08 才加进 `extension.json`；此前命令都 ≤21 字节，**从不触发 20 字节分包边界**。20 字节分包隐患自 BLE 引入（NimBLE）起就存在，只是这次命令长度 + echo 并发时序共同触发了它。
 
+> ⚠ 2026-09-27 这条 afterConnect 又长了一点（加了 `_lift = 30`，40 → 52 字节）。修复是在 `ble_stream.c` 做了批量打包 + MTU 协商，跟命令长度无关，所以不影响；但**别再往这一行里堆东西** —— 每多一个变量，都是一次跨 20 字节边界的实测。
+
 ---
 
 ## 12. bPuppy 现有扩展积木清单
 
 | 分类 | 积木 | pycode 生成 |
 |------|------|------------|
-| 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(0); set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
-| 高级运动 | **运动参数**（步长 + 身体高度 + 抬脚高度，3 个槽，**横排单行**） | 见下方代码块（尾部读回 `_ok` + 失败嘤嘤叫） |
-| 高级运动 | 速度 [SPEED] 方向 [DIR] | `_speed = [SPEED]` → `set_params(_speed, ([DIR]) * abs(_stride), _height)` → 读回 `_ok` ⚠ 2026-09-27 由原「速度设为」并入方向下拉 |
+| 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(±0/∓0.8); set_speed(_speed); set_params(±_stride, _lift, _height); set_gait('go')` / `set_gait('stop')` ⚠ 四个方向块都推 `_speed`（旧版速度捎在 `set_params` 里，拆开后补成独立一句）|
+| 高级运动 | **运动参数**（步长 + 身体高度 + 抬脚高度，3 个槽，**横排单行**） | 见下方代码块（直接用 `set_params` 的返回值当 `_ok` + 失败嘤嘤叫）⚠ 走 `go`（四个方向块用的就是它）时这三个值固件侧不用，只对 walk/trot 有效 |
+| 高级运动 | 速度 [SPEED] 方向 [DIR] | `_ok = set_speed([SPEED])` + `set_params(([DIR]) * abs(_stride), _lift, _height)` ⚠ 速度走独立的 `set_speed`；**DIR 仍走 `set_params`**（方向 = 步长的符号）⚠ 2026-09-27 由原「速度设为」并入方向下拉 |
 | 高级运动 | 切换步态 [GAIT] | `set_turn(0); set_gait([GAIT])` ⚠ 下拉只有 4 个合法步态名 ⇒ **不做 `_ok`**（没有"被拒"这回事） |
-| 高级运动 | 转弯率设为 [TURN] | `set_turn([TURN])` → 读回 `_ok` ⚠ `set_turn` 超 ±1 是**静默钳位**（不报错不返回）⇒ 只有读回比对才发现 |
+| 高级运动 | 转弯率设为 [TURN] | `_ok = set_turn([TURN])` ⚠ `set_turn` 超 ±1 是**钳位**（值仍写入 ±1），返回 `False` 表示"没原样采纳" |
 | 高级运动 | 读数积木 ×5：(速度) (步长) (身体高度) (抬脚高度) (转弯率) | `bpuppy_motion.get_params()[0/1/2/3/5]` ⚠ 都带 `disableMonitor: false` —— **不写这行积木栏里就没有舞台勾选框**，见 §5.9 |
 | 高级运动 | **设置成功？**（`boolean`） | `_ok`（上一次设置类积木是否真的生效；被拒 = False） |
-| 高级运动 | **身体姿态**（俯仰 + 滚转） | `set_body_pose([ROLL], [PITCH], 0)` ⚠ 函数签名是 `(roll, pitch, yaw)`，块上文字却是"先俯仰后滚转" ⇒ pycode 里 `[ROLL]` 必须在前，写反不报错、只是两者对调 |
+| 高级运动 | **身体姿态**（俯仰 + 滚转） | `set_body_pose([PITCH], [ROLL])` —— 顺序与块上文字一致（旧签名是 `(roll, pitch, yaw)`，2026-09-27 已改为 `(pitch, roll)` 并删掉死字段 yaw） |
 | 高级运动 | **重心偏移 [OFFSET]** mm | `set_center([OFFSET])` ⚠ **会写 NVS**（`motion_task.cpp:983` 调 `motion_save_geometry`），值跨重启保留；上限 ±`L1/2`（默认 20mm） |
 | 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
@@ -834,35 +843,39 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 ```python
 _stride = abs([STRIDE])                    # 存正数; 「后退」块用 -abs(_stride)
+_lift = [LIFT]                             # ★ 三个全局都要回写, 漏 _lift 会把抬脚高度冲掉
 _height = [HEIGHT]
 _dir = 1 if bpuppy_motion.get_params()[1] >= 0 else -1   # 方向 = 沿用板上当前步长的符号
-bpuppy_motion.set_lift([LIFT])
-bpuppy_motion.set_params(_speed, _dir * _stride, _height)
-if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:
-    bpuppy_motion.set_lift([LIFT])         # 顺序耦合重试, 见下
-_p = bpuppy_motion.get_params()            # ↓ 读回比对: 被拒 = 这三个值没变成你要的
-_ok = abs(_p[1] - _dir * _stride) < 0.5 and abs(_p[2] - _height) < 0.5 and abs(_p[3] - [LIFT]) < 0.5
+_ok = bpuppy_motion.set_params(_dir * _stride, _lift, _height)   # 固件返回 True/False
 if not _ok:
     voice.say(*voice.SND_YING)
 ```
 
-四个关键点：
+五个关键点：
 
-1. **必须回写 `_stride` / `_height` 模块全局** —— 「前进」「后退」「速度 … 方向」等块全靠它们。
-   不回写的话，用完「运动参数」再拖一个「前进」，参数会被旧值覆盖回去。
+1. **必须回写 `_stride` / `_lift` / `_height` 三个模块全局** —— 「前进」「后退」「速度 … 方向」等块全靠它们。
+   不回写的话，用完「运动参数」再拖一个「前进」，参数会被旧值覆盖回去；**`_lift` 漏掉时
+   最阴**：设过抬脚 50 之后按「前进」会静默写回 30。
 2. **方向不在这个块里**：`set_params` 的 stride 带符号，而 `_stride` 全局恒存正数 ⇒
    前后由 `get_params()[1]` 的符号决定（`>= 0` 即前进）。这样狗在「后退」中改步长**不会掉头**。
-3. **顺序耦合**（`docs/error.md` §2.2 #7）：`set_params` 用**当前** `lift` 校验，`set_lift` 用**当前**
-   `stride/height` 校验。一个块发多个 setter 会踩到"谁先谁后决定成败"。
-   先 lift → params → **读回 lift 不对就补一次**，可覆盖全部情况，不需要固件侧原子 API。
-4. **尾部读回比对**（2026-09-27 加）：固件拒绝时**整组保持原值** ⇒ 写完把 `get_params()` 读回来比一下
-   就知道成没成 —— 不依赖固件版本，顺带能抓到 `set_turn` 的**静默钳位**。
-   容差 0.5mm / 0.05 只为容忍固件取整；被拒时差的是几十 mm，必判 `False`。
-   结果写进 `_ok`（`boolean` 积木「设置成功？」读它）+ 失败 `voice.say(*voice.SND_YING)` 叫一声。
+3. **没有顺序耦合了**（2026-09-27 起）：`set_params(步长, 抬脚, 站高)` 三个值一起判、一起写，
+   它们之间不存在"谁用谁的旧值"的问题 —— 原来那个 `set_lift → params → 读回 → 补一次` 的三段式
+   补丁就是为它打的，已随 `set_lift` 一起删掉。详见 `docs/error.md` §2.2 #7。
+4. **`_ok` 直接来自固件返回值**（2026-09-27 二轮改版）：`set_params` / `set_speed` / `set_turn`
+   现在把 C 侧的 `bool` 透传到 MicroPython，所以**不再需要 `get_params()` 读回比对**，
+   也没有取整容差误判。结果写进 `_ok`（`boolean` 积木「设置成功？」读它）+ 失败
+   `voice.say(*voice.SND_YING)` 叫一声。
    ⚠ **`_ok` 的初值要在两处各写一次**：`libs` 注入头（`kblock.json5` 顶部）和 `extension.json` 的
    `afterConnect` —— 在线执行走 `afterConnect`、上传跑走 `libs` 注入，漏一处就是 `NameError`。
    ⚠ **「重心偏移」不参与 `_ok`**：`get_geometry()` 只返回 `(L1, L2, 半长, 半宽)`，没有重心偏移的读回接口。
    ⚠ `voice.say(*voice.SND_YING)` 是**纯 ASCII**（§9.10），和「狗叫 [嘤嘤]」积木同一条帧；没接 CI-33T 听不到、但不报错。
+5. **走 `go` 步态时这三个值固件侧一概不用**（2026-09-28）：go 的步长 / 站高 / 抬脚全由 speed 自己算
+   （`motion_task.cpp` 的 GO 分支里 `eff_stride` / `eff_height` / `eff_lift` 被直接覆盖；
+   speed≤4 → 步长 70 / 站高 70 / 抬脚 30；speed≥6 → 步长 50 / 站高 70 / 抬脚 **5**；中间插值），
+   `set_params` 唯一还起作用的是 stride 的**正负号** —— go 拿它当方向。
+   四个方向块用的都是 `set_gait('go')` ⇒ **这个块设的值对「前进 / 后退 / 左转 / 右转」没有影响**，
+   只对 walk / trot 有效。详见 `docs/README.md`「GO 自适应」表。
+   （所以第 1 点那个"抬脚 50 被写回 30"的例子：值确实被写回去了，但在 go 下看不出行为差异。）
 
 > **2026-09-27 改版**：原 7 槽的「高级运动」拆成「运动参数」+ 单参数块。
 > 「步长设为」「身体高度设为」「抬脚高度设为」**三个块已删除**（并入「运动参数」）；
@@ -878,11 +891,15 @@ if not _ok:
 > 备选路线（预设下拉 / 一维档位滑块 / 板上试错收敛 / JS 抄 IK）**各自独立提案，勿顺手加**。
 
 底层 API（固件 C 模块，MicroPython 可调）：
-- `bpuppy_motion.set_params(speed, stride, height)` — speed 0~10, stride 正前负后, height mm
+- `bpuppy_motion.set_params(stride, lift, height)` — **步长 / 抬脚高度 / 站立高度**（三个一起判一起写），stride 正前负后，单位 mm，**返回 `True`/`False`**。⚠ 走 `go` 步态时这三个值**不被使用**（go 自己按速度算步长/站高/抬脚，只取 stride 的符号当方向）
+- `bpuppy_motion.set_speed(speed)` — 步频 0~10，与腿部轨迹无关，**返回 `True`/`False`**
 - `bpuppy_motion.set_gait('stop'/'walk'/'walkfwd'/'walkbck'/'go'/'trot'/'trotfwd'/'trotbck')` — 只有这 8 个是合法步态名。⚠ 未知名字**不会报错**，会走 fail-safe 停车 + 打印 `⚠ 未知步态`
 - ⚠ **`stand`/`sit`/`crouch`/`play`/`wave` 不是步态**，是 `poses.py` 里的**姿态函数**（`poses.stand()` 等），别混用
-- `bpuppy_motion.set_turn(-0.8~0.8)`
-- `bpuppy_motion.set_lift(mm)`
+- `bpuppy_motion.set_turn(-1~1)` — 超范围会被**钳到 ±1**（仍写入），返回 `False` 告知
+- `bpuppy_motion.set_body_pose(pitch, roll)` — **俯仰在前**
+- `bpuppy_motion.get_params()` → 7 元组 `(speed, stride, height, lift, omega, turn, gait)`
+  ⚠ **读的顺序和写的顺序不一样**：lift 在读里是第 4 个 `[3]`、在 `set_params` 里是第 2 个
+- ⚠ **`set_lift()` 已删除**（并入 `set_params` 第 2 参）；`set_body_pose` 的第 3 参 `yaw` 也已删除
 - `bpuppy_servo.init_all()` / `bpuppy_servo.load_cal()` / `bpuppy_servo.set_angle(ch, deg)`
 
 ---
