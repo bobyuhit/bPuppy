@@ -24,8 +24,8 @@ bPuppy 是基于 ESP32-S3 的 8 自由度四足机器狗（4腿 × 2DOF：髋+�
 | 左右髋宽 | 半宽 59mm（全宽 118mm） | `set_body_dims(bl, bw)` → NVS ⚠ 传**半宽** |
 | 膝角范围 | 10°~170° | `set_joint_limits()` → NVS |
 | 髋角范围 | 0°~180° | `set_joint_limits()` → NVS |
-| 速度范围 | 0~10 | `set_params()` |
-| 抬腿默认 | 30mm | `set_lift()` |
+| 速度范围 | 0~10 | `set_speed()` |
+| 抬腿默认 | 30mm | `set_params()` 第 2 参 |
 | 脚中位偏移 | 0mm | `set_center()` |
 | Walk 最优 | speed=2.5, stride=70, height=70 | 实测 |
 | Trot 最优 | speed=8.5, stride=70, height=60 | 实测 |
@@ -252,13 +252,24 @@ FreeRTOS:          ESP-IDF v5.1.2
 
 ### GO 自适应
 
-| speed | duty | gap | stride | height | pitch | 实际 |
-|-------|------|-----|--------|--------|-------|------|
-| ≤4 | 0.20 | 0.04 | 70 | 70 | 0° | walk |
-| 4~6 | 插值 | 插值 | 70→50 | 70 | 0° | 混合 |
-| ≥6 | 0.40 | 0.10 | 50 | 70 | 0° | trot |
+| speed | duty | gap | stride | height | lift | pitch | 实际 |
+|-------|------|-----|--------|--------|------|-------|------|
+| ≤4 | 0.20 | 0.04 | 70 | 70 | 30 | 0° | walk |
+| 4~6 | 插值 | 插值 | 70→50 | 70 | 30→5 | 0° | 混合 |
+| ≥6 | 0.40 | 0.10 | 50 | 70 | 5 | 0° | trot |
 
-lift 继承 `g_motion.lift_height` (默认 30mm)。实际 speed 经半周期平滑跟随 `target_speed`。
+★ **GO 下用户设的 stride / lift / height 三个值全部无效** —— 上表几项都由 speed 决定
+(`motion_task.cpp` 的 GO 分支里 `eff_stride`/`eff_height`/`eff_lift` 被直接覆盖)。
+**唯一还用得上的是 stride 的正负号** —— GO 拿它当方向 (正=前 负=后), 只接管 magnitude。
+要让用户设的三个值真正生效, 得用 `walk` / `trot`。
+
+抬脚的两个端点值在 `motion_task.cpp` 顶部: `GO_LIFT_LOW 30.0f` (speed≤4) 和
+`GO_LIFT_HIGH 5.0f` (speed≥6), 4~6 之间线性过渡。低速端 30 与 `LIFT_DEFAULT` /
+KittenBlock `_lift` 初值一致; 高速端 5 是**几乎贴地**的走法 —— 小跑步长收到 50、
+duty 到 0.40, 抬脚压低换更小的上下起伏。**抬脚 5mm ⇒ 摆动腿离地只有 5mm**,
+若实测发现刮地/异响/堵转, 先怀疑这里。
+
+实际 speed 经半周期平滑跟随 `target_speed`。
 
 ### 姿态过渡
 
@@ -764,11 +775,22 @@ python tools/capture.py COM3   # 端口换成实际值 (设备管理器查看)
 
 ### 2. `motion_set_params` 的参数语义
 
-- `speed` = 步频 (0~10, 0=停), 纯 magnitude
 - `stride` = 步长+方向 (正=前, 零=原地踏步, 负=后)
+- `lift`   = 抬脚高度 (mm), 抬腿最高点 z = height − lift
 - `height` = 站立高度 (mm)
 
-三个参数始终直接写入，无哨兵。
+三个参数**一起校验、一起写入**（`motion_validate_params(stride, height, lift)` 一次判完），
+始终直接写入、无哨兵；超限时整组拒绝并保持原值，返回 `false`。
+
+**`speed` 不在这里** —— 它是步频 (0~10)，跟腿部轨迹无关，由独立的 `motion_set_speed(speed)` 设置
+（0~10 范围检查，含 NaN 护栏）。
+
+> 历史：`speed` 曾是本函数第 1 参、`lift` 曾住在一个单独的 `motion_set_lift()` 里。两个函数互相拿
+> 对方的**当前值**校验，产生顺序耦合（`docs/error.md` §2.2 #7）；`lift` 并入本函数后该耦合消失，
+> `motion_set_lift` 与 `motion_check_params` 一并删除。
+>
+> ⚠ 读写的**参数顺序不一致**：`get_params()` 返回 `(speed, stride, height, lift, omega, turn, gait)`，
+> 而写入是 `set_params(stride, lift, height)` —— lift 在读里排第 4、在写里排第 2。
 
 ### 3. 运动→静止的 `pose_trans`
 
@@ -797,11 +819,11 @@ set_angle(ch, A) → A ≤ 90 时发 c[0] + (c[1]-c[0])×A/90
 
 ### 7. GO 自适应中的 eff_speed
 
-GO 的 duty/gap/stride/height 查表使用 `eff_speed` (实际 speed 的绝对值, 经过半周期平滑), 不是 `target_speed`。BLE 写 `target_speed`, 实际 speed 逐步跟随。
+GO 的 duty/gap/stride/height/lift 查表使用 `eff_speed` (实际 speed 的绝对值, 经过半周期平滑), 不是 `target_speed`。BLE 写 `target_speed`, 实际 speed 逐步跟随。
 
 ### 8. BLE 停止
 
-停止时设 `speed=0, stride=0`。d=0 调 `set_params(0, 0, 70)` + `set_gait("stop")`。
+停止时设 `speed=0, stride=0`。d=0 调 `set_speed(0)` + `set_params(0, 30, 70)` + `set_gait("stop")`。
 
 ### 9. GPIO 引脚映射 (已确定)
 
