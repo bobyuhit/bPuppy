@@ -427,6 +427,49 @@ menus: {
 
 ---
 
+## 5.9 让用户看见设备侧的生效值（monitor 读数框）🆕 2026-09-27 源码确认
+
+**问题**：设置类积木都是 `command` 块。`commBlockExec` 里**只有 `reporter` / `boolean`** 会被包成
+`print('$tmp=', 表达式)` 并把值**读回来**解析（`processMPYResult` 认 `$tmp=` 前缀）；
+`command` 是**原样下发、不产生任何返回值**（`isAsync` 时才包一次 `$tmp`）。
+固件被拒时只 `ESP_LOGW` 一行（走 USB 串口，**不进编辑器**）⇒
+"这次设置没生效"在界面上**本来是看不见的**，只能靠额外手段。
+
+**唯一的正规显示通道 = 舞台上的 monitor 读数框**（KittenBlock 把 Scratch 的勾选框放宽到了任意 reporter）：
+
+| 环节 | 条件 | 源码 |
+|---|---|---|
+| GUI 画勾选框 | `(!blockInfo.disableMonitor && inputList.length === 0) \|\| blockInfo.forceEnableMonitor` | `lib.min.js:748702` |
+| VM 置标志 | `if (!blockInfo.disableMonitor) setCheckboxInFlyout(true)` | `lib.min.js:886600` |
+| ⚠ **默认值** | reporter 且**没写** `disableMonitor` ⇒ **自动置 `true`**（micropy 与 Arduino 两条建块路径都如此） | `lib.min.js:639959`（字节≈149594 / 190374） |
+
+⇒ **不写 `disableMonitor: false`，积木栏里就没有勾选框**，用户根本没法把读数积木放到舞台上。
+本项目已给 5 个运动读数积木（速度 / 步长 / 身体高度 / 抬脚高度 / 转弯率）加上这一行；
+它们都无参数，所以不用 `forceEnableMonitor`。**带参数的** reporter（如「舵机角度」）想开监控则两个都要写
+—— `forceEnableMonitor` 是唯一绕过"无参数"限制的口子。
+
+**用法**：积木栏里勾上读数积木左边的小方框 → 舞台出现读数框 → 实时显示**板上生效值**。
+参数被拒时数字**停在上一次成功的值**上 —— 这就是"看得见受限"。
+
+**四条硬限制**（别再往这几个方向试）：
+
+1. **monitor 每帧求值一次**（`addMonitorScript` → `_pushThread(..., {updateMonitor: true})`），
+   每次都走一趟串口 REPL ⇒ **没有节流**，刷新比实际慢且占串口。要控速就"变量中转 + 等待 0.2 秒"。
+2. **主控板模式没有「外观」分类** ⇒ 拖不出「说」/「思考」。见 §9.11。
+3. **没有"把积木拖到舞台"、也没有右键"显示监控"** —— 唯一的开关就是那个勾选框。
+4. 舞台**没有被隐藏**，只是被浮动的代码面板（`position:absolute; z-index:100`，位置存在 localStorage
+   `codepanpos`，默认 480×600 @ (888,75)）盖住；右上角的「舞台 / coding」开关（`StageSwitch`，
+   `codeStageOptions` 含 `micropy`）能切过去，代码面板也能拖开。
+
+**另一条零改动的通道**：右侧代码面板里就是 xterm 终端，**直连板子 REPL** ⇒ 加一个 `print(...)` 的 command 块
+或在终端手敲，就能看到设备侧的值（只是显示在代码面板、不在舞台）。
+
+**本项目怎么用它**（配合"参数被拒"的反馈设计）：设置块尾部**读回比对**得到 `_ok`
+（被拒 = 板上值没变成你要的值），失败时 `voice.say(*voice.SND_YING)` 叫一声，
+再提供一个 `boolean` 积木 `setOk`（「设置成功？」）给 `if` 用。详见 §12。
+
+---
+
 ## 6. 代码生成机制（★理解核心）
 
 KittenBlock 把图形化积木翻译成 MicroPython，规则：
@@ -617,6 +660,41 @@ machine.reset()
 > 会被抹的只有**生成代码里的 `pycode`**。
 > `libs` 头串（`kblock.json5` 顶部）里也有中文注释，同样会被抹，但那是注释，不影响执行。
 
+### 9.11 主控板模式下工具箱没有「外观」分类（拖不出「说」）🆕 2026-09-27 源码确认
+
+`makeToolboxXML`（`lib.min.js:900057`）里，选中主控板（`codeStage !== 'stage'`）时**只**注入：
+**事件（仅绿旗 `event_whenflagclicked`）/ 控制（`controlStageOnly` 精简版：重复执行/等待/如果…）/
+运算 / 变量（`custom="STAGEVARIABLE"`）/ 我的积木 + 各扩展分类**。
+
+`looks_say` / `looks_sayforsecs` / `looks_think` **完全不在其中** ⇒ 积木栏里拿不到。
+（离线代码生成里 `looks_*`、`motion_*` 也都是 `return ""` 的空实现。）
+
+⇒ 文档里**别教用户"把读数积木塞进「说」"** —— 那是普通 Scratch（`mode='stage'`）才有的积木。
+主控板模式要看设备侧的值，走 §5.9 的两条通道：**读数框（勾选框）** 或 **串口终端**。
+
+### 9.12 滑块（`type: 'slider'`）的两个坑 🆕 2026-09-27 源码确认
+
+`Blockly.FieldSlider` 在 `lib.min.js` 里就这两段要紧的：
+
+```js
+// 取值校验
+classValidator(a){ a = parseFloat(a||0); if(isNaN(a)) return null;
+  a < this.min ? a = this.min : a > Blockly.FieldSlider.MAX && (a = this.max); return String(a) }
+// 拖动条
+showEditor_(){ ... this.numSlider_.setUnitIncrement(1);
+               this.numSlider_.setMinimum(this.min); this.numSlider_.setMaximum(this.max); ... }
+```
+
+1. **上限拦不住**：`Blockly.FieldSlider.MAX` 在全库里**从没被赋值**（`undefined`）⇒ `a > undefined`
+   恒为 `false` ⇒ **手输越上限既不报错也不钳位**（下限 `this.min` 是生效的）。
+   想靠滑块"让用户输不进超限值"是**做不到的**。
+2. **拖动只能落整数**：`setUnitIncrement(1)` ⇒ 像速度这种常用 **2.5** 的值**拖不出来**，只能手输。
+
+⇒ 结论：**滑块适合整数参数（角度 / 亮度 / 次数），不适合"要小数 + 要防超限"的参数**。
+真要"物理上输不进"，用 `type: 'value'` + 封闭 `menu`（选项外的值根本表示不出来，如方向下拉 `dirMenu`）。
+
+> 参数类型可选项与 `menus` 写法见 §5.4 / §5.6。
+
 ---
 
 ## 10. bPuppy 固件配合改动
@@ -735,9 +813,12 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 分类 | 积木 | pycode 生成 |
 |------|------|------------|
 | 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(0); set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
-| 高级运动 | **运动参数**（步长 + 身体高度 + 抬脚高度，3 个槽，**横排单行**） | 见下方代码块 |
-| 高级运动 | 速度 [SPEED] 方向 [DIR] | `_speed = [SPEED]; set_params(_speed, ([DIR]) * abs(_stride), _height)` ⚠ 2026-09-27 由原「速度设为」并入方向下拉 |
-| 高级运动 | 切换步态 [GAIT] / 转弯率设为 [TURN] | `set_turn(0); set_gait([GAIT])` / `set_turn([TURN])` |
+| 高级运动 | **运动参数**（步长 + 身体高度 + 抬脚高度，3 个槽，**横排单行**） | 见下方代码块（尾部读回 `_ok` + 失败嘤嘤叫） |
+| 高级运动 | 速度 [SPEED] 方向 [DIR] | `_speed = [SPEED]` → `set_params(_speed, ([DIR]) * abs(_stride), _height)` → 读回 `_ok` ⚠ 2026-09-27 由原「速度设为」并入方向下拉 |
+| 高级运动 | 切换步态 [GAIT] | `set_turn(0); set_gait([GAIT])` ⚠ 下拉只有 4 个合法步态名 ⇒ **不做 `_ok`**（没有"被拒"这回事） |
+| 高级运动 | 转弯率设为 [TURN] | `set_turn([TURN])` → 读回 `_ok` ⚠ `set_turn` 超 ±1 是**静默钳位**（不报错不返回）⇒ 只有读回比对才发现 |
+| 高级运动 | 读数积木 ×5：(速度) (步长) (身体高度) (抬脚高度) (转弯率) | `bpuppy_motion.get_params()[0/1/2/3/5]` ⚠ 都带 `disableMonitor: false` —— **不写这行积木栏里就没有舞台勾选框**，见 §5.9 |
+| 高级运动 | **设置成功？**（`boolean`） | `_ok`（上一次设置类积木是否真的生效；被拒 = False） |
 | 高级运动 | **身体姿态**（俯仰 + 滚转） | `set_body_pose([ROLL], [PITCH], 0)` ⚠ 函数签名是 `(roll, pitch, yaw)`，块上文字却是"先俯仰后滚转" ⇒ pycode 里 `[ROLL]` 必须在前，写反不报错、只是两者对调 |
 | 高级运动 | **重心偏移 [OFFSET]** mm | `set_center([OFFSET])` ⚠ **会写 NVS**（`motion_task.cpp:983` 调 `motion_save_geometry`），值跨重启保留；上限 ±`L1/2`（默认 20mm） |
 | 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
@@ -759,9 +840,13 @@ bpuppy_motion.set_lift([LIFT])
 bpuppy_motion.set_params(_speed, _dir * _stride, _height)
 if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:
     bpuppy_motion.set_lift([LIFT])         # 顺序耦合重试, 见下
+_p = bpuppy_motion.get_params()            # ↓ 读回比对: 被拒 = 这三个值没变成你要的
+_ok = abs(_p[1] - _dir * _stride) < 0.5 and abs(_p[2] - _height) < 0.5 and abs(_p[3] - [LIFT]) < 0.5
+if not _ok:
+    voice.say(*voice.SND_YING)
 ```
 
-三个关键点：
+四个关键点：
 
 1. **必须回写 `_stride` / `_height` 模块全局** —— 「前进」「后退」「速度 … 方向」等块全靠它们。
    不回写的话，用完「运动参数」再拖一个「前进」，参数会被旧值覆盖回去。
@@ -770,12 +855,27 @@ if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:
 3. **顺序耦合**（`docs/error.md` §2.2 #7）：`set_params` 用**当前** `lift` 校验，`set_lift` 用**当前**
    `stride/height` 校验。一个块发多个 setter 会踩到"谁先谁后决定成败"。
    先 lift → params → **读回 lift 不对就补一次**，可覆盖全部情况，不需要固件侧原子 API。
+4. **尾部读回比对**（2026-09-27 加）：固件拒绝时**整组保持原值** ⇒ 写完把 `get_params()` 读回来比一下
+   就知道成没成 —— 不依赖固件版本，顺带能抓到 `set_turn` 的**静默钳位**。
+   容差 0.5mm / 0.05 只为容忍固件取整；被拒时差的是几十 mm，必判 `False`。
+   结果写进 `_ok`（`boolean` 积木「设置成功？」读它）+ 失败 `voice.say(*voice.SND_YING)` 叫一声。
+   ⚠ **`_ok` 的初值要在两处各写一次**：`libs` 注入头（`kblock.json5` 顶部）和 `extension.json` 的
+   `afterConnect` —— 在线执行走 `afterConnect`、上传跑走 `libs` 注入，漏一处就是 `NameError`。
+   ⚠ **「重心偏移」不参与 `_ok`**：`get_geometry()` 只返回 `(L1, L2, 半长, 半宽)`，没有重心偏移的读回接口。
+   ⚠ `voice.say(*voice.SND_YING)` 是**纯 ASCII**（§9.10），和「狗叫 [嘤嘤]」积木同一条帧；没接 CI-33T 听不到、但不报错。
 
 > **2026-09-27 改版**：原 7 槽的「高级运动」拆成「运动参数」+ 单参数块。
 > 「步长设为」「身体高度设为」「抬脚高度设为」**三个块已删除**（并入「运动参数」）；
 > 「速度设为」并入方向下拉变成「速度 [SPEED] 方向 [DIR]」；
 > 「切换步态」「转弯率设为」保持不变。分类键仍是 `cat_gait`，只是显示名改成了**高级运动**。
 > 拆的理由：7 个槽挤一行约 1030px，且块内改步态会**打断**当前步态 —— 现在改尺寸不动步态。
+
+> **2026-09-27 反馈设计（本轮）**：参数超限**不做 UI 硬防**（速度 / 转弯率 / 步长等仍是自由数字输入），改做
+> "**看得见 + 听得见**"。理由：① 组合参数（步长 + 高度 + 抬脚）的合法集合是 IK 可达性 + 姿态补偿的联合函数
+> （`motion_task.cpp:597-668`），且依赖板上 NVS 的运行时几何 —— 编辑器**同步算不出来**（钩子是同步的、拿不到设备），
+> 硬做等于在 JS 里再养一份 IK，跟固件走偏时是**编辑器在骗用户**；② 滑块的上限**本身就不生效**（§9.12）。
+> ⇒ 读回 `_ok` → 「设置成功？」积木 + 失败 `voice.say(*voice.SND_YING)` + 读数积木勾到舞台（§5.9）。
+> 备选路线（预设下拉 / 一维档位滑块 / 板上试错收敛 / JS 抄 IK）**各自独立提案，勿顺手加**。
 
 底层 API（固件 C 模块，MicroPython 可调）：
 - `bpuppy_motion.set_params(speed, stride, height)` — speed 0~10, stride 正前负后, height mm

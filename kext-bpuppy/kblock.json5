@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册\nvoice.set_main_globals(globals())   # 事件函数扫描用主全局 (sys.modules[__main__] 为 None)'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_height = 70\n\n# _ok: 上一次设置类积木是否真的生效 (被拒时固件保持原值, 读回比对为 False)\n#   设置块尾部会把 get_params() 读回来比对并更新它; 「设置成功？」积木就是读这个值。\n_ok = True\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册\nvoice.set_main_globals(globals())   # 事件函数扫描用主全局 (sys.modules[__main__] 为 None)'},
   },
   blocks: [
     "## $$cat_motion",
@@ -63,6 +63,8 @@
       //   (get_params()[1] >= 0 即前进) —— 所以「后退」之后再来改步长, 狗不会掉头。
       // 必须回写 _stride/_height 两个模块全局 (正数), 否则之后拖「前进/后退」会被旧值覆盖。
       // 步态**不在这里设**: 改尺寸不打断当前步态, 狗该怎么走还怎么走。
+      // 尾部**读回比对**: 组合超限时固件整组拒绝并保持原值, 三个值对不上 ⇒ _ok = False + 嘤嘤叫。
+      // 容差 0.5mm 只为容忍固件取整 —— 被拒时差的是几十 mm, 必判 False。
       pycode: [
         '_stride = abs([STRIDE])',
         '_height = [HEIGHT]',
@@ -70,7 +72,11 @@
         'bpuppy_motion.set_lift([LIFT])',
         'bpuppy_motion.set_params(_speed, _dir * _stride, _height)',
         'if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:',
-        '    bpuppy_motion.set_lift([LIFT])'
+        '    bpuppy_motion.set_lift([LIFT])',
+        '_p = bpuppy_motion.get_params()',
+        '_ok = abs(_p[1] - _dir * _stride) < 0.5 and abs(_p[2] - _height) < 0.5 and abs(_p[3] - [LIFT]) < 0.5',
+        'if not _ok:',
+        '    voice.say(*voice.SND_YING)'
       ]
     },
     // ⚠ set_body_pose 的签名是 (roll, pitch, yaw) —— 函数里 roll 在前, 而块上文字是
@@ -88,6 +94,8 @@
     },
     // ⚠ 这个块会**写 NVS** (set_center 内部调 motion_save_geometry, motion_task.cpp:983),
     //   每跑一次写一次 flash, 且值跨重启保留。上限 ±L1/2 (默认 20mm), 超了被拒并保持原值。
+    // ⚠ 它**不参与 `_ok`**: get_geometry() 只返回 (L1, L2, 半长, 半宽), 重心偏移没有读回接口
+    //   ⇒ 被拒时**没有**嘤嘤叫, 「设置成功？」也停在上一块设置的结果上。文档里写明。
     {
       opcode: 'setCenter',
       blockType: 'command',
@@ -115,6 +123,7 @@
     //   只动速度/方向 —— 高度/抬脚/转弯率/步态都不碰; 狗在走的话是**边走边改**。
     //   速度不打断步态, 也**不会**让站着的狗起步 (要起步还是用「前进/后退」)。
     //   同一次改版删掉了「步长设为」「身体高度设为」「抬脚高度设为」(并入「运动参数」)。
+    // 尾部读回比对: 速度超 0~10 时固件整组拒绝并保持原值 ⇒ _ok = False + 嘤嘤叫。
     {
       opcode: 'setSpeed',
       blockType: 'command',
@@ -130,8 +139,16 @@
           defaultValue: '1'
         }
       },
-      pycode: '_speed = [SPEED]; bpuppy_motion.set_params(_speed, ([DIR]) * abs(_stride), _height)'
+      pycode: [
+        '_speed = [SPEED]',
+        'bpuppy_motion.set_params(_speed, ([DIR]) * abs(_stride), _height)',
+        '_p = bpuppy_motion.get_params()',
+        '_ok = abs(_p[0] - _speed) < 0.05 and abs(_p[1] - ([DIR]) * abs(_stride)) < 0.5',
+        'if not _ok:',
+        '    voice.say(*voice.SND_YING)'
+      ]
     },
+    // ⚠ set_turn 把超范围的值**静默钳到 ±1** (不报错、不返回) ⇒ 只有读回比对才发现。
     {
       opcode: 'setTurn',
       blockType: 'command',
@@ -142,37 +159,65 @@
           defaultValue: '0'
         }
       },
-      pycode: 'bpuppy_motion.set_turn([TURN])'
+      pycode: [
+        'bpuppy_motion.set_turn([TURN])',
+        '_ok = abs(bpuppy_motion.get_params()[5] - [TURN]) < 0.05',
+        'if not _ok:',
+        '    voice.say(*voice.SND_YING)'
+      ]
     },
+    // ---- 读数积木 (读**板上生效值**) ----
+    // ⚠ `disableMonitor: false` 是**必须写的**: KittenBlock 把舞台 monitor 的勾选框放宽到了任意
+    //   reporter (GUI 侧条件 `!disableMonitor && 无参数`, lib.min.js:748702), 但主控板扩展的建块
+    //   路径把 reporter 的 `disableMonitor` **默认写成 true** (lib.min.js:639959) ⇒ 不写这一行,
+    //   积木栏里就**没有勾选框**, 用户没法把它们放到舞台上实时看生效值。
+    //   (带参数的 reporter 想开监控还要再加 `forceEnableMonitor: true` —— 「舵机角度」没开, 另议。)
+    // ⚠ 舞台读数框 = **每帧**求值一次 = 每帧一趟串口往返, 没有节流 ⇒ 数字会跳得比实际慢。
+    // ⚠ 主控板模式**没有「外观」分类** ⇒ 「说」积木拿不到, 文档里别教"塞进说"。
     {
       opcode: 'getSpeed',
       blockType: 'reporter',
       text: '$$getSpeed',
+      disableMonitor: false,
       pycode: 'bpuppy_motion.get_params()[0]'
     },
     {
       opcode: 'getStride',
       blockType: 'reporter',
       text: '$$getStride',
+      disableMonitor: false,
       pycode: 'bpuppy_motion.get_params()[1]'
     },
     {
       opcode: 'getHeight',
       blockType: 'reporter',
       text: '$$getHeight',
+      disableMonitor: false,
       pycode: 'bpuppy_motion.get_params()[2]'
     },
     {
       opcode: 'getLift',
       blockType: 'reporter',
       text: '$$getLift',
+      disableMonitor: false,
       pycode: 'bpuppy_motion.get_params()[3]'
     },
     {
       opcode: 'getTurn',
       blockType: 'reporter',
       text: '$$getTurn',
+      disableMonitor: false,
       pycode: 'bpuppy_motion.get_params()[5]'
+    },
+    // 「设置成功？」: 上一次设置类积木(运动参数/速度/转弯率)是否**真的生效**。
+    // 原理: 写完把 get_params() 读回来比对 —— 被拒时固件保持原值, 值对不上就是 False。
+    // 不依赖固件版本, 顺带能抓到 set_turn 的静默钳位(±1)。
+    // ⚠ 「重心偏移」没有读回接口 ⇒ 它不参与 _ok。
+    {
+      opcode: 'setOk',
+      blockType: 'boolean',
+      text: '$$setOk',
+      pycode: '_ok'
     },
     "---",
     "## $$cat_pose",
