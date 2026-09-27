@@ -72,7 +72,13 @@
     "voiceSound": "狗叫 [SOUND]",
     "sndWang": "汪汪",
     "sndYing": "嘤嘤",
-    "voiceSayNum": "播报数字 [NUM]"
+    "voiceSayNum": "播报数字 [NUM]",
+    "advMotion": "高级运动  步态 [GAIT]  速度 [SPEED]  方向 [DIR]",
+    "advMotion2": "步长 [STRIDE] mm  身体高度 [HEIGHT] mm  抬脚高度 [LIFT] mm  转弯率 [TURN]",
+    "bodyPose": "身体姿态  俯仰 [PITCH] 度  滚转 [ROLL] 度",
+    "setCenter": "重心偏移 [OFFSET] mm",
+    "dirFwd": "前进",
+    "dirBack": "后退"
   },
   "en": {
     "forward": "Forward",
@@ -147,7 +153,13 @@
     "voiceSound": "bark [SOUND]",
     "sndWang": "wang wang",
     "sndYing": "ying ying",
-    "voiceSayNum": "report number [NUM]"
+    "voiceSayNum": "report number [NUM]",
+    "advMotion": "Advanced Motion  gait [GAIT]  speed [SPEED]  dir [DIR]",
+    "advMotion2": "stride [STRIDE] mm  height [HEIGHT] mm  lift [LIFT] mm  turn [TURN]",
+    "bodyPose": "Body Pose  pitch [PITCH] deg  roll [ROLL] deg",
+    "setCenter": "Center Offset [OFFSET] mm",
+    "dirFwd": "forward",
+    "dirBack": "backward"
   },
   "zh-tw": {
     "forward": "前進",
@@ -222,6 +234,12 @@
     "voiceSound": "狗叫 [SOUND]",
     "sndWang": "汪汪",
     "sndYing": "嚶嚶",
-    "voiceSayNum": "播報數字 [NUM]"
+    "voiceSayNum": "播報數字 [NUM]",
+    "advMotion": "高級運動  步態 [GAIT]  速度 [SPEED]  方向 [DIR]",
+    "advMotion2": "步長 [STRIDE] mm  身體高度 [HEIGHT] mm  抬腳高度 [LIFT] mm  轉彎率 [TURN]",
+    "bodyPose": "身體姿態  俯仰 [PITCH] 度  滾轉 [ROLL] 度",
+    "setCenter": "重心偏移 [OFFSET] mm",
+    "dirFwd": "前進",
+    "dirBack": "後退"
   }
 }

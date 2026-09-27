@@ -203,9 +203,47 @@ libs: {
 |------|------|
 | `opcode` | 积木唯一 ID，全文件唯一 |
 | `blockType` | `command`（执行）/ `reporter`（返回值）/ `boolean`（布尔）/ `hat`（事件触发） |
-| `text` | 积木显示文字，参数用 `[参数名]` 占位 |
+| `text` | 积木显示文字，参数用 `[参数名]` 占位。**可以是数组 ⇒ 竖排多行**，见下 |
 | `arguments` | 参数定义，键名对应 text 里的 `[参数名]` |
-| `pycode` | **生成的 MicroPython 代码**，参数用 `[参数名]` 引用 |
+| `pycode` | **生成的 MicroPython 代码**，参数用 `[参数名]` 引用。**可以是数组 ⇒ 多行代码**，见下 |
+
+#### `text` 写成数组 = 竖排多行（2026-09-27 读 `web/lib.min.js` 确认）
+
+普通 `command` 积木默认只有一行（横排）。想竖排，把 `text` 写成**数组**，每个元素一行：
+
+```json5
+{
+  opcode: 'advMotion',
+  blockType: 'command',
+  text: ['$$advMotion', '$$advMotion2'],   // → 两行
+  ...
+}
+```
+
+依据（KittenBlock 自带 `resources/app/web/lib.min.js` 里生成块 JSON 的循环）：
+`while (inTextNum < blockText.length || inBranchNum < blockInfo.branchCount)` 在 `switch` **之外**，
+而 `branchCount` 只在 `conditional` / `loop` 里赋值 ⇒ `command` 块的 `branchCount` 是 `undefined`，
+子堆栈那一支永不执行，数组的每一项就各自成为 `messageN` / `argsN` 一行。每行同样走
+`lineText.replace(/\[(.+?)]/g, convertPlaceholders)` ⇒ **每行的参数照常解析**，且**没有多余的空槽**。
+
+> `conditional` + `branchCount` 也能竖排（内置 `arduino` 的 `void setup()` 就这么做的），
+> 但每个分支会往行间插一个空子堆栈槽，块上多个缺口，不划算。
+
+⚠ **一行只能有一个 `$$key`**：`maybeFormatMessage` 只在**整行**以 `$$` 开头时才查表，
+并且把 `$$` 之后的**整串**当作一个 key（`.replace("$$", '')` 只去掉第一个）。
+所以 `'$$a $$b'` 会去查 key `"a $$b"` —— 查不到。**几行就几个 key。**
+
+#### `pycode` 写成数组 = 多行代码
+
+```json5
+pycode: ['if x > 1:', '    do_something()']
+```
+
+KittenBlock 生成代码时 `Array.isArray(pycode) ? pycode.join("\r\n") : pycode` ⇒ 数组元素用 `\r\n` 连接，
+**元素里的缩进原样保留**，所以能写带缩进的语句块。
+
+⚠ **别用分号把 `if` 挤在一行**：Python 里 `if c: a; b` 的 `b` 也会被算进 `if` 体
+（`suite: simple_stmt (';' simple_stmt)*`），条件为假时 `b` 根本不执行。要多个语句就用数组写法。
 
 ### 5.4 arguments 参数类型
 
@@ -700,6 +738,35 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 | 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(0); set_params(_speed, ±_stride, _height); set_gait('go')` / `set_gait('stop')` |
 | 参数 | 速度设为 / 步长设为 / 高度设为 / 抬腿高度 | `_speed = [SPEED]; set_params(...)` / `set_lift` |
 | 步态 | 切换步态 [下拉] | `set_turn(0); set_gait([GAIT])` |
+| **组合** | **高级运动**（步态+速度+方向+步长+身体高度+抬脚高度+转弯率，**竖排两行**，7 个槽） | 见下方代码块（`text` 用数组，见 §5.3） |
+| **组合** | **身体姿态**（俯仰 + 滚转） | `set_body_pose([ROLL], [PITCH], 0)` ⚠ 函数签名是 `(roll, pitch, yaw)`，块上文字却是"先俯仰后滚转" ⇒ pycode 里 `[ROLL]` 必须在前，写反不报错、只是两者对调 |
+| **组合** | **重心偏移 [OFFSET]** mm | `set_center([OFFSET])` ⚠ **会写 NVS**（`motion_task.cpp:983` 调 `motion_save_geometry`），值跨重启保留；上限 ±`L1/2`（默认 20mm） |
+
+「高级运动」生成的代码（`pycode` 是数组，逐行）：
+
+```python
+_speed = [SPEED]
+_stride = abs([STRIDE])                    # 存正数; 旧的「后退」块用 -abs(_stride)
+_height = [HEIGHT]
+bpuppy_motion.set_lift([LIFT])
+bpuppy_motion.set_params(_speed, ([DIR]) * _stride, _height)   # [DIR] 是 value 型菜单 ⇒ 裸代入, 1=前进 / -1=后退
+if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:
+    bpuppy_motion.set_lift([LIFT])         # 顺序耦合重试, 见下
+bpuppy_motion.set_turn([TURN])
+bpuppy_motion.set_gait([GAIT])             # 步态最后: 狗用新参数起步
+```
+
+三个关键点：
+
+1. **必须回写 `_speed` / `_stride` / `_height` 模块全局** —— 旧的「前进」「后退」「速度设为」等块全靠它们。
+   不回写的话，用完「高级运动」再拖一个「前进」，参数会被旧值覆盖回去。
+2. **顺序耦合**（`docs/error.md` §2.2 #7）：`set_params` 用**当前** `lift` 校验，`set_lift` 用**当前**
+   `stride/height` 校验。一个块发多个 setter 会踩到"谁先谁后决定成败"。
+   先 lift → params → **读回 lift 不对就补一次**，可覆盖全部情况，不需要固件侧原子 API。
+3. **步态放最后执行**（虽然它在块上排第一个），与现有「前进/后退」块一致。
+
+> 「高级运动」替代了「速度设为 / 步长设为 / 高度设为 / 抬腿高度 / 转弯率设为 / 切换步态」这一串单参数块。
+> 那些**旧块全部保留**，行为不变。
 | 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
 | 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
 | 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |

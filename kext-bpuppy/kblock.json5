@@ -36,6 +36,71 @@
     },
     "---",
     "## $$cat_gait",
+    // ===== 组合块: 一次设完所有运动参数 (2026-09-27) =====
+    // 「高级运动」的 text 是**数组** ⇒ 每个元素渲染成一行 (竖排)。
+    //   依据 (KittenBlock 自带 resources/app/web/lib.min.js): 生成块 JSON 的
+    //   `while (inTextNum < blockText.length || inBranchNum < branchCount)` 循环在 switch
+    //   **之外**, 而 branchCount 只在 conditional/loop 里赋值 ⇒ command 块的 branchCount 是
+    //   undefined, 子堆栈那支永不执行, 数组的每一项就各自成为 messageN/argsN 一行,
+    //   且每行同样走 `replace(/\[(.+?)]/g, convertPlaceholders)` —— 参数照常解析, 无空槽。
+    //   (conditional 路线也能竖排, 但每个分支会插一个空子堆栈槽, 不如这个干净。)
+    // ⚠ 一行只能有一个 $$key: maybeFormatMessage 只有在**整行**以 $$ 开头时才查表,
+    //   且把 $$ 之后的整串当一个 key ⇒ 两行 = 两个 key (advMotion / advMotion2)。
+    // pycode 用数组 (join("\r\n")), 因为单行 `if c: a; b` 里 b 也会被算进 if 体。
+    {
+      opcode: 'advMotion',
+      blockType: 'command',
+      text: ['$$advMotion', '$$advMotion2'],
+      arguments: {
+        GAIT:   { type: 'string', menu: 'gaitMenu', defaultValue: 'go' },
+        SPEED:  { type: 'number', defaultValue: '2.5' },
+        DIR:    { type: 'value',  menu: 'dirMenu',  defaultValue: '1' },
+        STRIDE: { type: 'number', defaultValue: '70' },
+        HEIGHT: { type: 'number', defaultValue: '70' },
+        LIFT:   { type: 'number', defaultValue: '30' },
+        TURN:   { type: 'number', defaultValue: '0' }
+      },
+      // 顺序耦合 (docs/error.md §2.2 #7): set_params 用**当前** lift 校验, set_lift 用**当前**
+      // stride/height 校验。先 lift → params → 读回 lift 不对就补一次, 可覆盖全部情况。
+      // [DIR] 是 value 型菜单 (裸代入) ⇒ 1=前进 / -1=后退; _stride 存正数 (旧的「后退」块用 -abs(_stride))。
+      // 必须回写 _speed/_stride/_height 三个模块全局, 否则之后拖「前进/后退」会被旧值覆盖。
+      // 步态放最后执行: 狗是用新参数起步的 (与现有「前进/后退」块一致)。
+      pycode: [
+        '_speed = [SPEED]',
+        '_stride = abs([STRIDE])',
+        '_height = [HEIGHT]',
+        'bpuppy_motion.set_lift([LIFT])',
+        'bpuppy_motion.set_params(_speed, ([DIR]) * _stride, _height)',
+        'if abs(bpuppy_motion.get_params()[3] - [LIFT]) > 0.5:',
+        '    bpuppy_motion.set_lift([LIFT])',
+        'bpuppy_motion.set_turn([TURN])',
+        'bpuppy_motion.set_gait([GAIT])'
+      ]
+    },
+    // ⚠ set_body_pose 的签名是 (roll, pitch, yaw) —— 函数里 roll 在前, 而块上文字是
+    //   "先俯仰后滚转" ⇒ pycode 里 [ROLL] 必须写在 [PITCH] 前面。写反了不报错, 只是俯仰滚转对调。
+    //   它不校验、不写 NVS、设了就保持 (块里不复位, 与现有语义一致)。
+    {
+      opcode: 'bodyPose',
+      blockType: 'command',
+      text: '$$bodyPose',
+      arguments: {
+        PITCH: { type: 'number', defaultValue: '0' },
+        ROLL:  { type: 'number', defaultValue: '0' }
+      },
+      pycode: 'bpuppy_motion.set_body_pose([ROLL], [PITCH], 0)'
+    },
+    // ⚠ 这个块会**写 NVS** (set_center 内部调 motion_save_geometry, motion_task.cpp:983),
+    //   每跑一次写一次 flash, 且值跨重启保留。上限 ±L1/2 (默认 20mm), 超了被拒并保持原值。
+    {
+      opcode: 'setCenter',
+      blockType: 'command',
+      text: '$$setCenter',
+      arguments: {
+        OFFSET: { type: 'number', defaultValue: '0' }
+      },
+      pycode: 'bpuppy_motion.set_center([OFFSET])'
+    },
     {
       opcode: 'setGait',
       blockType: 'command',
@@ -351,6 +416,12 @@
       { text: '$$walk',   value: 'walk' },
       { text: '$$trot',   value: 'trot' },
       { text: '$$stop',   value: 'stop' }
+    ],
+    // 「高级运动」的方向下拉。type 'value' ⇒ 值**裸代入** pycode (和 soundMenu 一样),
+    // 所以乘进 ([DIR]) * _stride 得到正/负步长。1=前进, -1=后退。
+    dirMenu: [
+      { text: '$$dirFwd',  value: '1' },
+      { text: '$$dirBack', value: '-1' }
     ],
     servoMenu: [
       { text: '$$LF_HIP',   value: '0' },
