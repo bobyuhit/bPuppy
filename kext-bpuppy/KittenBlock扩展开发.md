@@ -60,11 +60,18 @@ KittenBlock 扫描 `extpath` 下**所有含 `extension.json` 的文件夹**，�
 
 KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本质：
 
-1. **接受两种 URL**：
+> ⚠★ **URL 必须以 `.zip` 结尾，短链服务（tinyurl 等）会失败** —— 硬门槛。
+> 2026-09-29 调研"把分发地址缩短"时就是被这条挡住的，别再绕一遍。
+
+**入口有两条**：**URL 导入**、以及**从本地文件导入**（面板里选电脑上的 zip）。
+两者后面走的是**同一套 zip 校验与解压规则**（下面第 2、3 条）。
+本地导入**完全不需要网络**，适合离线或 GitHub 访问慢的情况（README 里已写进用户引导）。
+
+1. **URL 导入接受两种形式**：
    - `.zip` 地址（http/https，下载并解压）
    - `.git` 仓库地址（git clone 到 `local-ext\<仓库名>\`）
    - 其他形式 → 提示「无效链接」（`efficacy`）
-2. **校验**：zip 顶层 entry 必须含 `extension.json`，否则「无效 Zip 文件」（`error`）。这就是为什么单 index.js 软件扩展不能 URL 导入。
+2. **校验**：zip 顶层 entry 必须含 `extension.json`，否则「无效 Zip 文件」（`error`）。这就是为什么单 index.js 软件扩展不能 URL 导入。**本地导入同样过这一关。**
 3. **解压落点**：
    - zip 顶层是文件（散在根）→ 解到 `local-ext\<zip名去扩展名>\`
    - zip 顶层是目录 → 解到 `local-ext\` 保留目录名
@@ -78,8 +85,8 @@ KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本�
 | Release 附件 | `https://github.com/<user>/<repo>/releases/download/v1.0.0/bpuppy-kittenblock.zip` | URL 更短更稳定，需网页创建 Release |
 
 **注意事项**：
-- URL 必须以 `.zip` 结尾，短链服务会失败
-- raw URL 国内访问可能慢（GitHub 通病）
+- ⚠ URL 必须以 `.zip` 结尾、短链会失败 —— 见本节开头，别在这儿重复踩
+- raw URL 国内访问可能慢（GitHub 通病）⇒ 用户可用**本地导入**绕开（见本节开头）
 - 不建议用整仓库 `.git` URL clone（大仓库慢，扩展在子目录非顶层）
 
 ---
@@ -258,7 +265,7 @@ KittenBlock 生成代码时 `Array.isArray(pycode) ? pycode.join("\r\n") : pycod
 
 ⇒ **只要有一行以复合关键字开头，整段就被黏住**，前面那些正常行也一起不执行 ——
 所以没有"只改一部分"的折中写法。硬规则、安全形状（顶格单句 + `or` 短路）与自查方法见
-[README 易错点 13](../docs/README.md)。
+[AGENTS.md 易错点 13](../AGENTS.md)。
 
 ⚠ **别用分号把 `if` 挤在一行**：Python 里 `if c: a; b` 的 `b` 也会被算进 `if` 体
 （`suite: simple_stmt (';' simple_stmt)*`），条件为假时 `b` 根本不执行；
@@ -896,7 +903,7 @@ _ok = _ok or voice.say(*voice.SND_YING) or False   # 失败嘤嘤叫 (顶格单�
    ⚠★ 这声嘤嘤**必须写成顶格的 `_ok = _ok or voice.say(...) or False`**，不能写成
    `if not _ok:` + 缩进体 —— 后者在友善 REPL 上闭不了合、整段永不执行（`voiceWhen` 除外）。
    5 个块（`advMotion`/`bodyPose`/`setCenter`/`setSpeed`/`setTurn`）2026-09-29 已统一改成这个形状，
-   详见 [README 易错点 13](../docs/README.md)。
+   详见 [AGENTS.md 易错点 13](../AGENTS.md)。
    ⚠ **`_ok` 的初值要在两处各写一次**：`libs` 注入头（`kblock.json5` 顶部）和 `extension.json` 的
    `afterConnect` —— 在线执行走 `afterConnect`、上传跑走 `libs` 注入，漏一处就是 `NameError`。
    ⚠ **「重心偏移」没有读回接口**（`get_geometry()` 只返回 `(L1, L2, 半长, 半宽)`），但它和「机身姿态」自 2026-09-28 起都**返回 bool 并参与 `_ok`**。
@@ -906,7 +913,7 @@ _ok = _ok or voice.say(*voice.SND_YING) or False   # 失败嘤嘤叫 (顶格单�
    speed≤4 → 步长 70 / 站高 70 / 抬脚 30；speed≥6 → 步长 50 / 站高 70 / 抬脚 **5**；中间插值），
    `set_params` 在 go 下**完全不起作用** —— 三个值全被 speed 接管，方向也已独立到 `set_direction`。
    四个方向块用的都是 `set_gait('go')` ⇒ **这个块设的值对「前进 / 后退 / 左转 / 右转」没有影响**，
-   只对 walk / trot 有效。详见 `docs/README.md`「GO 自适应」表。
+   只对 walk / trot 有效。详见 `AGENTS.md`「GO 自适应」表。
    （所以第 1 点那个"抬脚 50 被写回 30"的例子：值确实被写回去了，但在 go 下看不出行为差异。）
 
 > **2026-09-27 改版**：原 7 槽的「高级运动」拆成「运动参数」+ 单参数块。
@@ -974,7 +981,7 @@ _ok = _ok or voice.say(*voice.SND_YING) or False   # 失败嘤嘤叫 (顶格单�
 
 > ⚠ 下拉 **value 必须与 `_EVT_FUNCS` 后缀一致**（`Fwd` → `def voiceWhenFwd()`），`_EVT_FUNCS` 才能映射到命令码；value 拼错或与后缀不匹配会注册不上。加新指令不用新增积木，只需在 `voiceMenu` 加一项 + l10n 加显示文本。
 
-📘 语音「事件」系统的全链路交接文档（含改法 Recipe 与踩坑清单）：[docs/README.md 语音「事件」系统节](../docs/README.md)。
+📘 语音「事件」系统的全链路交接文档（含改法 Recipe 与踩坑清单）：[AGENTS.md 语音「事件」系统节](../AGENTS.md)。
 
 ## 14. 参考
 

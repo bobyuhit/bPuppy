@@ -263,7 +263,7 @@ KittenBlock 那两个块现在**看得见拒绝**了（pycode 接了返回值 + 
 （旧行号 `kblock.json5:103` / `:116`，**已过时**），被拒时用户看到的是"点了没反应"。
 C 侧和 mpy 先修好了 bool（`set_center` 以前连 `bool` 都被 `mp_const_none` 吞掉），
 积木侧随后补上 `_ok` + 嘤嘤叫 —— 但**第一版补法（`if not _ok:` + 缩进体）在友善 REPL 上整段永不执行**，
-所以"被拒会嘤嘤叫"这个承诺一直是空的（`if` 段闭不了合，见 [README 易错点 13](README.md)）。
+所以"被拒会嘤嘤叫"这个承诺一直是空的（`if` 段闭不了合，见 [AGENTS.md 易错点 13](../AGENTS.md)）。
 2026-09-29 把 5 个块统一改成顶格的 `_ok = _ok or voice.say(*voice.SND_YING) or False` 才真正生效 ——
 用户需**重新导入扩展**。
 
@@ -326,7 +326,7 @@ Python 写主舵机 → `motion_set_mode(MODE_POSE)` → 把 `enabled = false` /
 ### 3.3 每次 `git commit` 都会触发 265 步真重编（ccache 救不了）
 
 **现象**：只改了 `drivers/imu_driver.c` 一个文件，`bash build.sh` 却跑了 1409 步、
-耗时约 54 分钟。而 `docs/README.md:67` 写的是「增量编译从 1356 步降到 ~10 步，几秒完成」。
+耗时约 54 分钟。而 `AGENTS.md:67` 写的是「增量编译从 1356 步降到 ~10 步，几秒完成」。
 
 **先排除的**：ccache 本身没问题。用 `compile_commands.json` 里**原封不动**的命令跑两次：
 
@@ -408,7 +408,7 @@ ESP-IDF 组件全量重编（`xtensa` / `efuse` / `driver` … 从第 1 步就�
 **一次性**的，之后 `ninja -n` 只剩 265 步，触发源没有定位到 —— 不编故事。
 若再次出现，第一步查 `ninja -C build -n -d explain` 里 "is dirty" 的都是谁。
 
-**副作用**：`docs/README.md:67` 那句「增量编译从 1356 步降到 ~10 步，几秒完成」
+**副作用**：`AGENTS.md:67` 那句「增量编译从 1356 步降到 ~10 步，几秒完成」
 是**不准确**的 —— 1356 → ~10 只在"没有 commit、也没跨天"的理想情况下成立。
 
 ---
