@@ -34,8 +34,11 @@ KittenBlock 有两类扩展，**能力完全不同，不可混用**：
 kext-bpuppy/
 ├── extension.json      # 必填。扩展配置主入口
 ├── kblock.json5        # 必填。积木定义 + 代码生成（extension.json 的 "file" 字段指定）
-└── bpuppy.png          # 可选。图标，extension.json 的 "image" 字段指定
+├── bpuppy.png          # 图标，extension.json 的 "image" 字段指定
+├── bpuppy.l10n.json    # 多语言文案（积木文字 / 分类名 / 下拉项）。**打包时一个都不能少**
+└── KittenBlock扩展开发.md   # 本文件（不参与打包）
 ```
+（`bpuppy.l10n.json` 原本文档漏写了，2026-09-29 补上 —— 漏打包它三语文案会**回退成 key**，见 §8。）
 
 ### 2.2 放置位置
 
@@ -103,7 +106,7 @@ KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本�
 | `io` | `["serial","ble"]` | 通信方式：serial/tcp/ble（本项目串口 + 蓝牙两条通道都启用） |
 | `connect` | `{baudrate:115200, batch:48, wait:5000}` | 串口连接参数（见 4） |
 | `file` | `"kblock.json5"` | **主积木文件路径** |
-| `ending` | `"\r\n"` | **关键**。发送到 REPL 的每行结尾 |
+| `ending` | `"\r\n"` | 发送到 REPL 的每行结尾。⚠ 本项目的 `extension.json` **实际没有这个键**（2026-09-29 核对），连接与执行都正常 ⇒ KittenBlock 侧有默认值。文档过去把它写成"关键必填"（§9.2 也据此记了一条踩坑），与现状不符；**只有当"发出去没反应"时**才第一个怀疑它 |
 | `micropython` | `{mainfile:"main.py", no_execfile:true}` | MicroPython 专用配置 |
 | `micropython.mainfile` | `"main.py"` | 上传后写入 VFS 的文件名 |
 | `micropython.no_execfile` | `true` | 上传后是否直接 exec（true=不 exec，靠重启运行） |
@@ -117,7 +120,7 @@ KittenBlock 的「URL 导入」（扩展 → 用户扩展 → URL 导入）本�
 {
     "id": "bpuppy",
     "name": { "zh-CN": "bPuppy 机器狗", "en": "bPuppy Robot Dog" },
-    "version": "1.0.0",
+    "version": "1.1.0",
     "type": "micropy",
     "fwtype": "esptool",
     "replmode": true,
@@ -324,7 +327,7 @@ menus: {
 
 ```json5
 blocks: [
-  "## 运动",
+  "## 运动控制",
   {
     opcode: 'forward',
     blockType: 'command',
@@ -356,7 +359,7 @@ blocks: [
     pycode: "bpuppy_motion.set_gait('stop')"
   },
   "---",
-  "## 高级运动",
+  "## 高级运动控制",
   {
     // ★ 2026-09-27 改版: 原 7 槽组合块拆开。这个块只管三个身体尺寸;
     //   步长/高度/抬脚的三个单参数块已删除。
@@ -395,9 +398,9 @@ blocks: [
       '_ok = _ok or voice.say(*voice.SND_YING) or False'
     ]
   },
-  "---",
-  "## 步态",
   {
+    // ⚠ 「切换步态」属于「高级运动控制」—— 这里**不是**一个独立分类
+    //   （2026-09-29 之前的示例里误写成 "## 步态", 实际 kblock.json5 从来没有这个分类）。
     opcode: 'setGait',
     blockType: 'command',
     text: '切换步态 [GAIT]',
@@ -603,6 +606,10 @@ machine.reset()
 **解法**：`connect.baudrate` 设 `115200`。bPuppy 是 USB CDC 虚拟串口，速率无物理意义，115200 完全够。
 
 ### 9.2 缺 `ending: "\r\n"` → REPL 无响应
+
+> ⚠ **2026-09-29 复核**：本条的前提与现状**不符** —— 当前 `extension.json` **确实没有** `ending` 键，
+> 而连接、点积木、上传全都正常 ⇒ KittenBlock 侧有默认值。所以它**不是**必填项。
+> 保留这条只作**排查方向**：万一出现"发出去没反应"，再回头查这里。
 
 **现象**：连接后命令发出去没反应。
 **原因**：MicroPython REPL 需要 `\r\n` 结尾。
@@ -834,25 +841,28 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 
 ## 12. bPuppy 现有扩展积木清单
 
-| 分类 | 积木 | pycode 生成 |
+| 分类 | 积木（**按积木区里的显示顺序**） | pycode 生成 |
 |------|------|------------|
-| 运动 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(±0/∓0.8); set_speed(_speed); set_params(±_stride, _lift, _height); set_gait('go')` / `set_gait('stop')` ⚠ 四个方向块都推 `_speed`（旧版速度捎在 `set_params` 里，拆开后补成独立一句）|
-| 高级运动 | **运动参数**（步长 + 身体高度 + 抬脚高度，3 个槽，**横排单行**） | 见下方代码块（直接用 `set_params` 的返回值当 `_ok` + 失败嘤嘤叫）⚠ 走 `go`（四个方向块用的就是它）时这三个值固件侧不用，只对 walk/trot 有效 |
-| 高级运动 | 速度 [SPEED] 方向 [DIR] | `_ok = set_speed([SPEED])` + `set_direction([DIR])` ⚠ **方向走独立的 `set_direction`**（不再寄居在步长的符号里）；两条分开写，第一条失败时不改方向 ⚠ 2026-09-27 由原「速度设为」并入方向下拉 |
-| 高级运动 | 切换步态 [GAIT] | `set_turn(0); set_gait([GAIT])` ⚠ 下拉只有 4 个合法步态名 ⇒ **不做 `_ok`**（没有"被拒"这回事） |
-| 高级运动 | 转弯率设为 [TURN] | `_ok = set_turn([TURN])` ⚠ `set_turn` 超 ±1 是**钳位**（值仍写入 ±1），返回 `False` 表示"没原样采纳" |
-| 高级运动 | 读数积木 ×6：(速度) (步长) (方向) (身体高度) (抬脚高度) (转弯率) | `bpuppy_motion.get_params()[0/1/7/2/3/5]` ⚠ `[1]` 是**带符号**的步长（幅度 × 方向），`[7]` 才是纯方向；⚠ 都带 `disableMonitor: false` —— **不写这行积木栏里就没有舞台勾选框**，见 §5.9 |
-| 高级运动 | **设置成功？**（`boolean`） | `_ok`（上一次设置类积木是否真的生效；被拒 = False） |
-| 高级运动 | **身体姿态**（俯仰 + 滚转） | `set_body_pose([PITCH], [ROLL])` —— 顺序与块上文字一致（旧签名是 `(roll, pitch, yaw)`，2026-09-27 已改为 `(pitch, roll)` 并删掉死字段 yaw） |
-| 高级运动 | **重心偏移 [OFFSET]** mm | `set_center([OFFSET])` ⚠ **会写 NVS**（`motion_task.cpp:983` 调 `motion_save_geometry`），值跨重启保留；上限 ±`L1/2`（默认 20mm） |
-| 姿态 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
-| 舵机编辑 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
-| 动作 | 摆动 / 等待 | `poses.oscillate(...)` / `sleep(...)` |
-| 传感器 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
-| 语音 | 当收到 [指令]（1 个 hat，下拉选指令，15 选项 = 14 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
-| 语音 | (声音角度)（reporter，读变量） | `voice.SoundAngle`（0–180 度；`-1` = 还没收到过） |
-| 语音 | 狗叫 [汪汪/嘤嘤]（1 个积木，下拉选声音） | `voice.say(*voice.SND_[SOUND])`（码值真源 `frozen/voice.py` 的 `SND_WANG`/`SND_YING`；⚠ pycode 必须纯 ASCII，见 §9.10） |
-| 语音 | 播报数字 [NUM]（滑块 0–100） | `voice.say_num([NUM])` → 帧 `AA 55 72 <数字> 55 AA`（越界钳位、非数字忽略，均在固件侧） |
+| 姿态动作 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
+| 姿态动作 | 等待 [SEC] 秒 | `sleep([SEC])` |
+| 运动控制 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(±0/∓0.8); set_speed(_speed); set_params(±_stride, _lift, _height); set_gait('go')` / `set_gait('stop')` ⚠ 四个方向块都推 `_speed`（旧版速度捎在 `set_params` 里，拆开后补成独立一句）|
+| 语音功能 | 当收到 [指令]（1 个 hat，下拉选指令，15 选项 = 14 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
+| 语音功能 | (声音角度)（reporter，读变量） | `voice.SoundAngle`（0–180 度；`-1` = 还没收到过） |
+| 语音功能 | 狗叫 [汪汪/嘤嘤]（1 个积木，下拉选声音） | `voice.say(*voice.SND_[SOUND])`（码值真源 `frozen/voice.py` 的 `SND_WANG`/`SND_YING`；⚠ pycode 必须纯 ASCII，见 §9.10） |
+| 语音功能 | 播报数字 [NUM]（滑块 0–100） | `voice.say_num([NUM])` → 帧 `AA 55 72 <数字> 55 AA`（越界钳位、非数字忽略，均在固件侧） |
+| 舵机控制 | 舵机设为 / 过渡速度 / 执行姿态 / 舵机角度 | `poses.set_servo/set_step/commit` + `bpuppy_servo.get_angle` |
+| 舵机控制 | 摆动 [SERVO2] ±[AMP]° [HZ]Hz [CYCLES]次 | `poses.oscillate([SERVO2],[AMP],[HZ],[CYCLES])`（往复摆动归这一类） |
+| 高级运动控制 | **运动参数**（步长 + 身体高度 + 抬脚高度，3 个槽，**横排单行**） | 见下方代码块（直接用 `set_params` 的返回值当 `_ok` + 失败嘤嘤叫）⚠ 走 `go`（四个方向块用的就是它）时这三个值固件侧不用，只对 walk/trot 有效 |
+| 高级运动控制 | 读数 ×3：(步长) (身体高度) (抬脚高度) | `bpuppy_motion.get_params()[1/2/3]` ⚠ `[1]` 是**带符号**的步长（幅度 × 方向）；都带 `disableMonitor: false` —— **不写这行积木栏里就没有舞台勾选框**，见 §5.9 |
+| 高级运动控制 | 速度 [SPEED] 方向 [DIR] | `_ok = set_speed([SPEED])` + `set_direction([DIR])` ⚠ **方向走独立的 `set_direction`**（不再寄居在步长的符号里）；两条分开写，第一条失败时不改方向 ⚠ 2026-09-27 由原「速度设为」并入方向下拉 |
+| 高级运动控制 | 读数 ×2：(速度) (方向) | `get_params()[0/7]` ⚠ `[7]` 才是纯方向（`[1]` 那个带符号） |
+| 高级运动控制 | 切换步态 [GAIT] | `set_turn(0); set_gait([GAIT])` ⚠ 下拉只有 4 个合法步态名 ⇒ **不做 `_ok`**（没有"被拒"这回事） |
+| 高级运动控制 | 转弯率设为 [TURN] | `_ok = set_turn([TURN])` ⚠ `set_turn` 超 ±1 是**钳位**（值仍写入 ±1），返回 `False` 表示"没原样采纳" |
+| 高级运动控制 | 读数：(转弯率) | `get_params()[5]` |
+| 高级运动控制 | **身体姿态**（俯仰 + 滚转） | `set_body_pose([PITCH], [ROLL])` —— 顺序与块上文字一致（旧签名是 `(roll, pitch, yaw)`，2026-09-27 已改为 `(pitch, roll)` 并删掉死字段 yaw） |
+| 高级运动控制 | **设置成功？**（`boolean`） | `_ok`（上一次设置类积木是否真的生效；被拒 = False）—— 反映**所有**设置类积木的结果，所以排在这类最末 |
+| 传感器功能 | 初始化 IMU / 横滚角 / 俯仰角 / 偏航角 | `bpuppy_imu.init` / `read_angles()[0/1/2]` |
+| 系统高级设置 | **重心偏移 [OFFSET]** mm | `set_center([OFFSET])` ⚠ **会写 NVS**（`motion_task.cpp:983` 调 `motion_save_geometry`），值跨重启保留；上限 ±`L1/2`（默认 20mm）—— 2026-09-29 从「高级运动」移到这里 |
 
 「运动参数」生成的代码（`pycode` 是数组，KittenBlock 用 `join("\r\n")` 逐行拼）：
 
@@ -904,6 +914,16 @@ _ok = _ok or voice.say(*voice.SND_YING) or False   # 失败嘤嘤叫 (顶格单�
 > 「速度设为」并入方向下拉变成「速度 [SPEED] 方向 [DIR]」；
 > 「切换步态」「转弯率设为」保持不变。分类键仍是 `cat_gait`，只是显示名改成了**高级运动**。
 > 拆的理由：7 个槽挤一行约 1030px，且块内改步态会**打断**当前步态 —— 现在改尺寸不动步态。
+
+> **2026-09-29 分类重排（7 类）**：`运动` → **运动控制**；`高级运动` → **高级运动控制**；
+> `姿态` → **姿态动作**；`舵机编辑` → **舵机控制**（并把「摆动」收进来）；
+> `传感器` → **传感器功能**；`语音` → **语音功能**；**取消**「动作」分类
+> （「等待」归姿态动作、「摆动」归舵机控制）；
+> **新增「系统高级设置」**（`cat_system`），「重心偏移」从高级运动移入（理由是它会写 NVS）。
+> 「高级运动控制」内部按**「设置 → 读数」成对**排序：
+> 运动参数 →(步长)(身体高度)(抬脚高度) → 速度方向 →(速度)(方向) → 切换步态 →
+> 转弯率设为 →(转弯率) → 身体姿态 → 设置成功？。
+> **只搬位置，`opcode`/`pycode`/参数一个都没改**（已保存的 `.sb3` 全部照常）。
 
 > **2026-09-27 反馈设计（本轮）**：参数超限**不做 UI 硬防**（速度 / 转弯率 / 步长等仍是自由数字输入），改做
 > "**看得见 + 听得见**"。理由：① 组合参数（步长 + 高度 + 抬脚）的合法集合是 IK 可达性 + 姿态补偿的联合函数

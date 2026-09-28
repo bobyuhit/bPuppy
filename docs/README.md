@@ -235,7 +235,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
 | `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
-| `kext-bpuppy/` | KittenBlock 硬件扩展 (36 积木 + 蓝牙配置 + 开发文档) |
+| `kext-bpuppy/` | KittenBlock 硬件扩展 (37 积木 + 蓝牙配置 + 开发文档) |
 | `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序在**后台线程**里 exec (不阻塞 REPL) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
@@ -1047,7 +1047,7 @@ def pycode_ok(lines):                    # lines = pycode 数组展开后的各�
 
 > **同类位置**：`操作指南.md` 里给人手敲/粘贴的片段（`:82`、`:102`、`:850`、`:863`）带 2 行以上块体，
 > 直接粘进 REPL 会踩同一条 —— 改用粘贴模式（`Ctrl-E` 粘贴，`Ctrl-D` 结束），或把块体压成 1 行。
-> **唯一的例外是 `voiceWhen[VOICE]` 那个 hat 块**（`kblock.json5:434` 的 `def voiceWhen[VOICE]()`）：
+> **唯一的例外是 `voiceWhen[VOICE]` 那个 hat 块**（`kblock.json5:100` 的 `def voiceWhen[VOICE]()`）：
 > 它**故意靠"不闭合"**接用户叠在它下面的积木，投递路径也与普通块不同 —— **别照抄它的形状**。
 
 ---
