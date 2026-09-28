@@ -164,7 +164,11 @@
     //   本块这才名副其实: 速度和方向**各走各的函数**, 改一个不会碰到另一个。
     //   ([DIR] 与步长同号时旧写法结果一样, 但旧写法会让「步长」的**幅度**跟着 [DIR] 变号,
     //    跟「运动参数」块读回比对时看着像被改过。)
-    // ⚠ 两条语句分开写、不用 `and` 串联: 串联会在第一条失败时短路掉第二条, 方向就不改了。
+    // ⚠ 多行 pycode 的缩进**只能越写越深**, 不许写 `else:`/`elif:`/`except:` ——
+    //   KittenBlock 把数组按 \r\n 拼好后**逐行下发**, 而 MicroPython 友善 REPL 的自动缩进
+    //   只追加空格、从不回退 (readline.c:483-527), `else:` 会被顶到与 if 体同列 ⇒ SyntaxError
+    //   ⇒ **整个复合语句一行都不执行** (看着像"点了没反应", 控制台还不一定有 Traceback)。
+    //   所以这里各调各的、不用 if/else 分支, 最后用一个 if 汇总 (见 docs/README.md 易错点 13)。
     {
       opcode: 'setSpeed',
       blockType: 'command',
@@ -183,10 +187,9 @@
       pycode: [
         '_speed = [SPEED]',
         '_dir = [DIR]',
-        'if not bpuppy_motion.set_direction(_dir):',
-        '    _ok = False',
-        'else:',
-        '    _ok = bpuppy_motion.set_speed(_speed)',
+        '_dir_ok = bpuppy_motion.set_direction(_dir)',
+        '_speed_ok = bpuppy_motion.set_speed(_speed)',
+        '_ok = _dir_ok and _speed_ok',
         'if not _ok:',
         '    voice.say(*voice.SND_YING)'
       ]

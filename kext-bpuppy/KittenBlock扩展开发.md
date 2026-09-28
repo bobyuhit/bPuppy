@@ -243,7 +243,13 @@ pycode: ['if x > 1:', '    do_something()']
 ```
 
 KittenBlock 生成代码时 `Array.isArray(pycode) ? pycode.join("\r\n") : pycode` ⇒ 数组元素用 `\r\n` 连接，
-**元素里的缩进原样保留**，所以能写带缩进的语句块。
+**元素里的缩进原样保留**。但**只能越写越深，不能退回外层** —— 多行 `pycode` 是**逐行下发**到友善
+REPL 的，而 REPL 的自动缩进只加不减（`shared/readline/readline.c:483-527`），
+`else:` / `elif:` / `except:` / `finally:` 会被顶到与块体同列 ⇒ `SyntaxError` ⇒
+**整块一行都不执行**（看着像"点了没反应"，控制台还不一定有 Traceback）。
+（上面这个 `if x > 1:` 的例子恰好安全：唯一的缩进在最后一行。）
+硬约束三条、安全形状（顶格若干行 + 末尾单个 `if`）与自查方法见
+[README 易错点 13](../docs/README.md)。
 
 ⚠ **别用分号把 `if` 挤在一行**：Python 里 `if c: a; b` 的 `b` 也会被算进 `if` 体
 （`suite: simple_stmt (';' simple_stmt)*`），条件为假时 `b` 根本不执行。要多个语句就用数组写法。

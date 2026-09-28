@@ -966,6 +966,74 @@ _thread.stack_size(0)          # 0 = 端口默认 (esp32: 5120)
 `MP_THREAD_MIN_STACK_SIZE = 4KB`（传更小的值会被**向上**夹到 4KB）。
 线程栈从**内部 RAM** 分配，所以这条和易错点 11 是同一个约束。
 
+### 13. KittenBlock 积木的 `pycode` 多行时，缩进**只能越写越深**
+
+**现象**：积木在线执行（点积木 / 绿旗）点了"没反应" —— 设备侧状态一点没变，
+控制台还**不一定**有 Traceback。极易误判成"固件没实现这个功能"。
+（2026-09-28 实测：`setSpeed` 积木方向改不了，读回 `get_params()[7]` 恒为 `1.0`。）
+
+**机制**：`pycode` 数组被 KittenBlock 用 `\r\n` 拼好后**逐行原样下发**到友善 REPL。
+而 REPL 的自动缩进 `readline_auto_indent()`（`shared/readline/readline.c:483-527`）
+**只追加空格、从不回退**：每收一个 `\r`，就按"缓冲区里最后一行的整段缩进"补等量空格，
+该行以 `:` 结尾再多补 4。所以送进去的每一行，实际缩进是**累加**出来的：
+
+```
+本行最终缩进 = 上一行最终缩进 + 4×(上一行以 ':' 结尾) + 本行自带的前导空格
+```
+
+**缩进单调不减，永远回不去。** `else:` 于是被顶到与 `if` 体同列 ⇒ `SyntaxError`
+⇒ **整个复合语句一行都不执行**（不是"错一行"，是整块跳过）。
+
+**三条禁令**（多行 `pycode` 一律遵守）：
+
+1. **不写 `else:` / `elif:` / `except:` / `finally:`** —— 它们都要求退回外层，REPL 做不到。
+2. **缩进过的块后面不能再出现顶格语句** —— 它会被静默吸进那个块，只在条件成立时才跑
+   （比语法错更难查）。
+3. **块体别写 2 行以上** —— 同缩进的第 2 行起会各再多 4 空格 ⇒ `IndentationError`。
+   也就是说，整段 `pycode` 里**只能有一处缩进**。
+
+**安全写法 = 顶格若干行 + 末尾单个 `if`，`if` 体只 1 行**（`kblock.json5` 的
+`advMotion` / `bodyPose` / `setCenter` / `setTurn` 都是这个形状）：
+
+```json5
+pycode: [
+  '_stride = [STRIDE]',
+  '_lift = [LIFT]',
+  '_height = [HEIGHT]',
+  'if not bpuppy_motion.set_params(_stride, _lift, _height):',
+  '    voice.say(*voice.SND_YING)'
+]
+```
+
+前 3 行顶格、又不以 `:` 结尾 ⇒ 自动缩进恒为 0；末两行是全段唯一一次"加深"，怎么加都合法。
+
+**自查**（改完积木几秒验一遍，不用上板）：判据是「**作者写的缩进序列单调不减**」。
+要更狠就把每行按上面的公式还原成"板上真实源码"再 `compile()`：
+
+```python
+def sim(lines):                      # lines = pycode 数组展开后的各行
+    out, prev, prevline = [], 0, ''
+    for ln in lines:
+        sent = len(ln) - len(ln.lstrip(' '))
+        eff = prev + (4 if prevline.endswith(':') else 0) + sent
+        out.append(' ' * eff + ln.lstrip(' '))
+        prev, prevline = eff, ln
+    return '\n'.join(out)
+
+compile(sim(src), '<pycode>', 'exec')   # 抛 SyntaxError 就是会踩坑
+```
+
+**确实需要块逻辑时的两个逃生口**：
+
+1. 把多语句下沉成板上**一个函数调用**，`pycode` 保持单行
+   （例：`_ok = bpuppy_motion.set_speed(_speed)`）。
+2. 走**上传到板子跑** —— 整文件编译，不经过 REPL，完全不受这条约束。
+   （`frozen/main.py` 这类"文件内容"同理安全。）
+
+> **同类位置**：`操作指南.md` 里给人手敲/粘贴的片段若有 2 行以上的块体
+> （`:82`、`:102`、`:850`、`:863`），直接粘进 REPL 会 `IndentationError` ——
+> 改用粘贴模式（`Ctrl-E` 粘贴，`Ctrl-D` 结束），或把块体压成 1 行。
+
 ---
 
 ## 首次编译问题排查
