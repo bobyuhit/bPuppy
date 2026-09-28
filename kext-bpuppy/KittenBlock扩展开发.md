@@ -845,7 +845,7 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 |------|------|------------|
 | 姿态动作 | 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 | `poses.stand()/crouch()/sit()/play()/wave()` |
 | 姿态动作 | 等待 [SEC] 秒 | `sleep([SEC])` |
-| 运动控制 | 前进 / 后退 / 左转 / 右转 / 停止 | `set_turn(±0/∓0.8); set_speed(_speed); set_params(±_stride, _lift, _height); set_gait('go')` / `set_gait('stop')` ⚠ 四个方向块都推 `_speed`（旧版速度捎在 `set_params` 里，拆开后补成独立一句）|
+| 运动控制 | **停止** / 前进 / 后退 / 左转 / 右转 | `set_turn(±0/∓0.8); set_speed(_speed); set_params(±_stride, _lift, _height); set_gait('go')` / `set_gait('stop')` ⚠ 四个方向块都推 `_speed`（旧版速度捎在 `set_params` 里，拆开后补成独立一句）；「停止」排最前 —— 急停要第一时间够得着 |
 | 语音功能 | 当收到 [指令]（1 个 hat，下拉选指令，15 选项 = 14 指令 + 声音角度） | `def voiceWhen<value>():` 独立函数（定义在正文前） + voice.py 按名注册回调 |
 | 语音功能 | (声音角度)（reporter，读变量） | `voice.SoundAngle`（0–180 度；`-1` = 还没收到过） |
 | 语音功能 | 狗叫 [汪汪/嘤嘤]（1 个积木，下拉选声音） | `voice.say(*voice.SND_[SOUND])`（码值真源 `frozen/voice.py` 的 `SND_WANG`/`SND_YING`；⚠ pycode 必须纯 ASCII，见 §9.10） |

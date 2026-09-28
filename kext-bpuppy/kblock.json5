@@ -48,6 +48,12 @@
     },
     "---",
     "## $$cat_motion",
+    {
+      opcode: 'stop',
+      blockType: 'command',
+      text: '$$stop',
+      pycode: "bpuppy_motion.set_gait('stop')"
+    },
     // ⚠ 四个方向块都推一句 set_speed(_speed) —— 看着冗余, 但**别删**:
     //   这一句是还原拆分前的行为 (旧 set_params 的第 1 参就是 speed, 按方向键顺手把速度设回去)。
     //   删了的后果: 用网页遥控器/文本块把速度设成 7 之后按「前进」, 速度会一直是 7 而不是回到 _speed。
@@ -83,12 +89,6 @@
       blockType: 'command',
       text: '$$turnRight',
       pycode: "bpuppy_motion.set_direction(1); bpuppy_motion.set_turn(0.8); bpuppy_motion.set_speed(_speed); bpuppy_motion.set_params(_stride, _lift, _height); bpuppy_motion.set_gait('go')"
-    },
-    {
-      opcode: 'stop',
-      blockType: 'command',
-      text: '$$stop',
-      pycode: "bpuppy_motion.set_gait('stop')"
     },
     "---",
     "## $$cat_voice",
