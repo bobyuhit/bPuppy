@@ -239,20 +239,27 @@ libs: {
 #### `pycode` 写成数组 = 多行代码
 
 ```json5
-pycode: ['if x > 1:', '    do_something()']
+pycode: ['_ok = bpuppy_motion.set_center([OFFSET])',
+         '_ok = _ok or voice.say(*voice.SND_YING) or False']
 ```
 
 KittenBlock 生成代码时 `Array.isArray(pycode) ? pycode.join("\r\n") : pycode` ⇒ 数组元素用 `\r\n` 连接，
-**元素里的缩进原样保留**。但**只能越写越深，不能退回外层** —— 多行 `pycode` 是**逐行下发**到友善
-REPL 的，而 REPL 的自动缩进只加不减（`shared/readline/readline.c:483-527`），
-`else:` / `elif:` / `except:` / `finally:` 会被顶到与块体同列 ⇒ `SyntaxError` ⇒
-**整块一行都不执行**（看着像"点了没反应"，控制台还不一定有 Traceback）。
-（上面这个 `if x > 1:` 的例子恰好安全：唯一的缩进在最后一行。）
-硬约束三条、安全形状（顶格若干行 + 末尾单个 `if`）与自查方法见
+**元素里的缩进原样保留**。但 ⚠★ **多行 `pycode` 里一条复合语句都不许有** —— 不写
+`if` / `for` / `while` / `try` / `def` / `class` / `with`，不写 `else:` / `elif:`，不写缩进：
+
+1. **缩进只加不减**（`shared/readline/readline.c:483-527`）⇒ `else:` 会被顶到与块体同列 ⇒ `SyntaxError`；
+2. **复合语句闭不了合**（`py/repl.c:149` + `readline.c:503-527`）⇒ 自动缩进**连"空行"都填上空格**，
+   板子永远等不到那个真空行 ⇒ **整段停在续行状态、一行都不执行**；此时在续行里按 Ctrl-C 是
+   **静默整段丢弃**（`readline.c:158-160` → `pyexec.c:446-450`）—— 表现就是"点了没反应、不报错、
+   控制台连 Traceback 都没有"。2026-09-29 实测确认（5 个带 `if` 的积木全部踩中）。
+
+⇒ **只要有一行以复合关键字开头，整段就被黏住**，前面那些正常行也一起不执行 ——
+所以没有"只改一部分"的折中写法。硬规则、安全形状（顶格单句 + `or` 短路）与自查方法见
 [README 易错点 13](../docs/README.md)。
 
 ⚠ **别用分号把 `if` 挤在一行**：Python 里 `if c: a; b` 的 `b` 也会被算进 `if` 体
-（`suite: simple_stmt (';' simple_stmt)*`），条件为假时 `b` 根本不执行。要多个语句就用数组写法。
+（`suite: simple_stmt (';' simple_stmt)*`），条件为假时 `b` 根本不执行；
+而且 `if` 开头照样触发上面第 2 条。多个语句要**顶格**逐行写。
 
 ### 5.4 arguments 参数类型
 
@@ -361,14 +368,13 @@ blocks: [
       HEIGHT: { type: 'number', defaultValue: '70' },
       LIFT:   { type: 'number', defaultValue: '30' }
     },
-    // pycode 用数组 (KittenBlock 用 join("\r\n")) —— 单行 `if c: a; b` 里 b 也会进 if 体
+    // pycode 用数组 (KittenBlock 用 join("\r\n")) —— 但**一条复合语句都不许有** (§5.3)
     pycode: [
-      '_stride = abs([STRIDE])',
-      '_lift = [LIFT]',
-      '_height = [HEIGHT]',
-      '_ok = bpuppy_motion.set_params(_stride, _lift, _height)',
-      'if not _ok:',
-      '    voice.say(*voice.SND_YING)'
+      '_ok = bpuppy_motion.set_params([STRIDE], [LIFT], [HEIGHT])',
+      '_stride = abs([STRIDE]) if _ok else _stride',
+      '_lift = [LIFT] if _ok else _lift',
+      '_height = [HEIGHT] if _ok else _height',
+      '_ok = _ok or voice.say(*voice.SND_YING) or False'
     ]
   },
   {
@@ -379,12 +385,14 @@ blocks: [
       SPEED: { type: 'number', defaultValue: '2.5' },
       DIR:   { type: 'value', menu: 'dirMenu', defaultValue: '1' }
     },
-    // ⚠ 两条语句分开写, 不用 `and` 串联 —— 串联会在第一条失败时短路掉第二条
+    // 两条语句分开写, 不用 `and` 串联 —— 串联会在第一条失败时短路掉第二条
     pycode: [
       '_speed = [SPEED]',
-      '_ok = bpuppy_motion.set_speed(_speed)',
-      'if not bpuppy_motion.set_direction([DIR]):',
-      '    _ok = False'
+      '_dir = [DIR]',
+      '_dir_ok = bpuppy_motion.set_direction(_dir)',
+      '_speed_ok = bpuppy_motion.set_speed(_speed)',
+      '_ok = _dir_ok and _speed_ok',
+      '_ok = _ok or voice.say(*voice.SND_YING) or False'
     ]
   },
   "---",
@@ -849,12 +857,11 @@ KittenBlock 可通过**蓝牙**连接 bPuppy，把 BLE 当作与串口等价的 
 「运动参数」生成的代码（`pycode` 是数组，KittenBlock 用 `join("\r\n")` 逐行拼）：
 
 ```python
-_stride = abs([STRIDE])                    # 存正数; 本块只写**幅度**, 方向由 set_direction 管
-_lift = [LIFT]                             # ★ 三个全局都要回写, 漏 _lift 会把抬脚高度冲掉
-_height = [HEIGHT]
-_ok = bpuppy_motion.set_params(_stride, _lift, _height)   # 固件返回 True/False (负数 stride 会被拒)
-if not _ok:
-    voice.say(*voice.SND_YING)
+_ok = bpuppy_motion.set_params([STRIDE], [LIFT], [HEIGHT])   # 收**原值** ⇒ 负数才会被固件拒
+_stride = abs([STRIDE]) if _ok else _stride    # abs 只用于回写全局 (存正数); 方向由 set_direction 管
+_lift   = [LIFT] if _ok else _lift             # ★ 三个全局都要回写, 漏 _lift 会把抬脚高度冲掉
+_height = [HEIGHT] if _ok else _height         #   被拒时**不写**, 跟固件"整组被拒一个都不写"一致
+_ok = _ok or voice.say(*voice.SND_YING) or False   # 失败嘤嘤叫 (顶格单句, 不许用 if)
 ```
 
 五个关键点：
@@ -863,8 +870,12 @@ if not _ok:
    不回写的话，用完「运动参数」再拖一个「前进」，参数会被旧值覆盖回去；**`_lift` 漏掉时
    最阴**：设过抬脚 50 之后按「前进」会静默写回 30。
 2. **方向不在这个块里**：方向是独立字段（`set_direction(±1)`），本块只写步长**幅度**（`_stride`
-   恒存正数）⇒ 狗在「后退」中改步长**不会掉头**。旧写法 `set_params(_dir * _stride, ...)` 已删除 ——
-   固件现在对负 stride 直接拒（返回 `False`，嘤嘤叫）。
+   恒存正数）⇒ 狗在「后退」中改步长**不会掉头**。旧写法 `set_params(_dir * _stride, ...)` 已删除。
+   ⚠ **`abs()` 只用在"回写全局"那一行**：传给 `set_params` 的是你填的**原值**，所以填负数会真的走到
+   固件那条 `!(stride >= 0)`（`motion_task.cpp:1350`）被**拒** —— 返回 `False` + 嘤嘤叫 +
+   C 日志点名"方向请用 set_direction(±1)"。
+   （2026-09-29 之前是 `_stride = abs([STRIDE])` **先折成正数再传**，固件那道闸门永远够不到：
+   填 -70 静默变成 +70，不嘤不报错，文档承诺的"给负数会被拒"落空。）
 3. **没有顺序耦合了**（2026-09-27 起）：`set_params(步长, 抬脚, 站高)` 三个值一起判、一起写，
    它们之间不存在"谁用谁的旧值"的问题 —— 原来那个 `set_lift → params → 读回 → 补一次` 的三段式
    补丁就是为它打的，已随 `set_lift` 一起删掉。详见 `docs/error.md` §2.2 #7。
@@ -872,6 +883,10 @@ if not _ok:
    现在把 C 侧的 `bool` 透传到 MicroPython，所以**不再需要 `get_params()` 读回比对**，
    也没有取整容差误判。结果写进 `_ok`（`boolean` 积木「设置成功？」读它）+ 失败
    `voice.say(*voice.SND_YING)` 叫一声。
+   ⚠★ 这声嘤嘤**必须写成顶格的 `_ok = _ok or voice.say(...) or False`**，不能写成
+   `if not _ok:` + 缩进体 —— 后者在友善 REPL 上闭不了合、整段永不执行（`voiceWhen` 除外）。
+   5 个块（`advMotion`/`bodyPose`/`setCenter`/`setSpeed`/`setTurn`）2026-09-29 已统一改成这个形状，
+   详见 [README 易错点 13](../docs/README.md)。
    ⚠ **`_ok` 的初值要在两处各写一次**：`libs` 注入头（`kblock.json5` 顶部）和 `extension.json` 的
    `afterConnect` —— 在线执行走 `afterConnect`、上传跑走 `libs` 注入，漏一处就是 `NameError`。
    ⚠ **「重心偏移」没有读回接口**（`get_geometry()` 只返回 `(L1, L2, 半长, 半宽)`），但它和「机身姿态」自 2026-09-28 起都**返回 bool 并参与 `_ok`**。

@@ -85,13 +85,24 @@
       //    四个方向块用的都是 go ⇒ 本块设的值对「前进/后退/左转/右转」**没有影响**,
       //    要让它生效得先用「切换步态」选 walk 或 trot。下面那句回写仍然必须留着:
       //    walk/trot 下它就是真的在起作用。
+      // ⚠★ 本块 5 行必须是**顶格单句、一条复合语句都不许有** —— 不能写 `if`。2026-09-29 定为铁律。
+      //   友善 REPL 判"这段说完没有"只看缓冲区末尾是不是 \n (py/repl.c:149),
+      //   而自动缩进连"空行"也给填空格 (readline.c:503-527) ⇒ `if` 段**永远等不到那个空行**,
+      //   整段一行都不执行; 此时按 Ctrl-C 是**静默整段丢弃** (readline.c:158-160 → pyexec.c:446-450),
+      //   所以现象是"点了没反应、也不嘤、还没报错" —— 详见 docs/README.md 易错点 13。
+      //   逐行下发时只有"无缩进 / 不以 ':' 结尾 / 非复合语句开头"的行才保证执行,
+      //   正是 bTool 的 _paste_by_lines_ok() 用的那条判据 (btool.py:1791-1804)。
+      // ⇒ 失败嘤嘤改用 `or` 短路, 见最后一行。
+      // ★ abs() 从此**只用于回写全局**: set_params 收原值 ⇒ 负步长才会走到固件那条
+      //   `!(stride >= 0)` (motion_task.cpp:1350) 被拒 + 嘤嘤叫, 兑现 docs/操作指南.md:217
+      //   与 扩展开发.md「固件对负 stride 直接拒」的承诺 (以前 abs 在前, 那条闸门永远够不到)。
+      //   被拒时三个全局**不写**, 与固件"整组被拒一个都不写" (motion_task.cpp:1364-1368) 一致。
       pycode: [
-        '_stride = abs([STRIDE])',
-        '_lift = [LIFT]',
-        '_height = [HEIGHT]',
-        '_ok = bpuppy_motion.set_params(_stride, _lift, _height)',
-        'if not _ok:',
-        '    voice.say(*voice.SND_YING)'
+        '_ok = bpuppy_motion.set_params([STRIDE], [LIFT], [HEIGHT])',
+        '_stride = abs([STRIDE]) if _ok else _stride',
+        '_lift = [LIFT] if _ok else _lift',
+        '_height = [HEIGHT] if _ok else _height',
+        '_ok = _ok or voice.say(*voice.SND_YING) or False'
       ]
     },
     // bodyPose 的 C 签名改成 (俯仰, 滚转) 了 —— 跟块上文字「俯仰 [PITCH]…滚转 [ROLL]」同序,
@@ -113,10 +124,12 @@
         PITCH: { type: 'number', defaultValue: '0' },
         ROLL:  { type: 'number', defaultValue: '0' }
       },
+      // ⚠ 顶格单句, 不许有复合语句 (`if` 段在友善 REPL 上闭不了合, 整段不执行)。
+      //   最后一行靠 `or` 短路: _ok 假才求值 voice.say ⇒ 嘤; 尾部 or False 把 say 返回的
+      //   None 收回真 bool ⇒「设置成功？」读数不变。见 docs/README.md 易错点 13。
       pycode: [
         '_ok = bpuppy_motion.set_body_pose([PITCH], [ROLL])',
-        'if not _ok:',
-        '    voice.say(*voice.SND_YING)'
+        '_ok = _ok or voice.say(*voice.SND_YING) or False'
       ]
     },
     // ⚠ 这个块会**写 NVS** (set_center 内部调 motion_save_geometry, motion_task.cpp:1052),
@@ -135,10 +148,10 @@
       arguments: {
         OFFSET: { type: 'number', defaultValue: '0' }
       },
+      // ⚠ 顶格单句, 不许有复合语句 (`if` 段在友善 REPL 上闭不了合, 整段不执行)。
       pycode: [
         '_ok = bpuppy_motion.set_center([OFFSET])',
-        'if not _ok:',
-        '    voice.say(*voice.SND_YING)'
+        '_ok = _ok or voice.say(*voice.SND_YING) or False'
       ]
     },
     {
@@ -164,11 +177,13 @@
     //   本块这才名副其实: 速度和方向**各走各的函数**, 改一个不会碰到另一个。
     //   ([DIR] 与步长同号时旧写法结果一样, 但旧写法会让「步长」的**幅度**跟着 [DIR] 变号,
     //    跟「运动参数」块读回比对时看着像被改过。)
-    // ⚠ 多行 pycode 的缩进**只能越写越深**, 不许写 `else:`/`elif:`/`except:` ——
-    //   KittenBlock 把数组按 \r\n 拼好后**逐行下发**, 而 MicroPython 友善 REPL 的自动缩进
-    //   只追加空格、从不回退 (readline.c:483-527), `else:` 会被顶到与 if 体同列 ⇒ SyntaxError
-    //   ⇒ **整个复合语句一行都不执行** (看着像"点了没反应", 控制台还不一定有 Traceback)。
-    //   所以这里各调各的、不用 if/else 分支, 最后用一个 if 汇总 (见 docs/README.md 易错点 13)。
+    // ⚠★ 多行 pycode 一律**顶格单句**, 一条复合语句都不许有 —— 不写 `if`, 更不写 `else:`/`elif:`。
+    //   2026-09-28 那次只删掉 `else:` 是**没修干净**: 留着 `if` 照样死 —— REPL 判"说完没有"只看
+    //   缓冲区末尾是不是 \n (py/repl.c:149), 而自动缩进连"空行"也填空格 (readline.c:503-527),
+    //   于是 `if` 段永远等不到那个空行、整段一行都不执行; 续行里 Ctrl-C 又是**静默整段丢弃**
+    //   (readline.c:158-160 → pyexec.c:446-450)。现象就是"点了没反应、不嘤、也没报错"。
+    //   2026-09-29 实测确认, 并被 bTool 的 _paste_by_lines_ok() 判据独立印证 (btool.py:1791-1804)。
+    //   所以这里各调各的, 失败嘤嘤改用 `or` 短路收尾 (见 docs/README.md 易错点 13)。
     {
       opcode: 'setSpeed',
       blockType: 'command',
@@ -190,8 +205,7 @@
         '_dir_ok = bpuppy_motion.set_direction(_dir)',
         '_speed_ok = bpuppy_motion.set_speed(_speed)',
         '_ok = _dir_ok and _speed_ok',
-        'if not _ok:',
-        '    voice.say(*voice.SND_YING)'
+        '_ok = _ok or voice.say(*voice.SND_YING) or False'
       ]
     },
     // ⚠ set_turn 超范围时**静默钳到 ±1** (行为未变), 但现在会返回 False ⇒ 直接就是 _ok,
@@ -206,10 +220,10 @@
           defaultValue: '0'
         }
       },
+      // ⚠ 顶格单句, 不许有复合语句 (同上)。注意 False 只是"没原样采纳", 值已钳位写入。
       pycode: [
         '_ok = bpuppy_motion.set_turn([TURN])',
-        'if not _ok:',
-        '    voice.say(*voice.SND_YING)'
+        '_ok = _ok or voice.say(*voice.SND_YING) or False'
       ]
     },
     // ---- 读数积木 (读**板上生效值**) ----

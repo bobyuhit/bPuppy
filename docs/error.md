@@ -246,7 +246,7 @@ pitch_max ≈ atan( ( √(84² − (stride/2)²) − height ) / (body_half_l + s
 
 ⚠ **这是行为变更，会撞到现有用法**：默认步长下「机身姿态」压到 −10° 会被**拒**（以前是静默折腿），
 「设置重心 15」也会被拒。绕法是先减小步长：`stride=40` 时俯仰 −10° 就合法了。
-KittenBlock 那两个块现在**还看不见拒绝**（pycode 没接返回值，见下面"还没做"）。
+KittenBlock 那两个块现在**看得见拒绝**了（pycode 接了返回值 + 嘤嘤叫，见下面"已做"）。
 
 **残留的一个洞**：NVS 里的 `center_offset` 载入时**只判量级**（`motion_load_geometry`），
 刻意如此 —— 载入发生在 stride/height 还是默认值的时候，若按组合判，一个当初合法的 center
@@ -258,12 +258,14 @@ KittenBlock 那两个块现在**还看不见拒绝**（pycode 没接返回值，
 `(stride, height, lift, roll, pitch, center_offset)` 的 helper，
 让这两个 setter 也拿**新值**跑一遍，并返回 `bool`。**⇒ 2026-09-28 已做，见本节末尾。**
 
-**还没做的**：KittenBlock 的「机身姿态」/「设置重心」两个块的 pycode 还是
-`bpuppy_motion.set_body_pose([PITCH], [ROLL])` 这种**不接返回值**的写法（`kblock.json5:103` / `:116`），
-所以被拒时用户看到的是"点了没反应"。C 侧和 mpy 已经能报出 `False` 了
-（`set_center` 以前连 `bool` 都被 `mp_const_none` 吞掉，这次一并修了），
-只差积木那句 `_ok = ...; if not _ok: voice.say(*voice.SND_YING)` —— 跟 `6b2f6cb` 给
-「运动参数」加的是同一套。改动小，但要让用户**重新导入扩展**，单独立项。
+**已做（2026-09-28 接返回值／2026-09-29 修好"嘤不出来"）**：KittenBlock 的「机身姿态」/「设置重心」
+两个块的 pycode 一开始是 `bpuppy_motion.set_body_pose([PITCH], [ROLL])` 这种**不接返回值**的写法
+（旧行号 `kblock.json5:103` / `:116`，**已过时**），被拒时用户看到的是"点了没反应"。
+C 侧和 mpy 先修好了 bool（`set_center` 以前连 `bool` 都被 `mp_const_none` 吞掉），
+积木侧随后补上 `_ok` + 嘤嘤叫 —— 但**第一版补法（`if not _ok:` + 缩进体）在友善 REPL 上整段永不执行**，
+所以"被拒会嘤嘤叫"这个承诺一直是空的（`if` 段闭不了合，见 [README 易错点 13](README.md)）。
+2026-09-29 把 5 个块统一改成顶格的 `_ok = _ok or voice.say(*voice.SND_YING) or False` 才真正生效 ——
+用户需**重新导入扩展**。
 
 **3. ⚠ `ik_pos_check()` 是 `ik.c` 公式的手抄副本**（`motion_task.cpp:556` 注释自述）——
 两边没有共享代码、没有一致性测试。`ik.c` 的公式改了而这里忘了跟，闸门就静默失灵，

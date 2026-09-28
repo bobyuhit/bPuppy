@@ -966,61 +966,75 @@ _thread.stack_size(0)          # 0 = 端口默认 (esp32: 5120)
 `MP_THREAD_MIN_STACK_SIZE = 4KB`（传更小的值会被**向上**夹到 4KB）。
 线程栈从**内部 RAM** 分配，所以这条和易错点 11 是同一个约束。
 
-### 13. KittenBlock 积木的 `pycode` 多行时，缩进**只能越写越深**
+### 13. KittenBlock 积木的 `pycode` 里**不许出现复合语句**（`if` / `def` / `for` …）
 
 **现象**：积木在线执行（点积木 / 绿旗）点了"没反应" —— 设备侧状态一点没变，
-控制台还**不一定**有 Traceback。极易误判成"固件没实现这个功能"。
-（2026-09-28 实测：`setSpeed` 积木方向改不了，读回 `get_params()[7]` 恒为 `1.0`。）
+**不嘤、不报错、控制台连 Traceback 都没有**。极易误判成"固件没实现这个功能"。
+（2026-09-28 `setSpeed` 方向改不了，读回 `get_params()[7]` 恒为 `1.0`；
+2026-09-29 查实「参数被拒时嘤嘤叫」从来听不到 —— 同一个根因的两次表现。）
 
-**机制**：`pycode` 数组被 KittenBlock 用 `\r\n` 拼好后**逐行原样下发**到友善 REPL。
-而 REPL 的自动缩进 `readline_auto_indent()`（`shared/readline/readline.c:483-527`）
-**只追加空格、从不回退**：每收一个 `\r`，就按"缓冲区里最后一行的整段缩进"补等量空格，
-该行以 `:` 结尾再多补 4。所以送进去的每一行，实际缩进是**累加**出来的：
+**机制（两半，缺一不可）**：`pycode` 数组被 KittenBlock 用 `\r\n` 拼好后**逐行原样下发**到友善 REPL。
+
+*第一半 —— 缩进只加不减*：`readline_auto_indent()`（`shared/readline/readline.c:483-527`）
+每收一个 `\r`，就按"缓冲区里最后一行的整段缩进"补等量空格，该行以 `:` 结尾再多补 4：
 
 ```
 本行最终缩进 = 上一行最终缩进 + 4×(上一行以 ':' 结尾) + 本行自带的前导空格
 ```
 
-**缩进单调不减，永远回不去。** `else:` 于是被顶到与 `if` 体同列 ⇒ `SyntaxError`
-⇒ **整个复合语句一行都不执行**（不是"错一行"，是整块跳过）。
+**缩进单调不减，永远回不去** ⇒ `else:` 被顶到与 `if` 体同列 ⇒ `SyntaxError`。
 
-**三条禁令**（多行 `pycode` 一律遵守）：
+*第二半 —— 复合语句闭不了合*：REPL 判"这段说完没有"只看**缓冲区最后一个字符是不是 `\n`**
+（`py/repl.c:149`：`if (starts_with_compound_keyword && i[-1] != '\n') return true;`）。
+而自动缩进**连"空行"都给填空格**（`readline.c:503-527`）：`if not _ok:` 之后那行被填 4 格、
+body（自带 4 格）之后那行被填 **8 格** ⇒ 你敲的那个"空行"`i[-1] == ' '` ⇒ **仍算没说完**，
+要**连按两次回车**（第二行因"连续两个全空格行不再加缩进"的规则才真空）才执行。
+**KittenBlock 逐行下发时不补那个空行** ⇒ 这类块**永远停在续行状态、一行都不执行**。
+此时在续行里按 **Ctrl-C 是静默整段丢弃**（`readline.c:158-160` → `pyexec.c:446-450`）——
+不执行、不报错、直接回 `>>>`，这就是"没声音也没提示"的来源。
+（续行里 Ctrl-D 是"删除光标处字符"（`readline.c:162-165`），不是执行。）
 
-1. **不写 `else:` / `elif:` / `except:` / `finally:`** —— 它们都要求退回外层，REPL 做不到。
-2. **缩进过的块后面不能再出现顶格语句** —— 它会被静默吸进那个块，只在条件成立时才跑
-   （比语法错更难查）。
-3. **块体别写 2 行以上** —— 同缩进的第 2 行起会各再多 4 空格 ⇒ `IndentationError`。
-   也就是说，整段 `pycode` 里**只能有一处缩进**。
+*实锤对照*（2026-09-29，拿模拟脚本跑 `HEAD` 版与修后版，同一份判据）：
 
-**安全写法 = 顶格若干行 + 末尾单个 `if`，`if` 体只 1 行**（`kblock.json5` 的
-`advMotion` / `bodyPose` / `setCenter` / `setTurn` 都是这个形状）：
+| | 逐行发不安全（bTool 判据） | 段末卡在续行 ⇒ 永不执行 |
+|---|---|---|
+| 改前 | 5 个 `if` 块 | **`advMotion` / `bodyPose` / `setCenter` / `setSpeed` / `setTurn`** |
+| 改后 | 无 | 无（只剩 `voiceWhen`，见文末例外） |
+
+用户板上真实回显 `>>>` / `...`+8 空格，与模拟出的缩进列 `[0, 0, 8]` **逐列对上**。
+另一条独立印证：`d:\bTool` 的终端粘贴早就在防这件事（`btool.py:1791-1804`），
+注释写着「`if True: pass` 这种**单行**复合语句也会被判成"没输完" → 板子**卡在续行状态等空行**」。
+
+**硬规则：整段 `pycode` 一条复合语句都不许有** —— 不写 `if` / `for` / `while` / `try` / `def` /
+`with` / `class` / `async` / `@`，不写 `else:` / `elif:` / `except:` / `finally:`，不写缩进。
+**只要有一行以复合关键字开头，整段就被黏住**，前面那些本来正常的行也一起不执行 ——
+所以不存在"只改一部分"的折中写法。
+
+**安全写法 = 顶格单句，失败反馈用 `or` 短路**（`advMotion` / `bodyPose` / `setCenter` /
+`setSpeed` / `setTurn` 五个块现在都是这个形状）：
 
 ```json5
 pycode: [
-  '_stride = [STRIDE]',
-  '_lift = [LIFT]',
-  '_height = [HEIGHT]',
-  'if not bpuppy_motion.set_params(_stride, _lift, _height):',
-  '    voice.say(*voice.SND_YING)'
+  '_ok = bpuppy_motion.set_center([OFFSET])',
+  '_ok = _ok or voice.say(*voice.SND_YING) or False'
 ]
 ```
 
-前 3 行顶格、又不以 `:` 结尾 ⇒ 自动缩进恒为 0；末两行是全段唯一一次"加深"，怎么加都合法。
+`_ok` 真 ⇒ `or` 短路、不求值右边（**不嘤**）；假 ⇒ 求值 `voice.say(...)` ⇒ **嘤一声**。
+尾部 `or False` 把 `say` 返回的 `None` 收回真 bool（「设置成功？」读数照旧），
+写成赋值也免得 REPL 把 `True` 回显到串口。
 
-**自查**（改完积木几秒验一遍，不用上板）：判据是「**作者写的缩进序列单调不减**」。
-要更狠就把每行按上面的公式还原成"板上真实源码"再 `compile()`：
+**自查**（几秒验一遍，不用上板）：直接套 bTool 那条判据 —— 逐行检查**空行 / 有缩进 /
+以 `:` 结尾 / `@` 开头 / 以复合关键字开头**，任一命中就不能逐行发：
 
 ```python
-def sim(lines):                      # lines = pycode 数组展开后的各行
-    out, prev, prevline = [], 0, ''
+KEYWORDS = ("if", "while", "for", "try", "with", "def", "class", "async")
+def pycode_ok(lines):                    # lines = pycode 数组展开后的各行
     for ln in lines:
-        sent = len(ln) - len(ln.lstrip(' '))
-        eff = prev + (4 if prevline.endswith(':') else 0) + sent
-        out.append(' ' * eff + ln.lstrip(' '))
-        prev, prevline = eff, ln
-    return '\n'.join(out)
-
-compile(sim(src), '<pycode>', 'exec')   # 抛 SyntaxError 就是会踩坑
+        if not ln.strip() or ln[0] in ' \t' or ln[0] == '@': return False
+        if ln.rstrip().endswith(':'): return False
+        if ln.split(None, 1)[0].rstrip('(') in KEYWORDS: return False
+    return True                          # 全过 = 逐行下发安全
 ```
 
 **确实需要块逻辑时的两个逃生口**：
@@ -1028,11 +1042,13 @@ compile(sim(src), '<pycode>', 'exec')   # 抛 SyntaxError 就是会踩坑
 1. 把多语句下沉成板上**一个函数调用**，`pycode` 保持单行
    （例：`_ok = bpuppy_motion.set_speed(_speed)`）。
 2. 走**上传到板子跑** —— 整文件编译，不经过 REPL，完全不受这条约束。
-   （`frozen/main.py` 这类"文件内容"同理安全。）
+   （`frozen/main.py` 这类"文件内容"同理安全；`tools/` 里那几个多行脚本走的是
+   paste 模式 `Ctrl-E`…`Ctrl-D`，也不过 readline 的自动缩进。）
 
-> **同类位置**：`操作指南.md` 里给人手敲/粘贴的片段若有 2 行以上的块体
-> （`:82`、`:102`、`:850`、`:863`），直接粘进 REPL 会 `IndentationError` ——
-> 改用粘贴模式（`Ctrl-E` 粘贴，`Ctrl-D` 结束），或把块体压成 1 行。
+> **同类位置**：`操作指南.md` 里给人手敲/粘贴的片段（`:82`、`:102`、`:850`、`:863`）带 2 行以上块体，
+> 直接粘进 REPL 会踩同一条 —— 改用粘贴模式（`Ctrl-E` 粘贴，`Ctrl-D` 结束），或把块体压成 1 行。
+> **唯一的例外是 `voiceWhen[VOICE]` 那个 hat 块**（`kblock.json5:434` 的 `def voiceWhen[VOICE]()`）：
+> 它**故意靠"不闭合"**接用户叠在它下面的积木，投递路径也与普通块不同 —— **别照抄它的形状**。
 
 ---
 
