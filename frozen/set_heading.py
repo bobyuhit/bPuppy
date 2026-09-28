@@ -37,8 +37,11 @@ def start(target=57.0):
 
     # 步频与步长/站高各归各的函数 (set_params 现在收的是 步长/抬脚/站高)。
     # 抬脚高度从板上读回 —— 本函数以前根本不碰 lift, 写死 30 会把用户设的值静默重置。
+    # ★ 方向必须**显式**说成朝前: 步长解耦成幅度之后, set_params(70,...) 不再隐含"前进"。
+    #   本脚本是"朝目标航向走过去", 方向由 turn 控制, 前进方向永远是 +1。
     _lift = bpuppy_motion.get_params()[3]
     bpuppy_motion.set_speed(2.5)
+    bpuppy_motion.set_direction(1)
     bpuppy_motion.set_params(70, _lift, 70)
     bpuppy_motion.set_gait("go")
 

@@ -25,6 +25,7 @@ typedef enum {
     GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
     GAIT_GO,            // 自适应 (speed≤4.0→walk, speed≥6.0→trot, 之间插值; 见 motion_task_main 的 GO 分支)
                         // ★ GO 自己定 步长/站高/抬脚 —— 用户设的 stride/lift/height 只有 stride 的符号当方向用
+    GAIT_REPOS,         // ★ 回正步 (停步收尾): 身体不动, 对角两两抬脚把四腿挪回 x=0 —— 见 motion_enter_repos()
     GAIT_COUNT
 } gait_type_t;
 
@@ -41,7 +42,8 @@ typedef struct {
     gait_type_t gait;           // 当前步态
     float       speed;          // 速度 (当前, 平滑后)
     float       target_speed;   // 速度 (目标)
-    float       stride;         // 步长 (mm)
+    float       stride;         // 步长**幅度** (mm, ≥0; 0 = 原地踏步) —— 方向见 direction
+    float       direction;      // +1 = 前, -1 = 后 —— 独立参数, 上电默认 +1
     float       height;         // 站立高度 (mm)
     float       lift_height;    // 抬腿高度 (mm)
     float       body_roll;      // 身体目标横滚角 (deg)
@@ -123,6 +125,11 @@ bool motion_set_body_pose(float pitch, float roll);
 // 设置转弯系数 (-1=左, +1=右, 0=直)
 // 返回是否原样采纳 (false=超出 ±1 已**钳位**, 注意此时仍写入了钳位后的值, 不是拒绝)
 bool motion_set_turn(float turn);
+
+// 设置运动方向 (+1=前, -1=后) —— 独立参数, 上电默认 +1。
+// 与步长/速度/步态**完全解耦**: 改方向不再连带改步长, 反之亦然。
+// 返回是否原样采纳 (false=0 或 NaN 被拒, 保持原值)
+bool motion_set_direction(float dir);
 
 // 设置脚中位偏移 (正=前移, 负=后移)
 // 返回是否写入成功 (false=被拒, 保持原值且不写 NVS)。被拒有两种原因:

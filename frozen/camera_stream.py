@@ -23,7 +23,8 @@ _running = False
 _lock = None
 _g_speed = 0
 _g_turn = 0.0
-_g_stride = 70
+_g_stride = 70       # 步长**幅度** (≥0) —— 方向归 _g_dir
+_g_dir = 1           # 方向 ±1 (上电默认 +1, 跟固件一致)
 _g_height = 70
 _g_gait = "stop"
 _speed_set = False   # 用户本会话是否拖过速度滑块
@@ -152,9 +153,9 @@ a.btn:active{opacity:.75;transform:scale(.95)}
       <span id="sv">__SPEED_DISPLAY__</span>
     </form>
     <div class="row">
-      <a class="btn dir" href="/cmd?stride=70&turn=-0.5" target="f">&#x2196;</a>
-      <a class="btn dir" href="/cmd?stride=70&turn=0"    target="f">&#x25B2;</a>
-      <a class="btn dir" href="/cmd?stride=70&turn=0.5"  target="f">&#x2197;</a>
+      <a class="btn dir" href="/cmd?dir=1&stride=70&turn=-0.5" target="f">&#x2196;</a>
+      <a class="btn dir" href="/cmd?dir=1&stride=70&turn=0"    target="f">&#x25B2;</a>
+      <a class="btn dir" href="/cmd?dir=1&stride=70&turn=0.5"  target="f">&#x2197;</a>
     </div>
     <div class="row">
       <a class="btn dir" href="/cmd?stride=0&turn=-0.8"  target="f">&#x25C0;</a>
@@ -162,9 +163,9 @@ a.btn:active{opacity:.75;transform:scale(.95)}
       <a class="btn dir" href="/cmd?stride=0&turn=0.8"   target="f">&#x25B6;</a>
     </div>
     <div class="row">
-      <a class="btn dir" href="/cmd?stride=-70&turn=-0.5" target="f">&#x2199;</a>
-      <a class="btn dir" href="/cmd?stride=-70&turn=0"    target="f">&#x25BC;</a>
-      <a class="btn dir" href="/cmd?stride=-70&turn=0.5"  target="f">&#x2198;</a>
+      <a class="btn dir" href="/cmd?dir=-1&stride=70&turn=-0.5" target="f">&#x2199;</a>
+      <a class="btn dir" href="/cmd?dir=-1&stride=70&turn=0"    target="f">&#x25BC;</a>
+      <a class="btn dir" href="/cmd?dir=-1&stride=70&turn=0.5"  target="f">&#x2198;</a>
     </div>
   </div>
 
@@ -315,7 +316,7 @@ def _effective_speed():
 
 
 def _parse_cmd(path):
-    global _g_speed, _g_turn, _g_stride, _g_height, _g_gait, _speed_set
+    global _g_speed, _g_turn, _g_stride, _g_dir, _g_height, _g_gait, _speed_set
 
     qs = path[5:] if path.startswith("/cmd?") else path
     # print("CMD:", qs)
@@ -337,10 +338,12 @@ def _parse_cmd(path):
         if "get_params" in params:
             try:
                 p = bpuppy_motion.get_params()
+                # STRIDE 是**带符号**的 (p[1] = 幅度×方向, 老读者照旧); DIR 是独立的方向
                 return ("SPEED=%.1f&STRIDE=%.0f&HEIGHT=%.0f&LIFT=%.0f&OMEGA=%.1f&TURN=%.1f"
-                        % (p[0], p[1], p[2], p[3], p[4], p[5]))
+                        "&DIR=%.0f"
+                        % (p[0], p[1], p[2], p[3], p[4], p[5], p[7]))
             except Exception:
-                return "SPEED=0&STRIDE=0&HEIGHT=70&LIFT=30&OMEGA=2.0&TURN=0"
+                return "SPEED=0&STRIDE=0&HEIGHT=70&LIFT=30&OMEGA=2.0&TURN=0&DIR=1"
 
         # === 图传开关 (运行时) ===
         if "stream" in params:
@@ -380,6 +383,8 @@ def _parse_cmd(path):
                 _g_turn = float(params["turn"])
             if "stride" in params:
                 _g_stride = float(params["stride"])
+            if "dir" in params:
+                _g_dir = float(params["dir"])
             if "height" in params:
                 _g_height = float(params["height"])
             return "OK:set"
@@ -406,6 +411,8 @@ def _parse_cmd(path):
             _g_turn = float(params["turn"])
         if "stride" in params:
             _g_stride = float(params["stride"])
+        if "dir" in params:
+            _g_dir = float(params["dir"])
         if "height" in params:
             _g_height = float(params["height"])
 
@@ -414,6 +421,9 @@ def _parse_cmd(path):
         # set_params 现在收 (步长, 抬脚, 站高); 本页没有抬脚滑块, 从板上读回当前值 ——
         # 跟 _effective_speed() 同一套做法, 避免把用户用积木设的抬脚高度冲掉。
         _lift = bpuppy_motion.get_params()[3]
+        # ★ 方向走独立参数 —— URL 里 stride 只剩幅度 (后退键是 dir=-1&stride=70),
+        #   所以这里必须**分两步**发: 步长的幅度一点不变, 只有方向翻。
+        bpuppy_motion.set_direction(_g_dir)
         bpuppy_motion.set_params(_g_stride, _lift, _g_height)
         bpuppy_motion.set_speed(abs(_effective_speed()))
         bpuppy_motion.set_turn(_g_turn)
