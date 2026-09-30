@@ -459,7 +459,7 @@ static bool mat3_cholesky(float *M, float *L) {
 }
 
 // 3D 椭球拟合: 返回残差 (RMSE), center[3] = 硬铁偏移, W[9] = 软铁校正矩阵 (行优先)
-static float fit_ellipsoid(int n, float *pts, float *center, float *W) {
+static float fit_ellipsoid(int n, float *pts, float *center, float *W, bool verbose) {
     if (n<30) {mp_printf(&mp_plat_print,"[fit] too few samples: %d\n",n); return -1;}
     // 构造法方程 ATA·coeff = ATb, 其中 A 为 n×9, b 为全 1 向量
     float ATA[81]={0}, ATb[9]={0};
@@ -486,7 +486,7 @@ static float fit_ellipsoid(int n, float *pts, float *center, float *W) {
     float cy=M3_inv[3]*RHS[0]+M3_inv[4]*RHS[1]+M3_inv[5]*RHS[2]+my;
     float cz=M3_inv[6]*RHS[0]+M3_inv[7]*RHS[1]+M3_inv[8]*RHS[2]+mz;
     center[0]=cx; center[1]=cy; center[2]=cz;
-    mp_printf(&mp_plat_print,"[fit] center: %.1f %.1f %.1f\n", cx, cy, cz);
+    if (verbose) mp_printf(&mp_plat_print,"[fit] center: %.1f %.1f %.1f\n", cx, cy, cz);
     // 平移后积分求 K
     float K=0; int kn=0;
     for (int i=0;i<n;i++) {
@@ -497,7 +497,7 @@ static float fit_ellipsoid(int n, float *pts, float *center, float *W) {
     }
     if (kn<10) {mp_printf(&mp_plat_print,"[fit] K invalid: kn=%d K=%.4f\n", kn, K); return -1;}
     K/=kn;
-    mp_printf(&mp_plat_print,"[fit] K=%.4f\n", K);
+    if (verbose) mp_printf(&mp_plat_print,"[fit] K=%.4f\n", K);
     // M3 / K → Cholesky → W = L^T / √K
     float MK[9], L[9];
     for (int i=0;i<9;i++) MK[i]=M3[i]/K;
@@ -548,8 +548,13 @@ bool imu_mag_cal_collect(int *count,
         if (count) *count=g_mc_count;
         return false;
     }
-    // DRDY 检查 + HOFL 跳过
-    if (!(mbuf[0]&0x01) || (mbuf[7]&AK8963_HOFL)) {
+    // ⚠ 这里**不查 DRDY** (mbuf[0]&0x01)。SLV0 在后台按 MPU 采样率 (1kHz) 持续读走
+    //   这 8 个字节, 而 ST1 的 DRDY 位每被读一次就清零, AK8963 却只有 100Hz 出数 ——
+    //   于是 REPL 侧调用时能看到 DRDY=1 的概率只有 ~8% (实测 5/60), 九成采样被白白
+    //   丢掉: 用户转好几圈也攒不够 30 个, 而丢样本发生在读取侧, 跟转得快慢无关。
+    //   数据本身一直是新鲜的 (SLV0 一直在刷, 最多旧 10ms), "有没有新东西"交给下面
+    //   的去重判据回答就够了。HOFL 仍要查 —— 那是 AK8963 溢出, 数据本身不可信。
+    if (mbuf[7]&AK8963_HOFL) {
         if (count) *count=g_mc_count;
         return false;
     }
@@ -588,6 +593,38 @@ bool imu_mag_cal_collect(int *count,
     return true;
 }
 
+// 采集过程中的预览: 拿**已采的样本**现拟合一次, 算出六个方向各自离"该方向的
+// 球面极值"还有多远 (0~1, 顺序 +X -X +Y -Y +Z -Z)。
+//
+// 为什么得在这儿算, 而不是让上位机拿 min/max 自己比: 球面极值是 **球心 ± 半径**,
+// 两个量都只有拟合知道。上位机只能拿"最大的 extreme"当分母, 于是那一项永远是
+// 100%、其余永远追不上 (转得越多分母也越大) —— 用户看到的进度条就卡住不动了。
+//
+// 样本不足 30 个 / 拟合失败 -> 返回 false。
+bool imu_mag_cal_preview(float *cover6) {
+    if (!g_mc_active || g_mc_count < 30 || !cover6) return false;
+    float center[3], W[9];
+    // verbose=false: 这个每几百毫秒就要跑一次, 别把串口刷满
+    if (fit_ellipsoid(g_mc_count, g_mc_buf, center, W, false) < 0) return false;
+    // 半径取样本到球心的平均距离 —— 比从 W 反推直接, 也不受椭球形状影响
+    float rsum = 0;
+    for (int i = 0; i < g_mc_count; i++) {
+        float dx = g_mc_buf[i*3]   - center[0];
+        float dy = g_mc_buf[i*3+1] - center[1];
+        float dz = g_mc_buf[i*3+2] - center[2];
+        rsum += sqrtf(dx*dx + dy*dy + dz*dz);
+    }
+    float R = rsum / (float)g_mc_count;
+    if (R < 1e-3f) return false;
+    for (int a = 0; a < 3; a++) {
+        float hi = (g_mc_max[a] - center[a]) / R;
+        float lo = (center[a] - g_mc_min[a]) / R;
+        cover6[a*2]   = hi > 1.0f ? 1.0f : (hi < 0.0f ? 0.0f : hi);
+        cover6[a*2+1] = lo > 1.0f ? 1.0f : (lo < 0.0f ? 0.0f : lo);
+    }
+    return true;
+}
+
 float imu_finish_mag_cal(void) {
     float resid = -1;
     if (!g_mc_active) return -1;
@@ -598,7 +635,7 @@ float imu_finish_mag_cal(void) {
     }
     mp_printf(&mp_plat_print, "[mag_cal] fitting %d samples...\n", g_mc_count);
     float center[3], W[9];
-    resid=fit_ellipsoid(g_mc_count, g_mc_buf, center, W);
+    resid=fit_ellipsoid(g_mc_count, g_mc_buf, center, W, true);
     if (resid<0) {
         mp_printf(&mp_plat_print, "[mag_cal] fit FAILED\n");
         goto restore;
@@ -676,6 +713,15 @@ STATIC mp_obj_t mi_mag_cal_collect(void){
     return mp_obj_new_tuple(11,items);}
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_mag_cal_collect_o,mi_mag_cal_collect);
 
+// ---- mag_cal_preview() → 六元组 (+X -X +Y -Y +Z -Z), 或 None ----
+STATIC mp_obj_t mi_mag_cal_preview(void){
+    float cov[6];
+    if (!imu_mag_cal_preview(cov)) return mp_const_none;
+    mp_obj_t items[6];
+    for (int i=0;i<6;i++) items[i]=mp_obj_new_float(cov[i]);
+    return mp_obj_new_tuple(6,items);}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mi_mag_cal_preview_o,mi_mag_cal_preview);
+
 STATIC mp_obj_t mi_mag_cal_finish(void){
     float r=imu_finish_mag_cal();
     return mp_obj_new_float(r);}
@@ -694,6 +740,7 @@ STATIC const mp_rom_map_elem_t table[]={
     {MP_ROM_QSTR(MP_QSTR_calibrate),MP_ROM_PTR(&mi_cal_o)},
     {MP_ROM_QSTR(MP_QSTR_start_mag_cal),MP_ROM_PTR(&mi_mag_cal_start_o)},
     {MP_ROM_QSTR(MP_QSTR_mag_cal_collect),MP_ROM_PTR(&mi_mag_cal_collect_o)},
+    {MP_ROM_QSTR(MP_QSTR_mag_cal_preview),MP_ROM_PTR(&mi_mag_cal_preview_o)},
     {MP_ROM_QSTR(MP_QSTR_finish_mag_cal),MP_ROM_PTR(&mi_mag_cal_finish_o)},
 };
 STATIC MP_DEFINE_CONST_DICT(glob,table);
