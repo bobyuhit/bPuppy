@@ -246,7 +246,13 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
 | `gait_sim/gait_sim.py` | PC 端步态仿真 — CSV/PNG/GIF |
-| `docs/操作指南.md` | 日常操作手册 |
+| `docs/kittenblock图形化编程指南.md` | KittenBlock 积木 —— 用积木的人看这个 |
+| `docs/micropython编程指南.md` | **所有 MicroPython 接口** —— 写 REPL / .py 的人看这个 |
+| `docs/wifi设备遥控指南.md` | WiFi 图传 + 网页遥控器 |
+| `docs/新板上电操作指南.md` | 新板从零到能用：烧固件 → 传文件 → 标定 → 验收 |
+| `PCB/硬件连接.md` | 引脚分配、外设接线、供电 |
+| `docs/README.md` | 面向人的文档索引 |
+| `docs/error.md` | 不许改的设计 & 未解决的问题 |
 
 ---
 
@@ -1047,7 +1053,8 @@ def pycode_ok(lines):                    # lines = pycode 数组展开后的各�
    （`frozen/main.py` 这类"文件内容"同理安全；`tools/` 里那几个多行脚本走的是
    paste 模式 `Ctrl-E`…`Ctrl-D`，也不过 readline 的自动缩进。）
 
-> **同类位置**：`操作指南.md` 里给人手敲/粘贴的片段（`:82`、`:102`、`:850`、`:863`）带 2 行以上块体，
+> **同类位置**：`docs/micropython编程指南.md` 里给人手敲/粘贴的片段
+> （「速查③ 站立自平衡 + 惯导读数」和「5.1 IMU 调试」那几节的代码块）带 2 行以上块体，
 > 直接粘进 REPL 会踩同一条 —— 改用粘贴模式（`Ctrl-E` 粘贴，`Ctrl-D` 结束），或把块体压成 1 行。
 > **唯一的例外是 `voiceWhen[VOICE]` 那个 hat 块**（`kblock.json5:100` 的 `def voiceWhen[VOICE]()`）：
 > 它**故意靠"不闭合"**接用户叠在它下面的积木，投递路径也与普通块不同 —— **别照抄它的形状**。

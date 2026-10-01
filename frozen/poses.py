@@ -1,7 +1,7 @@
 """
 poses.py — bPuppy 姿态与舵机编辑 (Python 层)
 
-分工: 运动/参数/步态用 bpuppy_motion 原语句 (与操作指南一致);
+分工: 运动/参数/步态用 bpuppy_motion 原语句 (与 micropython编程指南.md 一致);
       姿态 (C 层已删) + 舵机编辑 + 动态动作由本模块实现。
 
 用法:

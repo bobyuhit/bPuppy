@@ -271,7 +271,8 @@
       //   正是 bTool 的 _paste_by_lines_ok() 用的那条判据 (btool.py:1791-1804)。
       // ⇒ 失败嘤嘤改用 `or` 短路, 见最后一行。
       // ★ abs() 从此**只用于回写全局**: set_params 收原值 ⇒ 负步长才会走到固件那条
-      //   `!(stride >= 0)` (motion_task.cpp:1350) 被拒 + 嘤嘤叫, 兑现 docs/操作指南.md:217
+      //   `!(stride >= 0)` (motion_task.cpp:1350) 被拒 + 嘤嘤叫, 兑现
+      //   docs/micropython编程指南.md「1.2 运动指令 bpuppy_motion」的参数表
       //   与 扩展开发.md「固件对负 stride 直接拒」的承诺 (以前 abs 在前, 那条闸门永远够不到)。
       //   被拒时三个全局**不写**, 与固件"整组被拒一个都不写" (motion_task.cpp:1364-1368) 一致。
       pycode: [

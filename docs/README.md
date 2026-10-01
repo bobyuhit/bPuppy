@@ -31,8 +31,10 @@ https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
 
 | 文档 | 给谁看 |
 |---|---|
-| [操作指南.md](操作指南.md) | **用积木的人** —— 每个积木怎么用、参数被拒了怎么知道 |
-| [新板首次上电.md](新板首次上电.md) | **新板第一件事** —— 舵机三点 / 电池 / IMU / 磁力计标定 |
+| [kittenblock图形化编程指南.md](kittenblock图形化编程指南.md) | **用积木的人** —— 每个积木怎么用、参数被拒了怎么知道 |
+| [micropython编程指南.md](micropython编程指南.md) | **写代码的人** —— 所有 MicroPython 接口、REPL、传 .py 上去跑 |
+| [wifi设备遥控指南.md](wifi设备遥控指南.md) | **用手机/电脑连狗的人** —— 图传 + 网页遥控器 |
+| [新板上电操作指南.md](新板上电操作指南.md) | **新板第一件事** —— 烧固件 → 传文件 → 标定 → 验收 |
 | [硬件连接.md](../PCB/硬件连接.md) | 引脚、扩展舵机、外设接线 |
 | [../AGENTS.md](../AGENTS.md) | **原理与源码全貌** —— 架构、模块、API、编译烧录、易错点清单 |
 | [error.md](error.md) | 踩坑记录 —— 编译与运行时的疑难杂症 |

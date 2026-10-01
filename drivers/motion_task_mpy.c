@@ -29,7 +29,7 @@ STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
     else {
         // 未知步态名 → 停车。这是刻意的 fail-safe (指令可能被传坏, 如蓝牙丢字节
         // "trot"→"tr"), 不是缺陷。行为不变, 只把"名字打错"和"正常停车"区分开。
-        // 详见 docs/操作指南.md §1.2 步态列表
+        // 详见 docs/micropython编程指南.md「1.2 运动指令 bpuppy_motion」的步态列表
         mp_printf(&mp_plat_print, "⚠ 未知步态 \"%s\" → 停车\n", s);
     }
     motion_set_gait(g);
@@ -93,7 +93,7 @@ STATIC mp_obj_t mp_motion_set_omega(mp_obj_t omega_obj) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_omega_obj, mp_motion_set_omega);
 
 // ★ set_lift 已删除 —— 抬脚高度并入 set_params 第 2 参。板上残留的旧程序调它会得到
-//   AttributeError, 这是预期行为 (见 docs/操作指南.md 「升固件后必须重新下载程序」)。
+//   AttributeError, 这是预期行为 (见 docs/micropython编程指南.md 「1.2 运动指令 bpuppy_motion」节的告警)。
 
 // 身体姿态: (俯仰, 横滚) —— 顺序跟积木文案「俯仰 [PITCH]…滚转 [ROLL]」一致。
 // 返回 True=已采纳, False=被拒 (跟当前 stride/height/lift/重心组合后足端够不着或入地,
