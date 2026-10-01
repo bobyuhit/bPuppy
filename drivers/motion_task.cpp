@@ -224,6 +224,19 @@ static float g_ramp_center = CENTER_OFFSET_DEFAULT;
 static float g_ramp_pitch  = 0.0f;
 static float g_ramp_roll   = 0.0f;
 
+/* ---- 本帧**实际用**的步态参数 (只读上报) ----
+ *
+ * 为什么要在任务里存一份: Python 侧要做转弯归一化 (`turn` 这个几何系数 → 与步态无关的
+ * 转速指令), 得先知道"turn=1 在当前步态下对应多少偏航角速度", 而那个换算依赖
+ * **实际生效的** eff_stride / eff_duty。
+ *
+ * ⚠ 光看 get_params() 是不够的 —— **GO 步态会覆盖用户设的 stride/duty**
+ *   (见下面 GO 分支), 用户读数里那两个是"设进去的", 不是"真在用的"。
+ * ⇒ 由任务每帧把定稿值存出来, 供 `motion_get_effective()` 上报。**纯上报, 不参与任何计算。**
+ */
+static volatile float g_eff_stride_out = STRIDE_DEFAULT;
+static volatile float g_eff_duty_out   = 0.20f;
+
 /* ---- 相位偏移计算 (统一框架) ---- */
 // 规则:
 //   LH_start = 0
@@ -751,6 +764,12 @@ static void motion_task_main(void *pvParam)
         eff_stride = stride_pre * g_stride_fade;
         g_half_pulse = false;
 
+        /* 上报本帧**定稿**的步态参数 (纯上报, 不参与任何计算)。
+         * 位置: eff_duty 在 GO 分支之后就没再动过, eff_stride 的末次赋值就是上面这一句
+         * ⇒ 到这儿两个都是"本帧真正会用"的值。 */
+        g_eff_stride_out = eff_stride;
+        g_eff_duty_out   = eff_duty;
+
         // 阶段 A (起步过渡): 相位钉在全踩地中点 —— 阶段 A 结束时正好落在
         // 四腿全着地 / x=0 / z=height 的站姿等价点, 阶段 B 从这里零位移交接
         if (g_stand_up) {
@@ -1125,6 +1144,19 @@ void motion_task_start(void)
 }
 
 const motion_state_t *motion_get_state(void) { return &g_motion; }
+
+/* 本帧**实际生效**的步态参数 (只读)。
+ *
+ * 与 get_params() 的区别: 那里报的是**用户设进去的** stride/duty; 这里报的是经过
+ * GO 覆盖 + 步长淡入淡出之后、腿循环真正在用的值。做转弯归一化的 Python 侧要的是后者
+ * —— 换算 "turn=1 对应多少偏航角速度" 必须用**真值**, 否则 GO 下会算错。
+ *
+ * ⚠ 运动任务没跑时这两个值停在初值 (不会更新), 别拿它当"当前步态"用。 */
+void motion_get_effective(float *eff_stride, float *eff_duty)
+{
+    if (eff_stride) *eff_stride = g_eff_stride_out;
+    if (eff_duty)   *eff_duty   = g_eff_duty_out;
+}
 
 void motion_set_gait(gait_type_t gait)
 {
@@ -1692,14 +1724,28 @@ bool motion_set_direction(float dir)
     return false;
 }
 
-// 返回 true=原样采纳, false=超出 ±1 已**钳位**(注意此时仍然写入了钳位后的值)。
-// ★ 刻意保持钳位而不是改成"拒写": 输入 5 的人若拿回**上一次**的转弯率(多半是 0),
+// 返回 true=原样采纳。false 有**两种, 含义不同**:
+//   超限 → 已**钳位**到 ±1, 且**写入了钳位后的值** (不是拒绝)
+//   NaN  → **拒绝**, 保持原值
+// ★ 刻意保持"超限钳位而不是拒写": 输入 5 的人若拿回**上一次**的转弯率(多半是 0),
 //   表现就是"我设了转弯它直走", 比钳到 1 更让人困惑。
+//
+// ⚠ **NaN 检查必须放在两个钳位之后**:
+//   NaN 与任何数比较恒假 ⇒ 两个 `if` 都不进 ⇒ 原样写进 g_motion.turn,
+//   再经腿循环的 `>= 0.0f`(同样恒假)走进 else 分支 ⇒ **一路穿到 IK 和舵机占空比**。
+//   放到钳位**前面**的话 `!(Inf >= -1 && Inf <= 1)` 也为真 ⇒ ±Inf 会被一起拒掉,
+//   和"±Inf 照旧被钳"的既定语义打架。放对位置后, **NaN 是唯一能穿过两个钳位的值**。
 bool motion_set_turn(float turn)
 {
     bool clamped = false;
-    if (turn < -1.0f) { turn = -1.0f; clamped = true; }
+    if (turn < -1.0f) { turn = -1.0f; clamped = true; }   // ±Inf 在这里被钳掉
     if (turn >  1.0f) { turn =  1.0f; clamped = true; }
+
+    if (!(turn >= -1.0f && turn <= 1.0f)) {   // 走到这儿的只有 NaN
+        ESP_LOGW(TAG, "turn 收到 NaN, 拒绝并保持原值 %.2f", g_motion.turn);
+        return false;
+    }
+
     g_motion.turn = turn;
     return !clamped;
 }

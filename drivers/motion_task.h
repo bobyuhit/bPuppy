@@ -78,6 +78,16 @@ void motion_task_start(void);
 // 获取当前运动状态（Python 层可读取）
 const motion_state_t *motion_get_state(void);
 
+// 取本帧**实际生效**的步态参数 (只读, 纯上报, 不影响任何运动行为)
+//
+// 与 get_params() 的区别: 那里是**用户设进去的** stride/duty; 这里是 GO 覆盖 +
+// 步长淡入淡出之后**腿循环真正在用**的值。
+// ★ 用途: Python 侧做转弯归一化 —— 把 `turn` 这个几何系数换算成"与步态无关的转速指令"
+//   时, 需要 "turn=1 在当前步态下对应多少偏航角速度", 而它依赖实际 eff_stride/eff_duty。
+//   ⚠ 用 get_params() 的读数算会**在 GO 下算错** (GO 无视用户设的 stride)。
+// ⚠ 运动任务没跑时停在初值, 不会更新。
+void motion_get_effective(float *eff_stride, float *eff_duty);
+
 // 设置步态（自动填充 duty/gap/dir/turn）
 void motion_set_gait(gait_type_t gait);
 
@@ -123,7 +133,9 @@ void motion_set_omega(float omega);
 bool motion_set_body_pose(float pitch, float roll);
 
 // 设置转弯系数 (-1=左, +1=右, 0=直)
-// 返回是否原样采纳 (false=超出 ±1 已**钳位**, 注意此时仍写入了钳位后的值, 不是拒绝)
+// 返回是否原样采纳。false 有两种, **含义不同**:
+//   超限 → 已**钳位**到 ±1, 且**写入了钳位后的值** (不是拒绝)
+//   NaN  → **拒绝**, 保持原值 (NaN 能穿过两个钳位 —— 与任何数比较恒假)
 bool motion_set_turn(float turn);
 
 // 设置运动方向 (+1=前, -1=后) —— 独立参数, 上电默认 +1。

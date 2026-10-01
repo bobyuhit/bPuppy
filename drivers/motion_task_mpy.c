@@ -125,13 +125,23 @@ STATIC mp_obj_t mp_motion_get_mode(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_get_mode_obj, mp_motion_get_mode);
 
-// 返回 True=原样采纳, False=超出 ±1 已被**钳位** (此时仍然写入了 ±1, 不是拒绝)
+// 返回 True=原样采纳。False 有**两种, 含义不同**:
+//   超限 → 已**钳位**到 ±1 且写入了钳位后的值 (不是拒绝)
+//   NaN  → **拒绝**, 保持原值
+// ★ 这两句以前合在一句里说 ("超出 ±1, 已钳位到 …"), 对 NaN 是**假话** ——
+//   实测 REPL 打 `set_turn(0.0/0.0)` 会看到"已钳位到 0.0"而值其实没变。分开报。
 STATIC mp_obj_t mp_motion_set_turn(mp_obj_t turn_obj) {
     float turn = mp_obj_get_float(turn_obj);
+    float old  = motion_get_state()->turn;
     bool ok = motion_set_turn(turn);
     if (!ok) {
-        mp_printf(&mp_plat_print, "⚠ 转弯率 %.1f 超出 ±1, 已钳位到 %.1f\n",
-                  turn, motion_get_state()->turn);
+        // 比较式判 NaN —— 与 C 侧同一套写法 (NaN 与任何数比较恒假)
+        if (!(turn >= -1.0f && turn <= 1.0f)) {
+            mp_printf(&mp_plat_print, "⚠ 转弯率是 NaN, **拒绝**并保持原值 %.2f\n", old);
+        } else {
+            mp_printf(&mp_plat_print, "⚠ 转弯率 %.1f 超出 ±1, 已钳位到 %.1f\n",
+                      turn, motion_get_state()->turn);
+        }
     }
     return mp_obj_new_bool(ok);
 }
@@ -255,6 +265,28 @@ STATIC mp_obj_t mp_motion_get_geometry(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_get_geometry_obj, mp_motion_get_geometry);
 
+// 读**本帧实际生效**的步态参数, 2 元组 (eff_stride, eff_duty) —— 只读, 纯上报。
+//
+// ★ 用途: 转弯归一化。`turn` 是个**几何系数**(左右步长比), 同样 turn=0.5 在 walk 下
+//   实际转 0.59 rad/s、trot 下 1.35 —— 差 2.3 倍。要让"同一个 turn 转得一样快",
+//   就得除以当前步态的换算系数 G:
+//
+//       G_c = eff_stride / ((1 − eff_duty) · half_w)     [rad / 周期, per unit turn]
+//       G_s = G_c · (omega_base · speed) / (2π)          [rad / s,   per unit turn]
+//
+//   而 G 依赖 **实际生效的** eff_stride/eff_duty ⇒ 必须用这个函数, **不能用 get_params()**
+//   —— 后者报的是用户设进去的值, 而 **GO 步态会无视用户设的 stride/duty**。
+//   (half_w 找 get_geometry()[3], speed 找 get_params()[0], omega_base 找 get_params()[4])
+//
+// ⚠ 运动任务没跑时这两个数停在初值, 不会更新。
+STATIC mp_obj_t mp_motion_get_effective(void) {
+    float es = 0, ed = 0;
+    motion_get_effective(&es, &ed);
+    mp_obj_t items[2] = { mp_obj_new_float(es), mp_obj_new_float(ed) };
+    return mp_obj_new_tuple(2, items);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_get_effective_obj, mp_motion_get_effective);
+
 STATIC mp_obj_t mp_motion_show_geometry(void) {
     const motion_state_t *m = motion_get_state();
     const char *ch_names[8] = {
@@ -299,6 +331,8 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_show_geometry), MP_ROM_PTR(&mp_motion_show_geometry_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_params),    MP_ROM_PTR(&mp_motion_get_params_obj) },
     { MP_ROM_QSTR(MP_QSTR_get_geometry),  MP_ROM_PTR(&mp_motion_get_geometry_obj) },
+    // 本帧实际生效的 (eff_stride, eff_duty) —— 转弯归一化用, 见上面的长注释
+    { MP_ROM_QSTR(MP_QSTR_get_effective), MP_ROM_PTR(&mp_motion_get_effective_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(bpuppy_motion_globals, bpuppy_motion_globals_table);
 
