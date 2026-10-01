@@ -442,7 +442,7 @@ duty 到 0.40, 抬脚压低换更小的上下起伏。**抬脚 5mm ⇒ 摆动腿
 - **想上电就自动开**: 把上面两行写进板子的 `/camera_on.py`（仓库源文件 `mpy_modules/camera_on.py`）。
   **文件在 = 开，从板子删掉 = 不开**，不用重编译固件，也不影响 KittenBlock 下载的 `/main.py`。
   ⚠ 该文件必须**纯 ASCII**（蓝牙上传会丢非 ASCII 字节，中文注释会截断文件）。
-  实现: `frozen/main.py` 每次开机读 `/camera_on.py` 并丢进后台线程执行。用法见 [操作指南.md](操作指南.md) 2.2。
+  实现: `frozen/main.py` 每次开机读 `/camera_on.py` 并丢进后台线程执行。用法见 [wifi设备遥控指南.md](docs/wifi设备遥控指南.md)。
 - IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
 - BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式原由 `ble_hiwonder.py` 驱动，**该文件已删除**，故当前只有 KittenBlock 模式可用
 
