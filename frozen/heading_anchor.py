@@ -51,6 +51,16 @@ _SETTLE_POLL_MS    = 100
 _SETTLE_MIN_MS     = 1000
 _SETTLE_TIMEOUT_MS = 6000
 
+# 快判 —— 只在开机后**第一次** on() 跑一下, 决定要不要走上面那套完整等待。
+# ⭐ 判据是**净漂移**而不是瞬时变化率: 走路时 yaw 也在摆(±2.4°), 但那是**对称摆动**,
+#    一个 _PROBE_MS 窗口下来净值 ≈0; 而冷启动的姿态收敛是**单调爬升**,
+#    同样长的窗口净漂 ~20°(实测 30~48°/s)。两者差一个数量级, 判据很干净。
+# 为什么要它: 光看 `is_ready()` 是不够的 —— 程序开头预初始化过 IMU 的话它是 True,
+#    但滤波可能才刚起步, 锁一个还在爬的 yaw ⇒ 闭环追着这个漂移把狗转过去(静默错)。
+_PROBE_MS      = 600
+_PROBE_POLL_MS = 100
+_PROBE_DRIFT   = 5.0
+
 # ── 可调参数: 全部有缺省, 不设也能跑 ──────────────────────────────
 # ⚠ 这份是**缺省值**, 用户改的是下面的 cfg。`anc.set()` 无参 = 把 cfg 拉回这份。
 _DEF = {
@@ -77,20 +87,23 @@ def on(offset_deg=0.0):
       跑着的闭环下一拍自己就会读到新目标。**不重起线程, 所以 turn 不会掉一下 0**,
       狗是平滑地把弯拉过去, 不是"先直一下再拐"。
 
-    首次调用会顺手 init IMU(幂等)并**阻塞到姿态收敛**(冷启动约 2.5s);
-    IMU 早就起来过就直接返回 —— **走路时调用不会卡**。
+    首次调用会顺手 init IMU(幂等), 然后**先快判再决定要不要等**:
+      · 姿态早就稳了(程序开头预初始化过 IMU) ⇒ 只花 _PROBE_MS, 立刻锁目标
+      · 还在冷启动爬升                      ⇒ 走完整等待(实测 ~4.5s), **绝不锁没收敛的 yaw**
+    之后所有调用**都是秒回**(走路时 yaw 一直在摆, 再判也没意义)。
+
     返回 True/False = 锁目标的时候 IMU 是稳的吗(REPL 会回显, 免得模块自己打印)。
     """
     global _on, _target, _warm
-    warm = imu.is_ready()                              # ⚠ 要在 init **之前**问
     imu.init(_I2C_PORT, _SDA_PIN, _SCL_PIN, _ADDR)     # 幂等
     ok = True
-    if not (_warm or warm):
-        # ⚠ 只有开机后**第一次**才等收敛 —— 之后绝不能再等: 走路时 yaw 天然摆 ±2.4°,
-        #   "连续几拍变化小于 _SETTLE_TOL"这个判据在行进中**永远不成立**, 每次 on()
-        #   都会卡满 _SETTLE_TIMEOUT_MS 才回来。
-        #   (第一次即使超时也没关系: 那次已经耗掉 ≥6s, 滤波早收敛了 ⇒ 下面置 _warm。)
-        ok = _settle()
+    if not _warm:
+        # ⚠ 只有开机后**第一次**才判 —— 之后绝不能再判: 走路时 yaw 天然摆 ±2.4°,
+        #   "连续几拍变化小"这类判据在行进中永远不成立, 每次 on() 都会卡满超时。
+        # ⚠ 也**不能只看 is_ready()**: 程序开头预初始化过 IMU 的话它是 True, 但滤波可能
+        #   才刚起步 —— 那样会锁一个还在爬的 yaw, 闭环追着这个漂移把狗转过去, 静默错。
+        #   所以先快判净漂移, 不稳才退回完整等待。
+        ok = _settled_fast() or _settle()
     _warm = True
     _target = _yaw() + offset_deg
     _on = True
@@ -170,6 +183,21 @@ def _yaw():
 def _wrap(a):
     """把角度折到 ±180。"""
     return (a + 180.0) % 360.0 - 180.0
+
+
+def _settled_fast():
+    """快判姿态稳不稳: 采 _PROBE_MS 一个窗口, 看 yaw 的**净漂移**大不大。
+
+    稳 ⇒ True(滤波早就收敛了, 不用等); 还在爬 ⇒ False(交给 _settle 慢慢等)。
+    ⚠ 判据用净漂移不用瞬时抖动 —— 理由见顶部 _PROBE_* 那段的注释。
+    """
+    if not imu.is_ready():
+        return False
+    y0 = _yaw()
+    t0 = time.ticks_ms()
+    while time.ticks_diff(time.ticks_ms(), t0) < _PROBE_MS:
+        time.sleep_ms(_PROBE_POLL_MS)
+    return abs(_wrap(_yaw() - y0)) < _PROBE_DRIFT
 
 
 def _settle():

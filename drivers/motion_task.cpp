@@ -1665,7 +1665,18 @@ void motion_ensure_geometry_loaded(void)
     // poses.stand() (frozen/main.py) 跑在任务创建之前, 那时 g_motion 里还是编译期
     // 默认值 —— Python 若直接读就会拿到 40/45 而不是 NVS 里的真实腿长。
     // 这里补上: 任务没起就自己加载一次; 任务已在跑就跳过 (避免重复读 flash)。
-    if (g_task_handle == NULL) motion_load_geometry();
+    //
+    // ⚠⚠ `loaded` 这个标志是必须的, 不是优化 —— 2026-10-01 实测:
+    //   只看 `g_task_handle == NULL` 的话, **任务没起时每次调用都会**
+    //   重开 NVS 读一遍 + 打一行 "Geometry loaded from NVS"。
+    //   而 heading_follow 的闭环 20Hz 调 get_geometry() ⇒ 狗站着开「航向锁定」
+    //   时 **20 行/秒刷屏**, 走 BLE 的 KittenBlock 通道会被灌满。
+    //   (motion_load_geometry 自己不幂等, 它没有"已载入"的概念。)
+    static bool loaded = false;
+    if (g_task_handle == NULL && !loaded) {
+        motion_load_geometry();
+        loaded = true;
+    }
 }
 
 void motion_set_omega(float omega)
