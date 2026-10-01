@@ -76,7 +76,7 @@ rm -rf build && bash build.sh
 ESP32-S3 的原生 USB 脚 **GPIO19/20 已被语音模块的 UART2 占用**（`frozen/voice.py`），
 所以 MicroPython 的 `usb_init()` 必须注释掉 —— 不关它，USB-OTG PHY 会接管这两个脚，
 UART2 发不出波形。**USB-CDC 虚拟串口因此不可用，这不是可以打开的功能**
-（详见 [硬件连接.md](硬件连接.md) 的 GPIO19/20 条目）。端口从设备管理器看，因机器而异。
+（详见 [硬件连接.md](PCB/硬件连接.md) 的 GPIO19/20 条目）。端口从设备管理器看，因机器而异。
 
 ```powershell
 # 日常增量: 只写 app 分区
@@ -459,7 +459,7 @@ duty 到 0.40, 抬脚压低换更小的上下起伏。**抬脚 5mm ⇒ 摆动腿
 
 > 蓝牙无线连接走 **Nordic UART + dupterm REPL**（固件内置），KittenBlock 把它当串口用。无线上传 main.py 到 VFS 同样支持。
 
-> ⚠ **指令发送不全的修复**（2026-08 实测确认）：KittenBlock 的 JS 库自身按 20 字节硬编码分包 + 设备侧逐字符 echo 通知洪峰饿死 NimBLE mbuf 池，导致长命令第二包被丢。修复为 `ble_stream.c` **echo 批量打包**（攒一行/超时 30ms 发一个通知）。详见 [硬件连接.md 蓝牙节](硬件连接.md)。
+> ⚠ **指令发送不全的修复**（2026-08 实测确认）：KittenBlock 的 JS 库自身按 20 字节硬编码分包 + 设备侧逐字符 echo 通知洪峰饿死 NimBLE mbuf 池，导致长命令第二包被丢。修复为 `ble_stream.c` **echo 批量打包**（攒一行/超时 30ms 发一个通知）。详见 [硬件连接.md 蓝牙节](PCB/硬件连接.md)。
 
 ---
 
@@ -714,7 +714,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 | `kext-bpuppy/bpuppy.l10n.json` | 积木文本本地化 |
 | `kext-bpuppy/KittenBlock扩展开发.md` | 扩展开发全指南（§13 事件积木机制） |
 | `docs/操作指南.md` | §7.2.1 用户侧语音用法 |
-| `docs/硬件连接.md` | UART2/CI-33T 接线 |
+| `PCB/硬件连接.md` | UART2/CI-33T 接线 |
 
 ### 6. 与其他部分的关系
 
@@ -903,11 +903,11 @@ GO 的 duty/gap/stride/height/lift 查表使用 `eff_speed` (实际 speed 的绝
 | LH_KNEE 左后小腿 | 41 | RH_KNEE 右后小腿 | 45 |
 
 IMU: I2C0 (SDA=GPIO14, SCL=GPIO21, addr=0x68)。芯片自适应: WHO_AM_I 识别 MPU6050(0x68)/MPU6500(0x70)/MPU9250(0x71,0x73), 也可以什么都不接。**有没有磁力计不看芯片型号** —— 一律由 `bpuppy_imu.has_mag()` 回答 (它看 AK8963 真被认出来没有); REPL 可用 `bpuppy_imu.get_chip()` / `has_mag()` 查询。
-UART2: GPIO20=RX, 19=TX (CI-33T / micro:bit, ⚠ 2026-08-19 起反转 TX=19/RX=20; ⚠ GPIO19/20=USB_D-/D+, 固件已关 TinyUSB 释放, 见 docs/硬件连接.md)。
+UART2: GPIO20=RX, 19=TX (CI-33T / micro:bit, ⚠ 2026-08-19 起反转 TX=19/RX=20; ⚠ GPIO19/20=USB_D-/D+, 固件已关 TinyUSB 释放, 见 PCB/硬件连接.md)。
 UART1: GPIO4=TX, 5=RX (与摄像头 SCCB SDA/SCL 复用, 手动 init)。
 I2C1: GPIO9=SDA, 10=SCL (与摄像头 D1/D3 复用, 手动 init)。
 ADC: 电池检测启用 (电池=GPIO3=ADC1_CH2, 分压 51k/10k, 软件 ×6.1)。`bpuppy_adc.init()` 同时激活 GPIO48 WS2812 电池指示灯 (≥7.4V 蓝 / 6.6~7.4V 渐变 / ≤6.6V 红 / <6.4V 闪烁)。电量定标与之同源: **7.4V=100%, 6.6V=0%** (`bpuppy_led.batt_pct()` / `voltage.read_pct()`)。
-完整 GPIO 分配表见 `docs/硬件连接.md`。
+完整 GPIO 分配表见 `PCB/硬件连接.md`。
 
 ### OV2640 摄像头 DVP 引脚 (小智 ESP32-S3 板载)
 

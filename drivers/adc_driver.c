@@ -3,7 +3,7 @@
  *
  * 电池分压接 GPIO3 = ADC1_CH2, ADC1 在 BLE/WiFi 下可用 → 启用 (ENABLE=1)。
  *
- * 硬件分压 (见 docs/硬件连接.md, R1=51k/R2=10k):
+ * 硬件分压 (见 PCB/硬件连接.md, R1=51k/R2=10k):
  *   电池正 ──[R1 51kΩ]──┬── GPIO3 (ADC1_CH2)
  *                       │
  *   GND  ────[R2 10kΩ]──┤

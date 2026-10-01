@@ -35,7 +35,7 @@ pwm_ext.py — PWM_EXT1/2/3 扩展舵机的**底层封装**
 
 import bpuppy_pwm_ext
 
-# PWM_EXTn → GPIO (板上固定接线, 见 docs/硬件连接.md)
+# PWM_EXTn → GPIO (板上固定接线, 见 PCB/硬件连接.md)
 # ★ 通道号 = n-1, 不能改: poses.py 把舵机编号 8/9/10 映射到 MCPWM 通道 0/1/2
 _PIN = {1: 3, 2: 47, 3: 48}
 # 与电池检测同脚的两路 — 用之前必须先停 ADC, 否则固件仍在驱动/读同一个脚
