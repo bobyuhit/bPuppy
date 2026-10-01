@@ -288,22 +288,33 @@ def play():
 
 
 def wave():
-    """挥手: sit → 后腿到位 → RF 膝摆动 3 次 → 回 sit"""
+    """挥手: sit → 右后腿先撑住 → 右前腿抬起摆动 3 次 → 右前腿先收 → 右后腿回坐姿
+
+    五步顺序是刻意的 —— 撑好了才抬前腿、收回了才松后腿, 全程都有支撑腿,
+    狗不会往前栽。左后腿全程保持 SIT 不动。
+    """
+    # [LF_HIP, LF_KNEE, LH_HIP, LH_KNEE, RF_HIP, RF_KNEE, RH_HIP, RH_KNEE]
     go_to(SIT)
     time.sleep_ms(300)
 
-    # 后腿大腿到位 + 右前腿抬起 (限速平滑)
-    # [LF_HIP, LF_KNEE, LH_HIP, LH_KNEE, RF_HIP, RF_KNEE, RH_HIP, RH_KNEE]
-    go_to([None, None, 48, None, 150, 45, 132, None], step=3.0)
-    time.sleep_ms(600)
+    # ① 右后腿先到位撑住 (只动 RH_HIP)
+    go_to([None, None, None, None, None, None, 128, None], step=3.0)
+    time.sleep_ms(150)
 
-    # RF_KNEE 1Hz 摆动 3 次 (从 45° 起)
+    # ② 右前腿再抬到挥手起始位 (RF_KNEE 写的就是摆动中点, 必须跟 ③ 一致)
+    go_to([None, None, None, None, 150, 60, None, None], step=3.0)
+    time.sleep_ms(150)
+
+    # ③ RF_KNEE 绕 60° 中点摆 3 次, ±10° ⇒ 50~70° (从 60° 起)
     frames = int(round(50.0 * 3.0 / 1.0))  # 3次 @ 1Hz = 150帧 = 3秒
     for i in range(frames):
         wave_knee = math.sin(2.0 * math.pi * 1.0 * i / 50.0) * 10.0
-        bpuppy_servo.set_angle(RF_KNEE, 45 + wave_knee)
+        bpuppy_servo.set_angle(RF_KNEE, 60 + wave_knee)
         time.sleep_ms(20)
 
-    # 回到 sit
-    time.sleep_ms(300)
-    go_to(SIT)
+    # ④ 右前腿先收 (右后腿还撑着) —— SIT[4]/SIT[5] = RF_HIP / RF_KNEE
+    go_to([None, None, None, None, SIT[4], SIT[5], None, None], step=3.0)
+    time.sleep_ms(150)
+
+    # ⑤ 右后腿再回坐姿 —— SIT[6] = RH_HIP (其余通道本就在 SIT, 不必再写)
+    go_to([None, None, None, None, None, None, SIT[6], None], step=3.0)
