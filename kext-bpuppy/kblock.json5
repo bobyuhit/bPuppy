@@ -1,6 +1,6 @@
 {
   libs:{
-    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_lift = 30\n_height = 70\n_dir = 1\n\n# _ok: 上一次设置类积木是否真的生效 (被拒时固件保持原值)\n#   设置块直接用固件返回的 True/False (set_params / set_speed / set_turn 的返回值\n#   已透传到 MicroPython), 不再靠 get_params() 读回比对 —— 没有取整容差误判。\n#   「设置成功？」积木就是读这个值。\n_ok = True\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册\nvoice.set_main_globals(globals())   # 事件函数扫描用主全局 (sys.modules[__main__] 为 None)'},
+    "*":{import:'import poses, bpuppy_motion, bpuppy_servo, bpuppy_imu, voice, time, heading_anchor as anc\nfrom time import sleep\n\n_speed = 2.5\n_stride = 70\n_lift = 30\n_height = 70\n_dir = 1\n\n# _ok: 上一次设置类积木是否真的生效 (被拒时固件保持原值)\n#   设置块直接用固件返回的 True/False (set_params / set_speed / set_turn 的返回值\n#   已透传到 MicroPython), 不再靠 get_params() 读回比对 —— 没有取整容差误判。\n#   「设置成功？」积木就是读这个值。\n_ok = True\n\n# 原厂已 init_all + 站姿待命, 不再重复初始化 (init_all 非幂等, 重复会失能跳变)\n# IMU 需手动「初始化 IMU」后使用 (bpuppy_imu.read_angles)\n# 语音: voice 上电已自启动 (UART2/9600 + 后台线程), 事件积木函数 voiceWhen* 自动注册\nvoice.set_main_globals(globals())   # 事件函数扫描用主全局 (sys.modules[__main__] 为 None)'},
   },
   blocks: [
     "## $$cat_pose",
@@ -471,6 +471,30 @@
       blockType: 'reporter',
       text: '$$getYaw',
       pycode: 'bpuppy_imu.read_angles()[2]'
+    },
+    // 航向锁定 (2026-10-01) —— 走 heading_anchor (step1 产 err) + heading_follow (step2 执行)。
+    // ⚠ 「偏转」收的是**角度量**("从现在再转多少"), 不是绝对航向。yaw 本身是绝对的, 而磁力计
+    //   一乱它就跟着**位置**变、不跟着**朝向**变(今天实测), 所以只有相对量可信。
+    // ⚠ anc.on() **首次**调用阻塞 ~2.5s (在等 IMU 姿态滤波收敛), 之后秒回。
+    // ★ 已锁定时再点一次 = **只换目标** —— 不重起线程 ⇒ turn 不掉 0, 弯是平滑拉过去的。
+    // ⚠ 两个块都是**顶格单句、纯 ASCII、无复合语句** (AGENTS.md 易错点 13)。
+    {
+      opcode: 'lockHeading',
+      blockType: 'command',
+      text: '$$lockHeading',
+      arguments: {
+        DEG: {
+          type: 'number',
+          defaultValue: '0'
+        }
+      },
+      pycode: 'anc.on([DEG])'
+    },
+    {
+      opcode: 'unlockHeading',
+      blockType: 'command',
+      text: '$$unlockHeading',
+      pycode: 'anc.off()'
     },
     "---",
     "## $$cat_system",

@@ -235,12 +235,14 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `drivers/ble_stream.c` | BLE 流对象 — dupterm REPL 桥接 (KittenBlock 蓝牙) |
 | `drivers/micropython.cmake` | `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 编译宏 |
 | `components/mr9you__micropython-helper` | MicroPython 移植层 (mphalport.c 补 dupterm 输入) |
-| `kext-bpuppy/` | KittenBlock 硬件扩展 (37 积木 + 蓝牙配置 + 开发文档) |
+| `kext-bpuppy/` | KittenBlock 硬件扩展 (39 积木 + 蓝牙配置 + 开发文档) |
 | `frozen/main.py` | 启动脚本 — 原厂初始化 → 站姿待命 (POSESTAND), 用户程序在**后台线程**里 exec (不阻塞 REPL) |
 | `frozen/balance.py` | 站立自平衡 — 增量式 PID, 50Hz 闭环 (绕过 motion task) |
 | `frozen/camera_stream.py` | WiFi 热点 MJPEG 图传 + 网页遥控器 |
 | `frozen/voice.py` | 语音「事件」转发核心 — UART2 收发 + 后台线程 + 事件注册/分发（无内置动作，见下方「语音事件系统」节） |
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
+| `frozen/heading_anchor.py` | **航向锁定 step1** — IMU 航向的 err 源。对外 `on(偏移度)` / `off()` / `read()` / `set(**cfg)`，`anc.cfg` 看参数。**自己 import step2 并把闭环接到后台线程**（用户看不见 `heading_follow`）。⚠ 工作副本在 `mpy_modules/`，改完要 `cp` 过来才进固件。KittenBlock 的「航向锁定 偏转 / 解除航向锁定」两个积木靠它 |
+| `frozen/heading_follow.py` | **航向锁定 step2** — 闭环执行体 `err_fn → set_turn`。`run`(阻塞) / `start`(后台线程) / `stop` / `running` / `g_c`。**不 import 任何 err 源**，所以视觉 / 声源都能喂进来。`TURN_SIGN` 在这里（改它不用重编译） |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
 | `gait_sim/gait_sim.py` | PC 端步态仿真 — CSV/PNG/GIF |
@@ -1050,6 +1052,26 @@ def pycode_ok(lines):                    # lines = pycode 数组展开后的各�
 > **唯一的例外是 `voiceWhen[VOICE]` 那个 hat 块**（`kblock.json5:100` 的 `def voiceWhen[VOICE]()`）：
 > 它**故意靠"不闭合"**接用户叠在它下面的积木，投递路径也与普通块不同 —— **别照抄它的形状**。
 
+### 14. **VFS 优先于 frozen** —— 板子上的同名 `.py` 会**盖住**固件里的模块
+
+2026-10-01 实测：把 `heading_anchor.py` / `heading_follow.py` 冻结进固件、编译烧录，
+板上 `import heading_anchor` **加载的仍是 VFS 里那份陈旧副本**（`hasattr(anc,'on')` 为 `False`，
+还在用早已删掉的 `anchor()`）。删掉 VFS 那两份之后立刻正常。
+
+**查找顺序：`sys.modules` → VFS 根目录 → frozen。** 由此：
+
+- **冻结 ≠ 一定生效。** 板子根目录只要有同名文件，它说了算。表现是"编了、烧了、没生效"，
+  而且**版本串也会骗你** —— 这次固件时间戳确实是新的，模块照样是被旧的那份顶着。
+- 冻结仍然要做：**新板子／没传过的板子开箱即用**（KittenBlock 用户不会手工传模块）。
+- 判据一眼看穿：`import heading_anchor as a; print(hasattr(a, 'on'))` —— 有 `on` 才是新版。
+- 修：`import os; os.remove('heading_anchor.py')`。
+  ⚠ **`os.listdir("/")` 返回的名字不带斜杠**，别拿 `"/xxx.py"` 去比对 —— 比不中、静默不删，
+  今天就这么白跑一轮。
+- ⚠ **只烧 app 分区（`0x10000`）不擦 VFS**，所以旧副本会一直在，跨固件版本存活。
+
+> **反面用法（这也是个特性）**：想快速验一版改动，直接把它传到 VFS 盖住固件版，
+> **不用重编译**；`os.remove` 掉就退回固件版。
+
 ---
 
 ## 首次编译问题排查
@@ -1111,7 +1133,8 @@ diff /tmp/sdkconfig.before build/sdkconfig  # 应当只有你改的那几行不�
 | 修改 Python 启动逻辑 | `frozen/main.py` |
 | 修改 BLE 协议 | `drivers/ble_driver.c`（GATT 服务）+ `drivers/ble_stream.c`（dupterm 桥接）。原 `frozen/ble_hiwonder.py` 已删除 |
 | 修改语音事件/命令码映射 | `frozen/voice.py`（固件侧，需重编译烧录）+ `kext-bpuppy/kblock.json5`（扩展侧，重打包 zip） |
-| 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送） |
+| 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送）。⚠ 积木若引用新模块，`kblock.json5` 的 `libs` 和 `extension.json` 的 `afterConnect` **两处都要加 import**，漏一处在线就是 `NameError` |
+| 修改航向锁定闭环（`anc` / 「航向锁定 偏转」积木） | 工作副本 `mpy_modules/heading_{anchor,follow}.py` → `cp` 到 `frozen/` 再编译。⚠⚠ **VFS 优先于 frozen**（2026-10-01 实测，见下条）：板子根目录若留着 `/heading_anchor.py`，它会**盖住固件版** —— 表现为"编了烧了没生效"。改完要么删掉 VFS 副本，要么直接把新的传上去覆盖。⭐ `TURN_SIGN` / `kp` / 死区这些**运行时**用 `anc.set()` / `anc.cfg` 改，**不用重编译** |
 | 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |
 | 改相机内存走向 (内部 RAM ↔ PSRAM) | `sdkconfig.bpuppy` → `CONFIG_CAMERA_PSRAM_DMA`（改完**必须删 `build/sdkconfig`**，见下节） |
 | 修改 PC 拍照工具 | `tools/capture.py` |

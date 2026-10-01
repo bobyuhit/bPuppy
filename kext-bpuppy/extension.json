@@ -30,6 +30,7 @@
         "import poses",
         "import bpuppy_imu",
         "import voice",
+        "import heading_anchor as anc",
         "voice.set_main_globals(globals())",
         "_speed = 2.5; _stride = 70; _lift = 30; _height = 70; _dir = 1",
     "_ok = True"
