@@ -31,7 +31,7 @@
 
 ## 一、KittenBlock 蓝牙编程（Nordic UART）★
 
-bPuppy 支持 **KittenBlock 图形化编程**通过蓝牙连接（Nordic UART 服务 + dupterm REPL）。**固件蓝牙模式必须编译为 KittenBlock**（`BPUPPY_BLE_KEBLOCK`，见 [AGENTS.md](../AGENTS.md) 的「蓝牙编译互斥」）。
+bPuppy 通过蓝牙连接 **KittenBlock 图形化编程**（Nordic UART 服务 + dupterm REPL）。
 
 - 设备名：`bPuppy_XXXX`（XXXX = BT MAC 后 4 位，与 WiFi 热点同名）
 - 广播服务：`0x6E40` + Nordic UART（`6E400001`）
@@ -39,7 +39,12 @@ bPuppy 支持 **KittenBlock 图形化编程**通过蓝牙连接（Nordic UART �
 
 **平台使用**：见 [二、导入 bPuppy 扩展](#二导入-bpuppy-扩展)（含 iPad Bluefy 方案）。
 
-> 与 Hiwonder 模式**编译互斥**：同一固件只能启用一个蓝牙模式，KittenBlock 模式广播 `bPuppy_XXXX`，Hiwonder 模式广播 `mechdog_XX`。**当前固件就是 KittenBlock 模式**，而 Hiwonder 模式那套（2.3）已随 `ble_hiwonder.py` 一起移除，所以实际上只剩这一个模式可用。
+> ⚠ **蓝牙模式是编译期二选一**（`BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER`），同一份固件只能启用一个。
+> **Hiwonder 那个已经废了** —— 解析 App 报文的 `ble_hiwonder.py` 已删除，C 层的 GATT 代码虽然还在、
+> 切过去也没人处理指令 ⇒ **实际只剩 KittenBlock 一个可用模式**，官方固件就是它，平时不用管。
+>
+> 👉 排查用：KittenBlock **搜不到 `bPuppy_XXXX`** 时，先确认固件没被编成另一个模式
+> （见 [AGENTS.md](../AGENTS.md) 的「蓝牙编译互斥」）。
 
 ---
 
