@@ -713,7 +713,7 @@ CI-33T 语音模块 ──UART2──▶ frozen/voice.py（纯事件转发，不
 | `kext-bpuppy/extension.json` | 扩展元数据 + `afterConnect` |
 | `kext-bpuppy/bpuppy.l10n.json` | 积木文本本地化 |
 | `kext-bpuppy/KittenBlock扩展开发.md` | 扩展开发全指南（§13 事件积木机制） |
-| `docs/操作指南.md` | §7.2.1 用户侧语音用法 |
+| `docs/kittenblock图形化编程指南.md` | §3.1 用户侧语音用法（积木层） |
 | `PCB/硬件连接.md` | UART2/CI-33T 接线 |
 
 ### 6. 与其他部分的关系
