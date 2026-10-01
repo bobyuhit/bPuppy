@@ -31,7 +31,7 @@
 
 ## 一、KittenBlock 蓝牙编程（Nordic UART）★
 
-bPuppy 支持 **KittenBlock 图形化编程**通过蓝牙连接（Nordic UART 服务 + dupterm REPL）。**固件蓝牙模式必须编译为 KittenBlock**（`BPUPPY_BLE_KEBLOCK`，见 README「蓝牙编译互斥」）。
+bPuppy 支持 **KittenBlock 图形化编程**通过蓝牙连接（Nordic UART 服务 + dupterm REPL）。**固件蓝牙模式必须编译为 KittenBlock**（`BPUPPY_BLE_KEBLOCK`，见 [AGENTS.md](../AGENTS.md) 的「蓝牙编译互斥」）。
 
 - 设备名：`bPuppy_XXXX`（XXXX = BT MAC 后 4 位，与 WiFi 热点同名）
 - 广播服务：`0x6E40` + Nordic UART（`6E400001`）
