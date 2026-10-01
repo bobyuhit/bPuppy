@@ -76,8 +76,8 @@ try:
             uos.mount(uos.VfsFat(_bdev), '/')   # 已格式化, 直接挂载
             _vfs_mounted = True
         except Exception as e:
-            # 实测 (2026-09-16): 原先是裸 except + 无条件 mkfs —— 任何挂载失败都会
-            # 格式化整个 vfs, 把用户程序抹光。改成只在"确认是全新分区"时才格。
+            # ⚠ 只在"确认是全新分区"时才格: 无条件 mkfs 会把任何挂载失败都当成
+            #   未格式化, 直接抹光整个 vfs (用户程序全没)。
             if _vfs_is_virgin(_bdev):
                 print("[bPuppy] VFS 是未格式化的新分区, 正在格式化...")
                 uos.VfsFat.mkfs(_bdev)

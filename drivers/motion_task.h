@@ -21,10 +21,10 @@ extern "C" {
 /* ---- 步态类型 ---- */
 typedef enum {
     GAIT_STOP = 0,      // 停止站好 (运动模式, 高度随参数)
-    GAIT_WALK,          // 猫步 (speed>0前进, speed<0后退)
-    GAIT_TROT,          // 小跑 (speed>0前进, speed<0后退)
+    GAIT_WALK,          // 猫步
+    GAIT_TROT,          // 小跑
     GAIT_GO,            // 自适应 (speed≤4.0→walk, speed≥6.0→trot, 之间插值; 见 motion_task_main 的 GO 分支)
-                        // ★ GO 自己定 步长/站高/抬脚 —— 用户设的 stride/lift/height 只有 stride 的符号当方向用
+                        // ★ GO 自己定 步长/站高/抬脚 —— 用户设的 stride/lift/height 三个全都不参与
     GAIT_REPOS,         // ★ 回正步 (停步收尾): 身体不动, 对角两两抬脚把四腿挪回 x=0 —— 见 motion_enter_repos()
     GAIT_COUNT
 } gait_type_t;
@@ -53,7 +53,6 @@ typedef struct {
     float       omega_base;     // 基准角频率 (rad/s), 默认 2.0
     float       gait_duty;      // 摆动相占比 (walk:0.20, trot:0.40)
     float       gait_gap;       // 同侧间隙 (walk:0.04, trot:0.10)
-    float       turn_rate;      // (旧) 转弯速率, 将被 turn 替代
     float       turn;           // 转弯系数 -1(左) ~ +1(右)
     float       center_offset;  // 脚中位偏移 (正=前移, 负=后移)
     float       body_half_l;    // 前后髋半距 (mm), 默认 62.5
@@ -62,8 +61,7 @@ typedef struct {
     bool        enabled;        // 运动使能
 
     /* ---- 姿态过渡 (预备位切换) ---- */
-    // 0=无过渡  1=已废弃 (起步过渡改由 motion_task.cpp 的 g_stand_up 阶段 A 承担,
-    //            原因见那里的注释: 旧实现从写死的 (0, eff_height) 起步)
+    // 0=无过渡  1=不可用 (从写死的 (0,eff_height) 起步, 坐姿按前进首帧跳 95.7°)
     //            2=停步过渡 (行走→预备位→站立)
     // 预备位 = gait 全踩地相位中点, 从站立进入或退回时在此缓动
     uint8_t     pose_trans;       // 姿态过渡状态
@@ -125,11 +123,10 @@ void motion_set_omega(float omega);
 
 // 设置身体姿态 (deg): 俯仰(前低后高为负) / 横滚
 // ★ 参数顺序 = 俯仰在前 —— 跟积木文案「俯仰 [PITCH]…滚转 [ROLL]」一致。
-//   旧签名是 (roll, pitch, yaw), 且 yaw 是死字段(只写不读), 已一并删掉。
 // 返回是否写入成功 (false=跟当前 stride/height/lift/重心组合后足端够不着或入地, 被拒,
 // 俯仰和横滚都保持原值)。
 // ★ 姿态补偿是逐腿叠加进 z 的, 所以它能改变可达性 —— 必须跟 set_params 一样做组合校验
-//   (pitch=-12° → 前腿 d=90.3 > 84)。2026-09-28 起补上, 顺序耦合消失 (docs/error.md §2.2 #2)。
+//   (pitch=-12° → 前腿 d=90.3 > 84)。
 bool motion_set_body_pose(float pitch, float roll);
 
 // 设置转弯系数 (-1=左, +1=右, 0=直)

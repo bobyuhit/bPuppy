@@ -1,7 +1,7 @@
-# 测试上行发声 (实测确认):
-#   - voice.play('汪汪') → AA 55 70 01 55 AA   (0x70 0x01 = 汪汪, 2026-08-19 用户确认)
-#   - voice.play('嘤嘤') → AA 55 71 02 55 AA   (0x71 0x02 = 嘤嘤, 2026-09-26 用户改)
-#   - voice.say(0x70, 0/1)                     狗叫声 1号/2号
+# 测试上行发声 (实测确认, 狗叫类第一字节统一 0x70, 靠第 4 个数字区分):
+#   - voice.play('汪汪') → AA 55 70 01 55 AA
+#   - voice.play('嘤嘤') → AA 55 70 02 55 AA
+#   - voice.say(0x70, n)                       狗叫声 n 号
 #   - voice.say(0x71, 0)                       平台自定义发声段 0 (探测)
 # 用法: python tools/say_test.py [COM14]
 import sys, time
@@ -31,12 +31,12 @@ wait_prompt(2)
 
 tests = [
     ("voice.play('汪汪')   → AA 55 70 01 55 AA (已确认: 汪汪)", "voice.play('汪汪')"),
-    ("voice.play('嘤嘤')   → AA 55 71 02 55 AA (已确认: 嘤嘤)", "voice.play('嘤嘤')"),
+    ("voice.play('嘤嘤')   → AA 55 70 02 55 AA (已确认: 嘤嘤)", "voice.play('嘤嘤')"),
     ("voice.say(0x70, 0)   → AA 55 70 00 55 AA (狗叫1号)", "voice.say(0x70, 0)"),
     ("voice.say(0x70, 1)   → AA 55 70 01 55 AA (狗叫2号=汪汪)", "voice.say(0x70, 1)"),
     ("voice.say(0x71, 0)   → AA 55 71 00 55 AA (发声段0 探测)", "voice.say(0x71, 0)"),
     ("voice.say(0x71, 1)   → AA 55 71 01 55 AA (发声段1, 未确认)", "voice.say(0x71, 1)"),
-    ("voice.say(0x71, 2)   → AA 55 71 02 55 AA (发声段2=嘤嘤)", "voice.say(0x71, 2)"),
+    ("voice.say(0x71, 2)   → AA 55 71 02 55 AA (探测; 嘤嘤实际是 0x70 0x02)", "voice.say(0x71, 2)"),
 ]
 
 for desc, code in tests:

@@ -37,7 +37,7 @@ extern void led_batt_start(void);
 extern void led_batt_stop(void);
 
 #if BPUPPY_ADC_ENABLE
-#define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // GPIO3 (V3.0: IMU SDA 改到 GPIO14 后腾出)
+#define ADC_DEFAULT_CHANNEL  ADC1_CHANNEL_2   // GPIO3
 #define ADC_DEFAULT_ATTEN    ADC_ATTEN_DB_11  // ~0-3.1V
 #endif
 

@@ -1,6 +1,6 @@
 /*
- * bDog BLE 驱动 — Hiwonder Wonderbot App 兼容
- * ESP-IDF NimBLE: FFE0 UART + 180F Battery
+ * bPuppy BLE 驱动 — KittenBlock Nordic UART (dupterm REPL 桥接)
+ * ESP-IDF NimBLE; .c 里另有 Hiwonder FFE0 分支 (C 层保留), 但 Python 解析层不存在 ⇒ 不可用
  */
 #pragma once
 #include <stdint.h>

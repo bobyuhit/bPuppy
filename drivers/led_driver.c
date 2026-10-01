@@ -173,8 +173,8 @@ static void led_set_rgb(uint8_t r, uint8_t g, uint8_t b)
  * ================================================================ */
 
 /* 均值滤波: 连采 BATT_AVG_N 次取平均 (见文件头 BATT_AVG_N 处的说明)。
- * 任一次读失败 (ADC 未就绪) → 整次作废返回 -1, 跟以前单次读的行为一致
- * (LED 灭 + s_batt_v = -1), 不会拿半截和去除以 N。 */
+ * 任一次读失败 (ADC 未就绪) → 整次作废返回 -1 (LED 灭 + s_batt_v = -1),
+ * 不会拿半截和去除以 N。 */
 static int batt_read_avg(void)
 {
     int sum = 0;

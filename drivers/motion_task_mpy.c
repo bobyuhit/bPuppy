@@ -22,13 +22,11 @@ STATIC mp_obj_t mp_motion_set_gait(mp_obj_t gait_obj) {
     else if (strcmp(s, "walk") == 0)        g = GAIT_WALK;
     else if (strcmp(s, "go") == 0)          g = GAIT_GO;
     else if (strcmp(s, "trot") == 0)        g = GAIT_TROT;
-    // ★ walkfwd / walkbck / trotfwd / trotbck 四个别名已删除 —— 它们是**被静默吞掉的方向输入**:
-    //   四个名字映射到同两个枚举, 方向全靠当时的 stride 符号, 所以 set_gait('walkbck')
-    //   在前进步长下照样往前走。方向已经独立成 set_direction(±1), 这四个名字没有再存在的理由;
-    //   删掉后旧程序调它们会落到下面的"未知步态 → 停车", **明确失败**好过静默走反。
+    // ★ 方向用 set_direction(±1), **不要按步态名转发方向** —— 名字里带方向的别名
+    //   (walkbck 之类) 会落到下面"未知步态 → 停车"。明确失败好过静默走反。
     else {
         // 未知步态名 → 停车。这是刻意的 fail-safe (指令可能被传坏, 如蓝牙丢字节
-        // "trot"→"tr"), 不是缺陷。行为不变, 只把"名字打错"和"正常停车"区分开。
+        // "trot"→"tr"), 不是缺陷。
         // 详见 docs/micropython编程指南.md「1.2 运动指令 bpuppy_motion」的步态列表
         mp_printf(&mp_plat_print, "⚠ 未知步态 \"%s\" → 停车\n", s);
     }
@@ -92,12 +90,9 @@ STATIC mp_obj_t mp_motion_set_omega(mp_obj_t omega_obj) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_omega_obj, mp_motion_set_omega);
 
-// ★ set_lift 已删除 —— 抬脚高度并入 set_params 第 2 参。板上残留的旧程序调它会得到
-//   AttributeError, 这是预期行为 (见 docs/micropython编程指南.md 「1.2 运动指令 bpuppy_motion」节的告警)。
-
 // 身体姿态: (俯仰, 横滚) —— 顺序跟积木文案「俯仰 [PITCH]…滚转 [ROLL]」一致。
 // 返回 True=已采纳, False=被拒 (跟当前 stride/height/lift/重心组合后足端够不着或入地,
-// 俯仰和横滚都保持原值)。2026-09-28 起 C 侧做组合校验, 不再是"没有'被拒'这回事"。
+// 俯仰和横滚都保持原值)。
 STATIC mp_obj_t mp_motion_set_body_pose(mp_obj_t pitch_obj, mp_obj_t roll_obj) {
     float pitch = mp_obj_get_float(pitch_obj);
     float roll  = mp_obj_get_float(roll_obj);
@@ -162,7 +157,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_set_direction_obj, mp_motion_set_dire
 
 // 返回 True=已采纳, False=被拒。被拒有两种原因, 这里**不猜是哪一种** ——
 // 判据只有 C 侧一套 (traj_combo_bad), 在 Python 侧重写一遍就是第二个会漂移的判据
-// (motion_check_params 当初正是因此被删掉)。具体原因看 C 侧 ESP_LOGW (friendly REPL 可见)。
+// 具体原因看 C 侧 ESP_LOGW (friendly REPL 可见)。
 STATIC mp_obj_t mp_motion_set_center(mp_obj_t obj) {
     float off = mp_obj_get_float(obj);
     bool ok = motion_set_center(off);
@@ -224,7 +219,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_load_geometry_obj, mp_motion_load_geo
 //     [4] omega       基准角频率 rad/s
 //     [5] turn        转弯系数 (-1~+1)
 //     [6] gait        步态枚举 (无人读, 保留)
-//     [7] direction   ★ 新增: 方向 (±1, 上电默认 +1)
+//     [7] direction   方向 (±1, 上电默认 +1)
 // ★ [1] 刻意返回**带符号**的 stride: 「步长」读数积木和网页都靠它显示前后,
 //   幅度是 abs([1]), 方向是 [7]。两者都读得到, 老读者也不用改。
 // ★ 前 7 项**定序不动** (camera_stream / 5 个读数积木按索引取), 新项只能往后追加。

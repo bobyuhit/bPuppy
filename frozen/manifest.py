@@ -12,7 +12,7 @@ freeze(".", "balance.py")
 # 航向锁定闭环 —— step1 产 err (heading_anchor) + step2 执行 (heading_follow)。
 # KittenBlock 的「航向锁定 偏转 / 解除航向锁定」两个积木靠它们。**必须冻结**:
 # KittenBlock 只下载 /main.py, 不会把模块带上板 —— 没冻结就是 ImportError。
-# ⚠ **源就在 frozen/ 里, 没有第二份** (2026-10-01 起删掉了 mpy_modules/ 的副本:
-#   两份会漂; 而且 **VFS 优先于 frozen** —— 传上去的那份会盖住固件版, 表现是"编了没生效")。
+# ⚠ **源就在 frozen/ 里, 不要放第二份到 mpy_modules/**: 两份会漂, 而且
+#   **VFS 优先于 frozen** —— 传上去的那份会盖住固件版, 表现是"编了没生效"。
 freeze(".", "heading_anchor.py")
 freeze(".", "heading_follow.py")

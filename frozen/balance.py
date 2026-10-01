@@ -121,5 +121,5 @@ def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
 def stop():
     bpuppy_imu.set_mag_fusion(True)       # 恢复 磁力计参与 roll/pitch (9轴)
     bpuppy_motion.set_gait("stop")        # GAIT_STOP 站好 (自动进 MOTION)
-    bpuppy_motion.set_body_pose(0, 0)     # (俯仰, 横滚); 旧的第 3 参 yaw 是死字段, 已删
+    bpuppy_motion.set_body_pose(0, 0)     # (俯仰, 横滚)
     print("Balance OFF")

@@ -417,12 +417,6 @@ STATIC mp_obj_t mp_servo_stop(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_servo_stop_obj, mp_servo_stop);
 
-// 实测 (2026-09-16): 此处原有 8 个按腿命名的旧校准导出
-// (cal_LF_HIP … cal_RH_KNEE, 经 servo_set_cal 只标 90° 点)。
-// 全仓 (代码/文档/kext) 无任何引用, 且被 cal_point(ch, point, deg) 完全覆盖
-// (三个点、任意通道), 故删除。servo_set_cal()/servo_get_cal() 保留 ——
-// mp_servo_cal() 与 motion_task_mpy.c 的 show_geometry() 仍在用。
-
 // ---- load_cal ----
 STATIC mp_obj_t mp_servo_load_cal(void) {
     servo_load_cal();

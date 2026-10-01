@@ -47,13 +47,12 @@ static const char *TAG = "motion";
 // 窗口用**累计步态周期数**做自变量 (与速度解耦): 无论 speed 多少都是 fade_in_turns 个周期.
 // ★ 淡出方向 (1→0) 至少要 1 个整周期: 支撑相锚定后脚一落地就不再回 x=0, 必须让
 //   **每条腿都在步长→0 之后重新落地一次**, 四脚才会都收敛到 x≈0 的站姿等价点.
-//   —— 这条只约束**淡入**了; 淡出已改用 FADE_OUT_TURNS + 平方曲线, 见下.
 #define FADE_IN_TURNS_WALK   1.0f   // 淡入 walk 段 (duty 0.20). ★暂时与 TROT 同值 ⇒ 下面的分档失效 (试手感)
 #define FADE_IN_TURNS_TROT   1.0f   // 淡入 trot 段 (duty 0.40): 对角两腿同时离地 ⇒ 原地踏步晃, 窗口要短
 
 /* ---- 淡出专用: 统一 1.25 周期 + 平方曲线 ----
  * (只有"目标速度归零"这一条路走它 —— 停步走回正步, 换向走对齐点翻转, 都不经过这里) */
-// 淡出不再跟着 fade_in_turns 走. 跟着走时 trot/GO≥6 用 1.0 太短 —— 淡完那刻四脚离
+// 淡出**不能**跟着 fade_in_turns 走. 跟着走时 trot/GO≥6 用 1.0 太短 —— 淡完那刻四脚离
 // 站姿还差 **39~40mm**, 全交给最后 0.3s 的 pose_trans=2 缓动去滑 ⇒ ≈130mm/s 搓地.
 // 平方曲线 fade = (1-p)² 把同一段时间重新分配成"前段就小下去, 后段只剩一点点" ⇒
 // **同样时长里前冲更短, 且淡完那刻残留小一个数量级**.
@@ -123,12 +122,7 @@ static float g_smooth_angles[8] = {90, 90, 90, 90, 90, 90, 90, 90};
 static int   g_dir_last = 1;          // 上次运动方向 (+1 前进 / -1 后退), 用于检换向
 static float g_stride_smooth = 0.0f;  // GO 平滑步长 (起步从 0 爬升)
 static bool  g_half_pulse = false;    // 半周期脉冲 (步长平滑触发)
-// (g_stop_decel / g_pending_gait 已删 —— 停步改走**回正步**之后, 前者再没被置过 true、
-//  后者再没被赋过值, 两个都成了只被自己读的死变量。现在"目标速度归零"直接判
-//  g_motion.target_speed <= 0.1f, 淡出完成后切的就是 GAIT_STOP。)
 static bool  g_stand_up = false;      // 阶段 A: 起步过渡 (任意姿态 → 站姿) 进行中
-// (g_reverse / g_rev_gait / g_decel_sign 已删 —— 换向改走"全踩地翻转"之后它们成了孤儿:
-//  g_reverse 从未被赋 true, g_decel_sign 从未被赋值, 三个都只被自己读)
 
 /* ---- 步长淡入淡出 (起步 / 停步 / 换向 共用一套) ---- */
 // g_stride_fade ∈ [0,1] 乘在满额步长上: 1=满额, 0=零步长 (原地踏步).
@@ -187,7 +181,7 @@ __attribute__((weak)) motion_state_t g_motion = {
     .speed          = 0.0f,          // 实际速度静止为 0
     .target_speed   = SPEED_DEFAULT, // 目标速度默认 2.5
     .stride         = STRIDE_DEFAULT,
-    .direction      = 1.0f,          // 上电默认朝前 (与旧版 stride 默认 +70 的行为一致)
+    .direction      = 1.0f,          // 上电默认朝前
     .height         = HEIGHT_DEFAULT,
     .lift_height    = LIFT_DEFAULT,
     .body_roll      = 0.0f,
@@ -197,7 +191,6 @@ __attribute__((weak)) motion_state_t g_motion = {
     .omega_base     = 2.0f,
     .gait_duty      = 0.20f,
     .gait_gap       = 0.04f,
-    .turn_rate      = 0.0f,
     .turn           = 0.0f,
     .center_offset  = CENTER_OFFSET_DEFAULT,
     .body_half_l    = IK_BODY_HALF_L_DEFAULT,
@@ -357,14 +350,15 @@ static bool flip_phase_aligned(float phase_rad, float duty, float gap)
 static void motion_apply_gait_params(gait_type_t gait)
 {
     switch (gait) {
-    case GAIT_WALK:        g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f; g_motion.turn_rate = 0.0f;  break;
-    case GAIT_TROT:        g_motion.gait_duty = 0.40f; g_motion.gait_gap = 0.10f; g_motion.turn_rate = 0.0f;  break;
-    case GAIT_GO:          g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f; g_motion.turn_rate = 0.0f;  break;  // 运行时根据 speed 动态调整
+    case GAIT_WALK:        g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f;  break;
+    case GAIT_TROT:        g_motion.gait_duty = 0.40f; g_motion.gait_gap = 0.10f;  break;
+    case GAIT_GO:          g_motion.gait_duty = 0.20f; g_motion.gait_gap = 0.04f;  break;  // 运行时根据 speed 动态调整
     default: break; // stand/stand_up 不调参数
     }
-    ESP_LOGI(TAG, "Gait: %d (duty=%.2f gap=%.2f turn=%.1f)",
+    // ⚠ 打的是 g_motion.turn (当前转弯系数), 不是"本次步态带来的转弯"
+    ESP_LOGI(TAG, "Gait: %d (duty=%.2f gap=%.2f turn=%.2f)",
              gait, g_motion.gait_duty, g_motion.gait_gap,
-             g_motion.turn_rate);
+             g_motion.turn);
 }
 
 /* ---- 进回正步 ---- */
@@ -505,7 +499,7 @@ static void motion_task_main(void *pvParam)
          * 预备位 = 全踩地相位中点 (all_stance_mid), 此时四腿着地不抬,
          *         从站立移动到预备位 (或反向) 只平移足端, 不会歪倒.
          *
-         * 起步过渡: 已废弃 pose_trans=1. 原因: 它从**写死的** (0, eff_height) 起步
+         * 起步过渡: **pose_trans=1 不可用**. 原因: 它从**写死的** (0, eff_height) 起步
          *   (等于"假设狗站着"), 从坐姿按前进时第一帧就命令髋/膝跳 95.7°;
          *   且 GO 的 eff_height 被强制成 70, 站高设成非 70 时会白跳一段.
          *   现在改由 g_stand_up (阶段 A) 从**实际舵机角**起步, 见下面腿循环的限速器.
@@ -535,9 +529,9 @@ static void motion_task_main(void *pvParam)
         g_was_moving = !now_static;
 
         // 换向检测: 运动方向变化 → 挂起, 等下一个"四腿全踩地"窗口做翻转 (见下面的翻转块)。
-        // ★ 不再走"减速停 → 淡出 → 淡入": 那套要 2.83~3.16s, 而全踩地翻转是当帧完成的
+        // ★ 为什么不用"减速停 → 淡出 → 淡入": 那套要 2.83~3.16s, 而全踩地翻转是当帧完成的
         //   (四腿全在支撑相, 而支撑相不含相位 ⇒ 取反锚定量与方向翻转精确抵消)。
-        int cur_dir = (g_motion.direction < 0.0f) ? -1 : 1;   // ★ 读独立字段, 不再看 stride 的符号
+        int cur_dir = (g_motion.direction < 0.0f) ? -1 : 1;   // ★ direction 是独立字段, 与 stride 的符号无关
         if (cur_dir != g_dir_last && !now_static) {
             // ★ 阶段 A 期间不检换向: 那时还没起步, 用户先设负 stride 再按前进会被误判成换向
             if (!g_pending_flip && g_motion.pose_trans == 0 && !g_stand_up) {
@@ -709,7 +703,7 @@ static void motion_task_main(void *pvParam)
             }
             if (g_fade_active) {
                 if (g_stride_fade < g_fade_target) {
-                    /* 淡入: 线性, 一个字节都没动 —— 起步行为与上一版完全相同 */
+                    /* 淡入: 线性 (系数 0→1, 走一个步态周期) */
                     float step = frame_dphi / fade_in_turns;
                     g_stride_fade += step;
                     if (g_stride_fade >= g_fade_target) {
@@ -744,7 +738,7 @@ static void motion_task_main(void *pvParam)
         bool  fade_full     = (!g_fade_active && g_stride_fade >= 0.999f);
 
         /* GO 变速平滑 (既有行为, 只服务"speed 变化导致 GO 目标 70↔50"的跳变).
-           ★ 减速停不再走这里 —— 已由淡入淡出接管 (旧"立刻切目标/3 → 归零"分支删除).
+           ★ 只有"GO 目标步长变化"走这里; 减速停由淡入淡出接管, 不经过本分支.
              淡入没走完时让平滑值同步跟随满额目标, 保证交回控制权那一帧不跳. */
         if (g_motion.gait == GAIT_GO) {
             if (!fade_full) {
@@ -1192,8 +1186,8 @@ void motion_set_gait(gait_type_t gait)
         // 静态→运动 或 同态切换: 立即生效, 并取消挂起的回正
         if (!is_static_gait(gait)) {
             g_pending_repos = false;
-            /* ★ 这里**不再**取消挂起的换向 (旧代码有一句 g_pending_flip = false)。
-             * 为什么必须去掉: 换向指令的语义是"等下一个全踩地窗口翻锚定量", 这个等待是
+            /* ★ 挂起的换向在这里**必须保留**, 不能取消。
+             * 取消会留下**半完成态**: 换向指令的语义是"等下一个全踩地窗口翻锚定量", 这个等待是
              * **固有**的 (摆动腿不能翻, 翻了会瞬移)。而"取消"会留下一个**半完成态** ——
              * direction 已经是新值, 锚定量却还是旧朝向 ⇒ stride_sign 提前翻号,
              * 支撑腿当帧 x 取反, 瞬移最坏 2×(stride/2) = 70mm; 更糟的是
@@ -1685,15 +1679,7 @@ void motion_set_omega(float omega)
     ESP_LOGI(TAG, "Omega base: %.2f rad/s", omega);
 }
 
-/* (原 motion_set_lift 的位置 —— 已删除)
- * 抬脚高度并入 motion_set_params 第 2 参。它原来靠"当前 stride/height"校验, 而 set_params
- * 靠"当前 lift"校验, 两者互为顺序耦合 (docs/error.md §2.2 #7)。合并后三个量只有一个来源,
- * 一起判一起写, 那个缺陷从根上消失。
- */
-
 // ★ 参数顺序: 俯仰在前, 跟积木文案「俯仰 [PITCH]…滚转 [ROLL]」一致。
-//   旧签名 (roll, pitch, yaw) 顺序相反 —— 块上写着"俯仰 [PITCH]"却把 PITCH 送进 pitch 槽
-//   是靠 argument 名字救回来的, 但 C 层直接调用就会串。yaw 是死字段(只写不读), 已删。
 // 返回 true=已采纳, false=被拒 (俯仰/横滚一个都不写, 保持原值)。
 // ★ 姿态补偿是**逐腿叠加进 z 的** (前腿 +z_pitch / 后腿 -z_pitch, 左 -z_roll / 右 +z_roll),
 //   所以它跟 stride/height/lift 一样决定足端够不够得着。以前本函数完全不校验, 于是

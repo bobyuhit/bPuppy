@@ -235,7 +235,7 @@ static bool read_all(imu_raw_data_t *d) {
     d->gyro_y=(gy/GYRO_SCALE)*DEG2RAD-g_bias_gy;
     d->gyro_z=(gz/GYRO_SCALE)*DEG2RAD-g_bias_gz;
     d->temp_c=gt/TEMP_SCALE+21.0f;
-    // ② Mag: 直接读 EXT_SENS_DATA (SLV0 后台持续刷新)
+    // Mag: 直接读 EXT_SENS_DATA (SLV0 后台持续刷新)
     d->mag_x=d->mag_y=d->mag_z=0.0f;
     if (g_mag_ready) {
         uint8_t mbuf[8];

@@ -1,5 +1,5 @@
 # UART2 loopback 测试: GPIO19(TX) 短接 GPIO20(RX)
-# 2026-09-26 扩展: 除上行帧回显外, 增加**裸下行帧注入** —— 不依赖 CI-33T 模块
+# 除上行帧回显外, 还支持**裸下行帧注入** —— 不依赖 CI-33T 模块
 #                  就能验证新的按结构切帧解析 (_parse) 和声源角度 (SoundAngle)。
 #
 # ⚠ 注入命令帧 (BB <CMD> <PARAM> EE) 会真的派发事件: 若用户程序里注册了
@@ -157,7 +157,7 @@ print("    SoundAngle 未被垃圾污染:", "OK" if val != 1 else "❌ 垃圾被
 print("=" * 60)
 print("结论: A 段应看到 3 条上行帧回显且 0 条误派发;")
 print("      B/E/F 应派发 0x31; C/D 应逐条对上 SoundAngle 且 0 条误派发。")
-print("⚠ D 段若出现 VOICE CMD: 0x30/0x35/0x3c 说明解析退回了旧版逐字节扫描。")
+print("⚠ D 段若出现 VOICE CMD: 0x30/0x35/0x3c 说明角度帧被误当命令帧。")
 print("ℹ 固件对角度事件打的是 VOICE ANGLE: <度> -> event, 不用 VOICE CMD 前缀")
 print("  (0x100 不在线上, 混在 VOICE CMD 里会对着协议表找不到)。")
 s.close()

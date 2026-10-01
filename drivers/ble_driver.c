@@ -65,7 +65,7 @@ static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ct
                 for (int i = 0; i < len; i++) {
                     int next = (g_rx_head + 1) % RX_BUF_SIZE;
                     if (next == g_rx_tail) {
-                        // 缓冲满: 丢新字节, 保留未读数据 (旧代码覆盖 head 会静默错位)
+                        // 缓冲满: 丢新字节, 保留未读数据
                         break;
                     }
                     g_rx_buf[g_rx_head] = buf[i];

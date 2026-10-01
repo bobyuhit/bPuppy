@@ -44,7 +44,7 @@ extern "C" {
 #define SERVO_MODEL_180     0
 #define SERVO_MODEL_270     1
 
-// ★ 当前使用型号 (默认 270° 舵机测试中; 换 180° 舵机时改这里)
+// ★ 当前使用型号 (换 180° 舵机时改这里)
 #define SERVO_MODEL         SERVO_MODEL_270
 
 #if SERVO_MODEL == SERVO_MODEL_180
@@ -74,7 +74,7 @@ typedef struct {
 // 初始化单个舵机
 void servo_init(uint8_t channel, uint8_t gpio);
 
-// 设置单个舵机角度 (0°-180°)
+// 设置单个舵机角度 (行程随 SERVO_MODEL, 当前 270° 型: -35~215°)
 void servo_set_angle(uint8_t channel, float angle_deg);
 
 // 获取当前角度

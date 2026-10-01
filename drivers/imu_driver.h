@@ -3,11 +3,13 @@
  * bPuppy IMU 传感器驱动 — MPU6050 / MPU9250 自适应
  *
  * I2C 接口引脚由 Python 层初始化时指定。
- * 使用 ESP-IDF v5.x I2C Master API (driver/i2c_master.h)
+ * 使用 ESP-IDF legacy I2C API (driver/i2c.h) —— 与 MicroPython machine.I2C 同一套,
+ * 不能换 driver_ng (两者互斥会断言重启)
  *
- * WHO_AM_I 自动识别: 0x68/0x69 = MPU6050 (6轴), 0x71/0x73 = MPU9250 (9轴)
- *   MPU6050 无磁力计 → mag_* 读数恒 0, yaw 有漂移 (6轴姿态)
- *   MPU9250 含 AK8963 → mag_* 可用, Mahony 9轴融合, 无漂移 yaw
+ * WHO_AM_I 自动识别: 0x68/0x69 = MPU6050, 0x70 = MPU6500, 0x71/0x73 = MPU9250
+ * ⚠ **有没有磁力计不看型号** —— 一律问 imu_has_mag()。6500 / 9250 模块都可能带 AK8963。
+ *   有磁力计 → mag_* 可用, Mahony 9轴融合, yaw 不漂
+ *   没有     → mag_* 恒 0, 6轴姿态, yaw 有漂移
  *
  * 数据格式:
  *   加速度: 16-bit signed, 量程 ±8g → 4096 LSB/g
@@ -51,7 +53,7 @@ typedef struct {
 // 初始化 IMU (I2C 接口), 幂等: 已初始化则直接返回
 // port: I2C 端口号 (I2C_NUM_0 或 I2C_NUM_1)
 // sda_pin, scl_pin: GPIO 引脚
-// addr: I2C 地址 (MPU9250 默认 0x68)
+// addr: **当前被忽略** —— 驱动自己按 0x68/0x69 扫 (见 imu_driver.c)
 void imu_init(uint8_t port, uint8_t sda_pin, uint8_t scl_pin, uint8_t addr);
 
 // 是否已初始化 (供依赖模块按需启动)
@@ -75,7 +77,7 @@ void imu_set_mag_fusion(bool enable);
 // 读取原始数据 (9轴 + 温度)
 void imu_read_raw(imu_raw_data_t *data);
 
-// 读取姿态角 (需要 imu_read_raw() 持续调用 → 内部 AHRS 滤波器)
+// 读取姿态角 (AHRS 由独立任务持续跑, 调用方不需要喂它)
 void imu_read_angles(imu_angles_t *angles);
 
 // 校准: 采集静止状态下 N 次数据计算零偏
