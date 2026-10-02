@@ -242,7 +242,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `frozen/voice.py` | 语音「事件」转发核心 — UART2 收发 + 后台线程 + 事件注册/分发（无内置动作，见下方「语音事件系统」节） |
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
 | `frozen/heading_anchor.py` | **航向锁定 step1** — IMU 航向的 err 源。对外 `on(偏移度)` / `off()` / `read()` / `set(**cfg)`，`anc.cfg` 看参数。**自己 import step2 并把闭环接到后台线程**（用户看不见 `heading_follow`）。KittenBlock 的「航向锁定 偏转 / 解除航向锁定」两个积木靠它 |
-| `frozen/heading_follow.py` | **航向锁定 step2** — 闭环执行体 `err_fn → set_turn`。`run`(阻塞) / `start`(后台线程) / `stop` / `running` / `g_c`。**不 import 任何 err 源**，所以视觉 / 声源都能喂进来。`TURN_SIGN` 在这里（改它不用重编译） |
+| `frozen/heading_follow.py` | **航向锁定 step2** — 闭环执行体 `err_fn → set_turn`。`run`(阻塞) / `start`(后台线程) / `stop` / `running` / `g_c`。**不 import 任何 err 源**，所以视觉 / 声源都能喂进来。`TURN_SIGN` 在这里（模块常量：REPL 里 `flw.TURN_SIGN = ±1` 可运行时改、不落盘；改文件要重传/重编译） |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
 | `gait_sim/gait_sim.py` | PC 端步态仿真 — CSV/PNG/GIF |
@@ -449,7 +449,7 @@ duty 到 0.40, 抬脚压低换更小的上下起伏。**抬脚 5mm ⇒ 摆动腿
   **文件在 = 开，从板子删掉 = 不开**，不用重编译固件，也不影响 KittenBlock 下载的 `/main.py`。
   ⚠ 该文件必须**纯 ASCII**（蓝牙上传会丢非 ASCII 字节，中文注释会截断文件）。
   实现: `frozen/main.py` 每次开机读 `/camera_on.py` 并丢进后台线程执行。用法见 [wifi设备遥控指南.md](docs/wifi设备遥控指南.md)。
-- IMU: balance / set_heading / calib_mag 的 `start()` 自动 `init()`（`imu_init` 幂等）
+- IMU: balance / heading_anchor / calib_mag 的 `start()` / `on()` 自动 `init()`（`imu_init` 幂等）
 - BLE 协议层: KittenBlock 模式走 dupterm REPL（C 层自动）; Hiwonder 模式原由 `ble_hiwonder.py` 驱动，**该文件已删除**，故当前只有 KittenBlock 模式可用
 
 > **蓝牙编译互斥**：两个蓝牙模式（KittenBlock Nordic / Hiwonder FFE0）**不要同时编译**，同一固件只能启用其一。由 `drivers/micropython.cmake` 的 `BPUPPY_BLE_KEBLOCK` / `BPUPPY_BLE_HIWONDER` 宏二选一，详见 `kext-bpuppy/KittenBlock扩展开发.md` 第 11 节。
@@ -1061,16 +1061,16 @@ def pycode_ok(lines):                    # lines = pycode 数组展开后的各�
 
 ### 14. **VFS 优先于 frozen** —— 板子上的同名 `.py` 会**盖住**固件里的模块
 
-2026-10-01 实测：把 `heading_anchor.py` / `heading_follow.py` 冻结进固件、编译烧录，
-板上 `import heading_anchor` **加载的仍是 VFS 里那份陈旧副本**（`hasattr(anc,'on')` 为 `False`，
-还在用早已删掉的 `anchor()`）。删掉 VFS 那两份之后立刻正常。
+把 `heading_anchor.py` / `heading_follow.py` 冻结进固件、编译烧录后，板上
+`import heading_anchor` **加载的可能是 VFS 里那份旧副本**（表现：新改动没生效）。删掉 VFS 那两份才正常。
 
 **查找顺序：`sys.modules` → VFS 根目录 → frozen。** 由此：
 
 - **冻结 ≠ 一定生效。** 板子根目录只要有同名文件，它说了算。表现是"编了、烧了、没生效"，
   而且**版本串也会骗你** —— 这次固件时间戳确实是新的，模块照样是被旧的那份顶着。
 - 冻结仍然要做：**新板子／没传过的板子开箱即用**（KittenBlock 用户不会手工传模块）。
-- 判据一眼看穿：`import heading_anchor as a; print(hasattr(a, 'on'))` —— 有 `on` 才是新版。
+- 判据：`import os; print(os.listdir('/'))` —— 列表里出现同名 `.py` 就是它顶着
+  （**别只看 API 特征**：新旧版本可能都有同一个函数名，分不出来）。
 - 修：`import os; os.remove('heading_anchor.py')`。
   ⚠ **`os.listdir("/")` 返回的名字不带斜杠**，别拿 `"/xxx.py"` 去比对 —— 比不中、静默不删，
   今天就这么白跑一轮。
@@ -1141,7 +1141,7 @@ diff /tmp/sdkconfig.before build/sdkconfig  # 应当只有你改的那几行不�
 | 修改 BLE 协议 | `drivers/ble_driver.c`（GATT 服务）+ `drivers/ble_stream.c`（dupterm 桥接）。原 `frozen/ble_hiwonder.py` 已删除 |
 | 修改语音事件/命令码映射 | `frozen/voice.py`（固件侧，需重编译烧录）+ `kext-bpuppy/kblock.json5`（扩展侧，重打包 zip） |
 | 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送）。⚠ 积木若引用新模块，`kblock.json5` 的 `libs` 和 `extension.json` 的 `afterConnect` **两处都要加 import**，漏一处在线就是 `NameError` |
-| 修改航向锁定闭环（`anc` / 「航向锁定 偏转」积木） | 改 `frozen/heading_{anchor,follow}.py` → 重编译。**源只有这一份**（2026-10-01 起删掉了 `mpy_modules/` 的副本：两份会漂，而且 VFS 优先 —— 传上去的那份会盖住固件版）。⚠⚠ 板子根目录若**残留** `/heading_anchor.py`，照样会盖住固件版、表现为"编了烧了没生效" ⇒ 用 `os.remove` 删掉。⭐ `TURN_SIGN` / `kp` / 死区这些**运行时**用 `anc.set()` / `anc.cfg` 改，**不用重编译** |
+| 修改航向锁定闭环（`anc` / 「航向锁定 偏转」积木） | 改 `frozen/heading_{anchor,follow}.py` → 重编译。**源只有这一份**（`mpy_modules/` 下不要放副本：两份会漂，而且 VFS 优先 —— 传上去的那份会盖住固件版）。⚠⚠ 板子根目录若**残留** `/heading_anchor.py`，照样会盖住固件版、表现为"编了烧了没生效" ⇒ 用 `os.remove` 删掉。⭐ `kp` / 死区 / 周期 / 积分限幅用 `anc.set()` **运行时**改（重起闭环线程、目标不变）；`TURN_SIGN` **不在 `anc.cfg` 里** —— 运行时改是 REPL 里 `import heading_follow as flw; flw.TURN_SIGN = ±1`（不落盘），落盘要改文件 |
 | 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |
 | 改相机内存走向 (内部 RAM ↔ PSRAM) | `sdkconfig.bpuppy` → `CONFIG_CAMERA_PSRAM_DMA`（改完**必须删 `build/sdkconfig`**，见下节） |
 | 修改 PC 拍照工具 | `tools/capture.py` |

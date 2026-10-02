@@ -615,7 +615,7 @@ bpuppy_servo.cal_point(0, 2, 178)   # ③ 试 178 → 腿在 180° 理想位
 ### 5.1 IMU 调试 bpuppy_imu
 
 
-> 手动初始化: `bpuppy_imu.init(0, 14, 21, 0x68)`。balance / set_heading / calib_mag 的 `start()` 会自动启动，无需手动。停止: `bpuppy_imu.stop()`（停 AHRS 任务，可重新 init）。
+> 手动初始化: `bpuppy_imu.init(0, 14, 21, 0x68)`。balance / heading_anchor / calib_mag 的 `start()` / `on()` 会自动启动，无需手动。停止: `bpuppy_imu.stop()`（停 AHRS 任务，可重新 init）。
 
 **磁力计融合开关 `set_mag_fusion`:**
 
@@ -632,11 +632,11 @@ bpuppy_imu.set_mag_fusion(True)    # 9轴完整融合 (默认)
 import bpuppy_imu
 bpuppy_imu.init(0, 14, 21, 0x68)      # 初始化 (幂等)
 import time
-for i in range(20):
+while True:
     a, g, m, t = bpuppy_imu.read_raw()
     print('acc=%.2f %.2f %.2f  gyro=%.2f %.2f %.2f  mag=%.1f %.1f %.1f  temp=%.1f' %
           (a[0],a[1],a[2], g[0],g[1],g[2], m[0],m[1],m[2], t))
-    time.sleep_ms(300)
+    time.sleep_ms(500)
 ```
 
 **查看姿态角 (roll, pitch, yaw):**
@@ -645,7 +645,7 @@ for i in range(20):
 import bpuppy_imu
 bpuppy_imu.init(0, 14, 21, 0x68)      # 初始化 (幂等)
 import time
-for i in range(20):
+while True:
     r, p, y = bpuppy_imu.read_angles()
     print('roll=%.2f pitch=%.2f yaw=%.2f' % (r, p, y))
     time.sleep_ms(500)
@@ -669,21 +669,9 @@ calib_mag.start()             # 引导式 3D 椭球校准, 跟着串口提示转
 
 有磁力计的板子才需要（6 轴模块会自己跳过）。残差怎么判 → [新板上电操作指南.md](新板上电操作指南.md) 的磁力计节。
 
-### 5.4 航向锁定 set_heading
+### 5.4 航向锁定 heading_anchor
 
-
-
-保持指定航向（默认 57°），通过 `set_turn` 转向。`start()` 会自动初始化 IMU。
-
-```python
-import set_heading
-set_heading.start(57)         # 锁定 57° 方向 (缺省 57)
-set_heading.stop()            # 停止
-```
-
-#### 5.4.1 惯导航向锁定 `heading_anchor`（推荐）🎯
-
-上面那个是**旧版**：阻塞式循环、只认**绝对**航向。新版拆成两个文件：
+闭环拆成两个文件，各管一半：
 
 | 文件 | 角色 |
 |---|---|
