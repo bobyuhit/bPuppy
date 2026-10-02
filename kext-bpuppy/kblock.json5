@@ -324,11 +324,16 @@
           defaultValue: '1'
         }
       },
+      // ⚠⚠ pycode 的**每一行都要含参数占位符** —— KittenBlock 的「在线执行」
+      //   只把"含 [XXX] 占位符的行"发到板子, 不含占位符的纯代码行会被丢掉
+      //   (2026-10-02 实测: 6 行里只有含 SPEED/DIR 的前 2 行被发出,
+      //    set_direction/set_speed 那两行没到 ⇒ 点了速度积木狗的速度不变).
+      //   所以下面两行**不能**写成 `set_speed(_speed)` —— 那样是纯代码, 发不出去。
       pycode: [
         '_speed = [SPEED]',
         '_dir = [DIR]',
-        '_dir_ok = bpuppy_motion.set_direction(_dir)',
-        '_speed_ok = bpuppy_motion.set_speed(_speed)',
+        '_dir_ok = bpuppy_motion.set_direction([DIR])',
+        '_speed_ok = bpuppy_motion.set_speed([SPEED])',
         '_ok = _dir_ok and _speed_ok',
         '_ok = _ok or voice.say(*voice.SND_YING) or False'
       ]
