@@ -231,7 +231,10 @@
     //   branchCount, 代价是行间多一个空 C 形槽 —— 不值。**要让积木短, 靠缩文案, 别指望换行。**
     // ⚠ 一行只能有一个 $$key: maybeFormatMessage 只有在**整行**以 $$ 开头时才查表,
     //   且把 $$ 之后的整串当一个 key。
-    // pycode 用数组 (join("\r\n")), 因为单行 `if c: a; b` 里 b 也会被算进 if 体。
+    // ⚠⚠ pycode 必须是**单行** (整段无内部换行) —— 网页版在线执行按 20 字符分片、
+    //   每片等回显确认, 分片里含换行会让设备当场执行上一行、把提示符插进回显
+    //   ⇒ 回显对不上 ⇒ 整个命令被中止 (2026-10-02 查实, 详见 setSpeed 的详注)。
+    //   语句间用 `;` 连接; 条件回写用**条件表达式** (`a if c else b`), 不用 `if` 语句。
     {
       opcode: 'advMotion',
       blockType: 'command',
@@ -255,26 +258,16 @@
       //    四个方向块用的都是 go ⇒ 本块设的值对「前进/后退/左转/右转」**没有影响**,
       //    要让它生效得先用「切换步态」选 walk 或 trot。下面那句回写仍然必须留着:
       //    walk/trot 下它就是真的在起作用。
-      // ⚠★ 本块 5 行必须是**顶格单句、一条复合语句都不许有** —— 不能写 `if`。**铁律。**
-      //   友善 REPL 判"这段说完没有"只看缓冲区末尾是不是 \n (py/repl.c:149),
-      //   而自动缩进连"空行"也给填空格 (readline.c:503-527) ⇒ `if` 段**永远等不到那个空行**,
-      //   整段一行都不执行; 此时按 Ctrl-C 是**静默整段丢弃** (readline.c:158-160 → pyexec.c:446-450),
-      //   所以现象是"点了没反应、也不嘤、还没报错" —— 详见 AGENTS.md 易错点 13。
-      //   逐行下发时只有"无缩进 / 不以 ':' 结尾 / 非复合语句开头"的行才保证执行,
-      //   正是 bTool 的 _paste_by_lines_ok() 用的那条判据 (btool.py:1791-1804)。
-      // ⇒ 失败嘤嘤改用 `or` 短路, 见最后一行。
+      // ⚠★ 本块 pycode 是**单行**: 顶格、无内部换行、一条复合语句都不许有 —— 不能写 `if`。**铁律。**
+      //   (`if` 段在友善 REPL 上闭不了合、整段不执行 —— 见 AGENTS.md 易错点 13;
+      //    内部换行则会被网页版的"分片等回显"中途掐死 —— 见 setSpeed 的详注。)
+      //   条件回写用条件表达式 (`a if c else b`); 失败嘤嘤用 `or` 短路, 见下面那行。
       // ★ abs() 从此**只用于回写全局**: set_params 收原值 ⇒ 负步长才会走到固件那条
       //   `!(stride >= 0)` (motion_task.cpp:1350) 被拒 + 嘤嘤叫, 兑现
       //   docs/micropython编程指南.md「1.2 运动指令 bpuppy_motion」的参数表
       //   与 扩展开发.md「固件对负 stride 直接拒」的承诺 (以前 abs 在前, 那条闸门永远够不到)。
       //   被拒时三个全局**不写**, 与固件"整组被拒一个都不写" (motion_task.cpp:1364-1368) 一致。
-      pycode: [
-        '_ok = bpuppy_motion.set_params([STRIDE], [LIFT], [HEIGHT])',
-        '_stride = abs([STRIDE]) if _ok else _stride',
-        '_lift = [LIFT] if _ok else _lift',
-        '_height = [HEIGHT] if _ok else _height',
-        '_ok = _ok or voice.say(*voice.SND_YING) or False'
-      ]
+      pycode: '_ok = bpuppy_motion.set_params([STRIDE], [LIFT], [HEIGHT]); _stride = abs([STRIDE]) if _ok else _stride; _lift = [LIFT] if _ok else _lift; _height = [HEIGHT] if _ok else _height; _ok = _ok or voice.say(*voice.SND_YING) or False'
     },
     {
       opcode: 'getStride',
@@ -302,7 +295,7 @@
     //   set_params 只收步长**幅度**, 跟 [DIR] 无关。
     //   只动速度/方向 —— 高度/抬脚/转弯率/步态都不碰; 狗在走的话是**边走边改**。
     //   速度不打断步态, 也**不会**让站着的狗起步 (要起步还是用「前进/后退」)。
-    // ⚠★ 多行 pycode 一律**顶格单句**, 一条复合语句都不许有 —— 不写 `if`, 更不写 `else:`/`elif:`。
+    // ⚠★ pycode 一律**顶格单句**且**单行**(无内部换行, 见 setSpeed 详注), 一条复合语句都不许有 —— 不写 `if`, 更不写 `else:`/`elif:`。
     //   只删 `else:` 不算修干净 —— 留着 `if` 照样死: REPL 判"说完没有"只看
     //   缓冲区末尾是不是 \n (py/repl.c:149), 而自动缩进连"空行"也填空格 (readline.c:503-527),
     //   于是 `if` 段永远等不到那个空行、整段一行都不执行; 续行里 Ctrl-C 又是**静默整段丢弃**
@@ -324,14 +317,17 @@
           defaultValue: '1'
         }
       },
-      // ⚠⚠ **必须是单行!** KittenBlock 的「在线执行」对**多行 pycode**
-      //   只把"变量 = 字面量"的纯赋值行当"变量同步"发出去, 带函数调用的行全丢
-      //   (2026-10-02 实测: 6 行只有 `_speed = 5` / `_dir = 1` 两行到达板子,
-      //    set_direction/set_speed 那两行怎么改都发不出去)。
-      //   而**单行 pycode 会整行当命令发出** —— 「蹲下」poses.crouch() 一直好使
-      //   就是证据。⇒ 用 `;` 把全部语句压成一行。
-      //   ⚠ 别在这里用 if/def 等复合语句 (REPL 上会卡续行, 见 AGENTS.md 易错点 13)。
-      pycode: ['_speed = [SPEED]; _dir = [DIR]; bpuppy_motion.set_direction(_dir); bpuppy_motion.set_speed(_speed); _ok = True']
+      // ⚠⚠ **必须是单行 (整段不能有内部换行)。** 网页版 KittenBlock 走 Web Bluetooth 时,
+      //   在线执行 (execLine) 会把整条命令**按 20 字符切片、逐片发送、每片等"原样回显"
+      //   确认** (beginEchoWait); 分片里含换行时, 设备 REPL 收到 `\r` 会**当场执行上一行**
+      //   并把 `>>> ` 提示符插进回显流 → 回显子串对不上 → JS **发 Ctrl-C 中止**, 后面的
+      //   分片一片都不发 (2026-10-02 实测: 6 行 pycode 只发出第 1 片 20 字符
+      //   `_speed = 5\r\n_dir = 1`, 设备只执行了 _speed=5, `_dir = 1` 还被 Ctrl-C 从
+      //   输入缓冲清掉 —— 速度纹丝不动)。
+      //   ⇒ **pycode 一律单行** (`;` 连接): 中间分片没有换行 → 不执行 → 回显原样 →
+      //   任意长度都安全 (afterConnect 的 58 字符单行一直好使就是证据; 「蹲下」单行同理)。
+      //   ⚠ 仍然不许 if/def 等复合语句 (会卡 REPL 续行, 见 AGENTS.md 易错点 13)。
+      pycode: '_speed = [SPEED]; _dir = [DIR]; bpuppy_motion.set_direction(_dir); bpuppy_motion.set_speed(_speed); _ok = True'
     },
     // ---- 读数积木 (读**板上生效值**) ----
     // ⚠ `disableMonitor: false` 是**必须写的**: KittenBlock 把舞台 monitor 的勾选框放宽到了任意
@@ -382,11 +378,8 @@
           defaultValue: '0'
         }
       },
-      // ⚠ 顶格单句, 不许有复合语句 (同上)。注意 False 只是"没原样采纳", 值已钳位写入。
-      pycode: [
-        '_ok = bpuppy_motion.set_turn([TURN])',
-        '_ok = _ok or voice.say(*voice.SND_YING) or False'
-      ]
+      // ⚠ 顶格单句 + 单行, 不许有复合语句 (见 setSpeed 详注)。注意 False 只是"没原样采纳", 值已钳位写入。
+      pycode: '_ok = bpuppy_motion.set_turn([TURN]); _ok = _ok or voice.say(*voice.SND_YING) or False'
     },
     {
       opcode: 'getTurn',
@@ -414,13 +407,10 @@
         PITCH: { type: 'number', defaultValue: '0' },
         ROLL:  { type: 'number', defaultValue: '0' }
       },
-      // ⚠ 顶格单句, 不许有复合语句 (`if` 段在友善 REPL 上闭不了合, 整段不执行)。
-      //   最后一行靠 `or` 短路: _ok 假才求值 voice.say ⇒ 嘤; 尾部 or False 把 say 返回的
+      // ⚠ 顶格单句 + 单行, 不许有复合语句 (见 setSpeed 详注)。
+      //   最后一段靠 `or` 短路: _ok 假才求值 voice.say ⇒ 嘤; 尾部 or False 把 say 返回的
       //   None 收回真 bool ⇒「设置成功？」读数不变。见 AGENTS.md 易错点 13。
-      pycode: [
-        '_ok = bpuppy_motion.set_body_pose([PITCH], [ROLL])',
-        '_ok = _ok or voice.say(*voice.SND_YING) or False'
-      ]
+      pycode: '_ok = bpuppy_motion.set_body_pose([PITCH], [ROLL]); _ok = _ok or voice.say(*voice.SND_YING) or False'
     },
     // 「设置成功？」: 上一次设置类积木(运动参数/速度/转弯率)是否**真的生效**。
     // 原理: 直接读固件返回的 True/False (set_params / set_speed / set_turn 的返回值
@@ -507,11 +497,8 @@
       arguments: {
         OFFSET: { type: 'number', defaultValue: '0' }
       },
-      // ⚠ 顶格单句, 不许有复合语句 (`if` 段在友善 REPL 上闭不了合, 整段不执行)。
-      pycode: [
-        '_ok = bpuppy_motion.set_center([OFFSET])',
-        '_ok = _ok or voice.say(*voice.SND_YING) or False'
-      ]
+      // ⚠ 顶格单句 + 单行, 不许有复合语句 (见 setSpeed 详注)。
+      pycode: '_ok = bpuppy_motion.set_center([OFFSET]); _ok = _ok or voice.say(*voice.SND_YING) or False'
     }
   ],
   menus: {
