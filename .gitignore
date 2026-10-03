@@ -13,3 +13,6 @@ dependencies.lock
 sdkconfig
 sdkconfig.old
 components/
+
+# 发布用固件: firmware/ 下的 .bin 要进仓库供下载, 其余 *.bin 依旧忽略
+!firmware/*.bin

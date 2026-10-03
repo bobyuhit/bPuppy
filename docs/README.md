@@ -1,6 +1,8 @@
 # bPuppy 机器狗
 
-ESP32-S3 八自由度四足机器狗，支持 KittenBlock 图形化编程（USB / 蓝牙）。
+bPuppy 是一款基于 ESP32-S3 的极低成本八自由度四足舵机机器狗：每条腿两个关节（大腿 + 小腿），可以完成行走、转弯等运动动作，以及站立、蹲下、坐下、挥手、邀玩等姿态动作。
+
+它支持 **KittenBlock 图形化编程**（USB / 蓝牙）和 **MicroPython 编程**；板载姿态传感器（IMU）、电池检测与电量指示灯，支持语音识别模块（CI-33T）实现语音控制，以及 WiFi 图传与网页遥控。
 
 ## KittenBlock 扩展地址速查
 
@@ -18,4 +20,26 @@ https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
 | [kittenblock图形化编程指南.md](kittenblock图形化编程指南.md) | **图形化编程**用户 —— 每个积木怎么用、参数被拒了怎么知道 |
 | [micropython编程指南.md](micropython编程指南.md) | **使用 MicroPython 控制机器狗**的用户 —— 所有 MicroPython 接口、REPL、传 .py 上去跑 |
 | [新板上电操作指南.md](新板上电操作指南.md) | **新板第一件事** —— 烧固件 → 传文件 → 标定 → 验收 |
+
+## 工具下载
+
+**bTool**（Windows 免安装小程序：烧固件 / 传文件 / 连终端）：
+
+[⬇ 下载 bTool.exe](https://github.com/bobyuhit/bTool/releases/latest/download/bTool.exe)
+
+**固件烧录文件**（3 个 .bin；烧写地址与步骤见[新板上电操作指南.md](新板上电操作指南.md)）：
+
+| 文件 | 作用 | 烧写地址 |
+|---|---|---|
+| [micropython_bpuppy.bin](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/firmware/micropython_bpuppy.bin) | 应用程序，**每次都要烧** | `0x10000` |
+| [bootloader.bin](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/firmware/bootloader.bin) | 引导，只有首次 / 改过 bootloader | `0x0` |
+| [partition-table.bin](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/firmware/partition-table.bin) | 分区表，只有首次 / 改过分区表 | `0x8000` |
+
+**新板要传到板子上的 3 个 .py 文件**（上传到板子根目录 / VFS，方法见[新板上电操作指南.md](新板上电操作指南.md)）：
+
+| 文件 | 作用 |
+|---|---|
+| [pwm_ext_on.py](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/mpy_modules/pwm_ext_on.py) | 开机启用扩展舵机 |
+| [camera_on.py](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/mpy_modules/camera_on.py) | 开机自动开网页图传 |
+| [batt.py](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/mpy_modules/batt.py) | 电池标定工具 |
 
