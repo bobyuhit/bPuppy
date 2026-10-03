@@ -1,40 +1,21 @@
-# bPuppy 机器狗 · KittenBlock 扩展
+# bPuppy 机器狗
 
 ESP32-S3 八自由度四足机器狗，支持 KittenBlock 图形化编程（USB / 蓝牙）。
 
-## 扩展导入地址
+## KittenBlock 扩展地址速查
 
-复制这一行，粘到 KittenBlock 的「URL 导入」里：
+KittenBlock 用户需要复制这一行，粘到 KittenBlock 的「URL 导入」里：
 
 ```
 https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
 ```
 
-## 怎么导入（三步）
-
-1. KittenBlock → 菜单 **扩展** → **用户扩展**
-2. 选 **URL 导入**，把上面的地址粘进去
-3. **如果之前装过旧版**：先在扩展列表里把它**移除**，再重新导入（免得留着旧积木）；之后重启 KittenBlock
-
-导好后左侧积木区会出现 **7 个分类**：
-姿态动作 / 运动控制 / 语音功能 / 舵机控制 / 高级运动控制 / 传感器功能 / 系统高级设置。
-
-> 📌 换新设备、换浏览器、清过缓存之后，都回到本页复制上面那一行即可。
-
-## 不想联网？走本地导入
-
-把上面那个 zip 先下载到电脑，然后在**同一个面板**里选「**从本地文件导入 / 从电脑上传**」
-（按钮名称各版本略有出入），选中 zip 就行 —— 这条路**完全不需要网络**，
-适合离线、或者 GitHub 访问慢的情况。
-
 ## 接下来看哪份文档
 
 | 文档 | 给谁看 |
 |---|---|
-| [kittenblock图形化编程指南.md](kittenblock图形化编程指南.md) | **用积木的人** —— 每个积木怎么用、参数被拒了怎么知道 |
-| [micropython编程指南.md](micropython编程指南.md) | **写代码的人** —— 所有 MicroPython 接口、REPL、传 .py 上去跑 |
-| [wifi设备遥控指南.md](wifi设备遥控指南.md) | **用手机/电脑连狗的人** —— 图传 + 网页遥控器 |
+| [wifi设备遥控指南.md](wifi设备遥控指南.md) | **用手机/电脑遥控机器狗**的用户 —— 图传 + 网页遥控器 |
+| [kittenblock图形化编程指南.md](kittenblock图形化编程指南.md) | **图形化编程**用户 —— 每个积木怎么用、参数被拒了怎么知道 |
+| [micropython编程指南.md](micropython编程指南.md) | **使用 MicroPython 控制机器狗**的用户 —— 所有 MicroPython 接口、REPL、传 .py 上去跑 |
 | [新板上电操作指南.md](新板上电操作指南.md) | **新板第一件事** —— 烧固件 → 传文件 → 标定 → 验收 |
-| [硬件连接.md](../PCB/硬件连接.md) | 引脚、扩展舵机、外设接线 |
-| [../AGENTS.md](../AGENTS.md) | **原理与源码全貌** —— 架构、模块、API、编译烧录、易错点清单 |
-| [error.md](error.md) | 踩坑记录 —— 编译与运行时的疑难杂症 |
+
