@@ -1,94 +1,104 @@
 # bPuppy KittenBlock 图形化编程指南
 
-给使用**KittenBlock来对bPuppy机器狗进行编程**的用户。
+本文写给使用 **KittenBlock** 对 bPuppy 机器狗进行图形化编程的用户。
 
-> ##### 网址速查
->1) Kittenblock在线编程网址  
+> **网址速查**
+>
+> KittenBlock 在线编程网址：
 > ```
->https://kblock.kittenbot.cc/
+> https://kblock.kittenbot.cc/
 > ```
->2) KittenBlock扩展填入网址：
+>
+> KittenBlock 扩展导入网址：
 > ```
 > https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
 > ```
 
-
-
 ## 一、KittenBlock 图形化编程
 
-**Kittenblock**是一款由小喵科技（Kittenbot）专为青少年STEAM教育、中小学信息科技教学以及个人爱好者DIY打造的开源硬件与人工智能（AIoT）图形化编程软件。它基于麻省理工学院（MIT）的 Scratch 3.0 平台二次开发。
-用 KittenBlock可以对 bPuppy 进行编程。既可以在线控制，也可以把程序代码上传到机器狗。程序上传后，机器狗开机即按照程序自主运行。
-KittenBlock 有在线编程和本地客户端两种使用方式，推荐使用在线编程方式，组件版本更新一些。Kittenblock在线编程网址为：
+**KittenBlock** 是一款由小喵科技（Kittenbot）专为青少年 STEAM 教育、中小学信息科技教学以及个人爱好者 DIY 打造的开源硬件与人工智能（AIoT）图形化编程软件，基于麻省理工学院（MIT）的 Scratch 3.0 平台二次开发。
+
+用 KittenBlock 可以对 bPuppy 进行编程：既可以**在线控制**，也可以把程序**上传到机器狗**；程序上传后，机器狗开机即按照程序自主运行。
+
+KittenBlock 有在线编程和本地客户端两种使用方式，推荐使用在线编程（组件版本更新更及时）。在线编程网址为：
+
 ```
 https://kblock.kittenbot.cc/
 ```
-或者
+
+或
+
 ```
 https://kblock.kittenbot.cn/
 ```
-两者都是 KittenBlock 官方的网站，都可以使用，但不共享用户数据。建议注册用户使用，一旦注册后，可将个人程序存储在云端，不易丢失。
 
-#### ★iPad/iPhone 用户推荐使用Bluefy浏览器
-在iPad/iPhone设备上，Safari/Chrome 的 Web Bluetooth 功能被限制，无法直接蓝牙连接机器狗。建议使用 Bluefy（iOS 专用的 Web Bluetooth 浏览器）。App Store 搜索 Bluefy（Web BLE Browser）即可安装。
+两者都是 KittenBlock 官方的网站，都可以使用，但不共享用户数据。建议注册后使用：注册用户的程序可保存在云端，不易丢失。
 
+### ★iPad/iPhone 用户推荐使用 Bluefy 浏览器
 
+在 iPad/iPhone 上，Safari/Chrome 的 Web Bluetooth 功能被限制，无法直接蓝牙连接机器狗。请使用 **Bluefy**（iOS 专用的 Web Bluetooth 浏览器）：App Store 搜索 **Bluefy**（Web BLE Browser）安装即可。
 
 ## 二、导入 bPuppy 扩展
 
-### 2.1 两种导入方式
+### 2.1 导入方式
 
-**方式 1：URL 导入（推荐）**
+**URL 导入（推荐）**
 
-1. 打开 KittenBlock网站，在右下角找到按钮**导入扩展** → **用户扩展** → **URL 导入**
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/1.png)
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/2.png)
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/3.png)
+1. 打开 KittenBlock 网站，点击左下角的「**添加扩展**」按钮。
+   ![左下角的「添加扩展」按钮](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/1.png)
 
-2. 导入扩展 → 用户扩展 → **URL 导入** → 粘贴：
+2. 在「添加扩展」页面里，先点顶部标签「**用户扩展**」，再点「**URL 导入**」。
+   ![用户扩展 → URL 导入](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/2.png)
+
+3. 在弹出的窗口里粘贴下面的网址，点击「**+ 导入扩展**」：
    ```
    https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
    ```
-   填写完成后，点击 **导入扩展**
+   ![粘贴网址并点击「+ 导入扩展」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/3.png)
 
-3. 自动下载并加载完成后，点击页面左上角**返回**回到主页面，点击页面左上角的**硬件选择**。
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/4.png)
+4. 加载完成后，点击左上角「**返回**」回到主页面，再点左上角的「**选择硬件**」。
+   ![回到主页面后点「选择硬件」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/4.png)
 
-4. 硬件选择，列表中出现 **bPuppy 机器狗**，选中它。
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/5.png)
+5. 在硬件列表中找到「**bPuppy 机器狗**」，点击选中。
+   ![在硬件列表中选中 bPuppy 机器狗](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/5.png)
 
-5. 模块选择栏拉到最下方，就可以看到bPuppy的功能模块（积木）。
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/6.png)
-此时就可以开始积木编程了，左侧积木区出现的 bPuppy 积木：
+6. 左侧分类栏最下方会多出「**bPuppy 机器狗**」分类（下图箭头处），bPuppy 的积木都收在里面。
+   ![左栏底部的 bPuppy 机器狗分类](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/6.png)
+
+此时就可以开始积木编程了。左侧积木区共有 7 类 bPuppy 积木：
 
 ```
 🟠 姿态动作: 站立 / 蹲下 / 坐下 / 邀玩 / 挥手 / 等待 [1] 秒
 🟢 运动控制: 停止 / 前进 / 后退 / 左转 / 右转
 🎙️ 语音功能: 当收到 [指令▼]（下拉选：停止/前进/后退/左转/右转/加速/减速/点头/站立/蹲下/坐下/摇手/邀玩/播报电压/声音角度） / (声音角度) / 狗叫 [汪汪/嘤嘤▼] / 播报数字 [0-100]
-🟣 舵机控制: 舵机 [左前大腿▼] 设为 [90]° / 过渡速度 [3]°/帧 / 执行姿态 / 舵机 [左前大腿▼] 的角度 / 摆动 [舵机▼] ±[10]° [4]Hz [8]次   ← 往复摆动也归这里
+🟣 舵机控制: 舵机 [左前大腿▼] 设为 [90]° / 过渡速度 [3]°/帧 / 执行姿态 / 舵机 [左前大腿▼] 的角度 / 摆动 [舵机▼] ±[10]° [4]Hz [8]次（往复摆动也属于这一类）
 🔵 高级运动控制: 运动参数 步长 [70] mm 身体高度 [70] mm 抬脚高度 [30] mm / (步长) (身体高度) (抬脚高度) / 速度 [2.5] 方向 [前进▼] / (速度) (方向) / 切换步态 [自适应▼] / 转弯率设为 [0] / (转弯率) / 身体姿态 俯仰 [0] 度 滚转 [0] 度 / <设置成功？>
 🟡 传感器功能: 初始化 IMU / (横滚角) / (俯仰角) / (偏航角) / 航向锁定 偏转 [30] 度 / 解除航向锁定
 ⚙️ 系统高级设置: 重心偏移 [0] mm   ⚠ 会存进板子（掉电保留）
 ```
-内容详情见本文第四节 「图形化编程」。
+
+每类积木的详细用法见 [第四节「图形化编程」](#四图形化编程)。
 
 ## 三、连接机器狗
-1. 打开机器狗电源。
-2. 确保用于编程的设备（电脑/ipad/手机等）蓝牙功能已经打开。
-3. 点击KittenBlock页面上方的**没有连接**
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/7.png)
-4. 选择蓝牙连接
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/8.png)
-5. 点击**配对**->**连接**
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/9.png)
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/10.png)
-6. 注意等待页面出现提示**交互模式已打开**
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/11.png)
-7.至此，bPuppy 机器狗已连接。
 
+1. 打开机器狗电源。
+2. 确保编程设备（电脑 / iPad / 手机等）的蓝牙已打开。
+3. 点击 KittenBlock 页面上方的「**没有连接**」。
+   ![点击顶部的「没有连接」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/7.png)
+4. 在弹出的窗口里选择「**蓝牙连接**」（用 USB 数据线连接则选「数据线连接」）。
+   ![选择「蓝牙连接」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/8.png)
+5. 浏览器弹出配对窗口后，选中设备 **bPuppy_XXXX**（XXXX 每台不同），点击「**配对**」。
+   ![浏览器配对窗口：选中设备并点击「配对」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/9.png)
+6. 回到 KittenBlock 的连接窗口，点击设备行右侧的「**连接**」。
+   ![点击设备行右侧的「连接」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/10.png)
+7. 等待页面上方出现「**交互模式已打开**」提示，即连接成功。
+   ![提示「交互模式已打开」](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/11.png)
+
+至此，bPuppy 机器狗已连接，可以开始积木编程了。
 
 ## 四、图形化编程
 
-bPuppy扩展的左侧积木区按功能分为 **7 个区域**，本章按同一顺序逐一介绍。
+bPuppy 扩展的左侧积木区按功能分为 **7 个区域**，本章按同一顺序逐一介绍。
 
 | 区域 | 用途 |
 |---|---|
@@ -97,30 +107,31 @@ bPuppy扩展的左侧积木区按功能分为 **7 个区域**，本章按同一�
 | 🎙️ 语音功能 | 语音指令事件、发声 |
 | 🟣 舵机控制 | 单个舵机的精细控制 |
 | 🔵 高级运动控制 | 运动参数设置与读数 |
-| 🟡 传感器功能 | 基于IMU的姿态角读数、航向锁定功能 |
-| ⚙️ 系统高级设置 | 会写入机器狗记忆体长期存储的系统级参数 |
+| 🟡 传感器功能 | 基于 IMU 的姿态角读数、航向锁定功能 |
+| ⚙️ 系统高级设置 | 会写入机器狗、掉电保留的系统级参数 |
 
 ### 4.0 积木模块——图形化编程的基础
+
 这些积木模块各具功能，都可以从侧边栏拖出来放置在工作区。多个模块磁性吸合在一起后，共同组成了可以操作机器狗完成复杂功能的程序，这就是**图形化编程**。
 
-本系统有一个非常方便的功能：**在线调试**。在编写程序的过程中不需要等到全部整个程序编写完毕，再下载到机器狗中运行。只要连接了机器狗，用鼠标点击编程界面中或者侧边栏里的任意积木或者积木组合，就可以马上让机器狗运行这一部分的功能和程序段，非常便于调试。
+本系统有一个非常方便的功能：**在线调试**。在编写程序的过程中不需要等到整个程序编写完毕，再下载到机器狗中运行。只要连接了机器狗，用鼠标点击编程界面中或者侧边栏里的任意积木或者积木组合，就可以马上让机器狗运行这一部分的功能和程序段，非常便于调试。
 
-在程序完成后，可以点击**代码**打开**代码窗口**，然后点击代码框上的**上传**按钮。等待片刻，在kittenblock中设计的程序就被下载到机器狗里了。等到下次开机时，机器狗会自动运行这段程序。
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/12.png)
+在程序完成后，可以点击**代码**打开**代码窗口**，然后点击代码框上的**上传**按钮。等待片刻，在 KittenBlock 中设计的程序就被下载到机器狗里了。等到下次开机时，机器狗会自动运行这段程序。
+
+![打开代码窗口，点击「上传」按钮](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/12.png)
 
 **在线调试模式**和**下载代码模式**之间存在一定的功能差别：
-1)  想要下载到机器狗中运行的程序必须从**当绿旗被点击**（事件）这一模块开始，积木自上而下首尾相接执行。例如这段程序：
 
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/13.png)
+1. 想要下载到机器狗中运行的程序必须从**当绿旗被点击**（事件）积木开始，积木自上而下首尾相接执行。例如这段程序：
 
-如果把这段程序下载到机器狗中，机器狗下次上电时会自动完成：**前进两秒钟-停止前进-等待1秒后开始挥手**这个动作。
-而**在线调试**模式则不依赖**当绿旗被点击**模块也能运行。
+   ![示例程序：绿旗 → 前进 → 等待 2 秒 → 停止 → 等待 1 秒 → 挥手](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/13.png)
 
-2) 语音事件与键盘类积木则不支持在线调试，只能下载到机器狗中运行。
+   把这段程序下载到机器狗后，机器狗下次上电时会自动完成：**前进两秒 → 停止 → 等待 1 秒 → 挥手**。
+   而**在线调试**模式则不依赖「当绿旗被点击」积木也能运行。
 
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/14.png)
+2. 语音事件积木与键盘类积木对运行方式的要求**正好相反**：**语音事件**（下图左）只能在**下载到机器狗并复位后**生效，在线调试不生效；**键盘类**（下图右）则**只能在线**运行 —— 按键是在电脑浏览器里检测的，下载到板子上以后按什么键都不会有反应。
 
-。
+   ![左：语音事件积木；右：键盘类积木](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/14.png)
 
 ### 4.1 姿态动作 🟠
 
@@ -156,17 +167,19 @@ bPuppy扩展的左侧积木区按功能分为 **7 个区域**，本章按同一�
 
 | 积木 | 说明 |
 |---|---|
-| 当收到 [指令▼]（帽子形状积木）| 语音模块识别到该指令时，就会触发，然后执行挂载在它在下面的其他模块程序。 |
+| 当收到 [指令▼]（帽子形状积木）| 语音模块识别到该指令时就会触发，然后执行挂在它下面的积木。 |
 | (声音角度) | 最近一次声源方向（0~180°）；`-1` = 本次开机后还没收到过 |
 | 狗叫 [汪汪/嘤嘤] | 播放一声狗叫声 |
 | 播报数字 [0~100] | 让模块念出指定数字 |
 
 
-- 「声音角度」变量会随有效指令的声源方向变化： **0°~180° 是有效方向**，`-1` 是"没收到过有效声音指令"；
-![示例图](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/15.png)
+- 「声音角度」变量会随有效指令的声源方向变化：**0°~180° 是有效方向**，`-1` 是"没收到过有效声音指令"。
+
+  ![声源角度示意图：0° 在机器狗右侧、180° 在左侧，正前与正后均为 90°](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/15.png)
 
 
 - ⚠ **语音事件只有「下载到板子 + 复位」后才生效**，在线模式不生效。
+- 「播报电压」指令自带动作：收到后机器狗会自动播报电量百分比，不需要编程。
 
 ### 4.4 舵机控制 🟣
 
@@ -202,9 +215,9 @@ bPuppy扩展的左侧积木区按功能分为 **7 个区域**，本章按同一�
 - **步态详解**：
   **「 猫步walk 」** —— 任一时刻，最多只有一条腿抬起。步态稳健，推荐速度低于5。抬腿高度容许设置得高一些，便于跨越障碍。
   **「 小跑trot 」** —— 对角线腿两两一组（左前右后，右前左后），两组腿交替抬起。步态轻盈，适合快速前进，推荐速度设为5以上。同时建议减小抬腿高度到10以下，防止舵机跟不上指令速度。
-  **「自适应 go」** —— 速度 ≤ 4 走猫步（一次抬一条腿，稳）、≥ 6 小跑（对角两腿同时抬，快），中间连续过渡；go步态下 下，步长 / 站高 / 抬脚高度由速度自动推算，不受运动参数的限制。
+  **「自适应 go」** —— 速度 ≤ 4 走猫步（一次抬一条腿，稳）、≥ 6 小跑（对角两腿同时抬，快），中间连续过渡；go 步态下，步长 / 站高 / 抬脚高度由速度自动推算，不受运动参数的限制。
   **「 停止stop 」** —— 停机，四腿站好。跟**站立**姿态不同的是，在此姿态下机身高度为运动参数中的**站高**。
-  
+
 - **参数超限**：当参数设置不合理时，会导致机械碰撞或机械超限，这时的参数设置会被系统拒绝，系统仍保持旧的参数。参数设置被拒绝时，机器狗会嘤嘤叫。可以尝试修改参数后重新设置。
 
 > 默认参数（步长 70 / 站高 70）下的常用上限：俯仰 ±3.7°、滚转 ±6.2°、重心偏移 ±11.4mm。想压更大姿态或挪更多重心，先减小步长。
@@ -215,13 +228,13 @@ bPuppy扩展的左侧积木区按功能分为 **7 个区域**，本章按同一�
 
 | 积木 | 说明 |
 |---|---|
-| 初始化 IMU | 本系统中IMU为加速度计、陀螺仪、地磁传感器组合IMU芯片MPU9250|
+| 初始化 IMU | 本系统 IMU 由加速度计与陀螺仪组成（带地磁的型号为九轴）；芯片型号由固件自动识别（MPU6050 / MPU9250）。程序开头会自动初始化，一般无需手动调用。 |
 | (横滚角) / (俯仰角) / (偏航角) | 读取机身的三轴姿态角（度）|
 | 航向锁定 偏转 [30] 度 | 机器狗记录当前机身方向，**再转 30°**，然后锁定该朝向 |
 | 解除航向锁定 | 关闭方向锁定|
 
-- **航向锁定**：在运行此条指令时，读取此时机器狗狗头的朝向数据，再叠加上设置角度，作为运动的目标方向。
-- 航向锁定后机器狗一切换为行进模式，会自动转向目标方向，并锁定该方向前进，即使过程中角度被推歪也会自己转回来。
+- **航向锁定**：在运行此条指令时，读取此时机器狗的朝向数据，再叠加上设置角度，作为运动的目标方向。
+- 航向锁定后，机器狗一旦切换为行进模式，会自动转向目标方向，并锁定该方向前进，即使过程中角度被推歪也会自己转回来。
 - 支持行走中使用该指令更换目标角度，立即生效，不打断行走状态。
 - 首次调用时，可能需要短暂等待姿态数据收敛（刚上电冷启动时需数秒）后生效。
 
@@ -231,9 +244,6 @@ bPuppy扩展的左侧积木区按功能分为 **7 个区域**，本章按同一�
 |---|---|
 | 重心偏移 [0] mm | 足端中位的前后偏移，用于调整重心分布 |
 
-- 从物理上，机器狗很难让重心落在前后腿之间，而重心的偏移会导致步伐不稳。可以通过调整此参数，让站立时的足尖位置（步长的中点位置）前后移动，从而让步伐稳定。
+- 从物理上，机器狗的重心未必正好落在前后腿的中点上，而重心的偏移会导致步伐不稳。可以通过调整此参数，让站立时的足尖位置（步长的中点位置）前后移动，从而让步伐稳定。
 - 该值写入系统后**掉电保留**（每设置一次写一次 flash）——调好后无需反复设置。
 - 默认参数下最大 ±11.4mm（与步长 / 俯仰 / 横滚相互制约，超限被拒，见 4.5）。
-
-
-
