@@ -72,7 +72,16 @@ _DEG2RAD = 0.017453292519943295
 #     这正是把闭环搬到 Python 的最大收益。
 TURN_SIGN = 1.0
 
+# 输出低通滤波系数 (0~1): 越小越平滑、越迟钝。
+# 为什么需要: 闭环每拍(20Hz)直接把 turn 写进腿的步长, 而 yaw 的噪声
+# (实测: 架子上腿空转的振动能让 err 摆动 ±6°) 会让 turn 抖动。
+# turn≈0.5 时一侧腿的步长正好过零, 抖动让它在"正迈/反迈"之间反复切换
+# —— 现象就是"腿一跳一跳、速度突变"。
+# 0.3 时抖动仍有 0.034 (架子上), 加大到 0.15 继续压 (代价: 响应更慢)。
+TURN_LPF_A = 0.15
+
 _i_term    = 0.0        # 积分项, 单位 rad/周期 (与 G_c·turn 同域)
+_turn_f    = 0.0        # 低通滤波后的 turn 输出 (见 TURN_LPF_A)
 _stop_flag = False      # stop() 置 True ⇒ 跑着的循环下一拍退出
 _thread_id = None       # 后台线程在跑时非 None
 
@@ -174,8 +183,9 @@ def _loop(err_fn, kp, ki, deadband, period_ms, i_limit, max_ticks):
       `_thread_id` 永远回不到 None(`running()` 一直为真)。
       实测踩过: `set()` 重起之后紧接着 `off()`, 后台线程就没死掉。
     """
-    global _i_term
+    global _i_term, _turn_f
     _i_term = 0.0
+    _turn_f = 0.0
     n = 0
 
     try:
@@ -194,6 +204,7 @@ def _loop(err_fn, kp, ki, deadband, period_ms, i_limit, max_ticks):
             g = g_c()
             if g <= 0.0:
                 _i_term = 0.0
+                _turn_f = 0.0
                 m.set_turn(0.0)
                 time.sleep_ms(period_ms)
                 continue
@@ -210,12 +221,15 @@ def _loop(err_fn, kp, ki, deadband, period_ms, i_limit, max_ticks):
             if turn >  1.0: turn =  1.0
             if turn < -1.0: turn = -1.0
 
-            m.set_turn(turn)
+            # 低通滤波: 抑制 yaw 噪声直通到腿 (见 TURN_LPF_A 说明)
+            _turn_f = TURN_LPF_A * turn + (1.0 - TURN_LPF_A) * _turn_f
+            m.set_turn(_turn_f)
             time.sleep_ms(period_ms)
     finally:
         # ⭐ 无论怎么退出(跑够 / stop() / Ctrl-C / err_fn 炸了)都松转向 ——
         #    不然 turn 会冻在最后一拍, 狗保持那个转向一直拐。
         _i_term = 0.0
+        _turn_f = 0.0
         m.set_turn(0.0)
 
     return n

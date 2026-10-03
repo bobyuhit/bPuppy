@@ -33,3 +33,10 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # 代价: 帧数据经 PSRAM 做 DMA (N16R8 是 octal PSRAM, S3 支持), 帧率上限略降。
 # 验证: 启动日志会打 "cam_hal: PSRAM DMA mode enabled" (走 UART0, 蓝牙看不到)。
 CONFIG_CAMERA_PSRAM_DMA=y
+
+# ---- NimBLE 小包缓冲池 (KittenBlock 长命令) ----
+# 默认 12 块。KittenBlock 把命令按 20 字节硬编码分包, 长命令(5+包)连续到达时,
+# 12 块被"接收的写包 + 回显通知"同时占用而耗尽 → 第 2 包起被丢
+# (实测: 6 行积木代码只有前 2 行 = 第 1 个 20 字节包到达)。
+# 调到 24 块留出余量。每块 256 字节 ⇒ 净增 ~3KB 内部 RAM。
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=24

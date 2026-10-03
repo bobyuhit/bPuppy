@@ -60,7 +60,7 @@
 #define IMU_TASK_HZ     100
 #define IMU_TASK_PERIOD (1000/IMU_TASK_HZ)
 
-#define MAHONY_KP  10.0f
+#define MAHONY_KP  40.0f   // 融合增益: 大 = yaw 收敛快, 但磁力计噪声被放大 (10 时快转收敛要 2~3s)
 #define MAHONY_KI  0.0f
 
 #define MAG_CAL_BUF_MAX  1200

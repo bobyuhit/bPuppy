@@ -50,6 +50,17 @@ static volatile int g_rx_head = 0;
 static volatile int g_rx_tail = 0;
 static SemaphoreHandle_t g_rx_mutex = NULL;
 
+/* ---- KittenBlock BLE 分包协议 (JD_BLE) 拆头 ----
+ * 它的包 = [h0, h1] + 最多 18 字节数据:
+ *   h0 = 总块数 & 0x7F, 首块额外 | 0x80 (JD_BLE_FIRST_CHUNK_FLAG = 128)
+ *   h1 = 剩余块数 (totalChunks-1, 逐块递减到 0)
+ * 2 字节头是二进制, 它指望接收端把控制字符当噪声忽略 —— 但 h1 从 11 递减
+ * 到 0 时**必然经过 10**, 而 0x0A 就是换行符: REPL 见到就把命令行从中间
+ * 截断 ⇒ 多行积木只有第一块能执行 (实测: 「速度设为」6 行只到前 2 行)。
+ * 这里按协议剥掉头部, 只把数据字节送进 g_rx_buf。
+ * 兼容: 无首块标志的包 (裸流/串口/其它工具) 原样通过。 */
+static int g_chunk_left = 0;   // >0 = 正在拼接, 还差这么多块
+
 // ---- GATT 读写回调 ----
 // 所有 WRITE 特征的数据统一进 g_rx_buf（单一模式，无协议分流需求）
 static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *arg)
@@ -60,15 +71,29 @@ static int gatt_cb(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ct
             int len = OS_MBUF_PKTLEN(ctxt->om);
             if (len > 0 && len < (int)sizeof(buf)) {
                 os_mbuf_copydata(ctxt->om, 0, len, buf);
-                buf[len] = 0;
+
+                /* ---- JD_BLE 拆头 (见上) ---- */
+                uint8_t *p = buf;
+                int n = len;
+                if (len >= 2 && (buf[0] & 0x80)) {          // 首块
+                    g_chunk_left = (buf[0] & 0x7F) - 1;
+                    p += 2; n -= 2;
+                } else if (g_chunk_left > 0 && len >= 2 &&
+                           buf[1] == g_chunk_left - 1) {    // 后续块 (校验剩余数以对齐)
+                    g_chunk_left--;
+                    p += 2; n -= 2;
+                } else {
+                    g_chunk_left = 0;                       // 裸流 (串口 / 非分包工具)
+                }
+
                 xSemaphoreTake(g_rx_mutex, portMAX_DELAY);
-                for (int i = 0; i < len; i++) {
+                for (int i = 0; i < n; i++) {
                     int next = (g_rx_head + 1) % RX_BUF_SIZE;
                     if (next == g_rx_tail) {
                         // 缓冲满: 丢新字节, 保留未读数据
                         break;
                     }
-                    g_rx_buf[g_rx_head] = buf[i];
+                    g_rx_buf[g_rx_head] = p[i];
                     g_rx_head = next;
                 }
                 xSemaphoreGive(g_rx_mutex);
