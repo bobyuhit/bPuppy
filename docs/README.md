@@ -4,6 +4,12 @@ bPuppy 是一款基于 ESP32-S3 的极低成本八自由度四足舵机机器狗
 
 它支持 **KittenBlock 图形化编程**（USB / 蓝牙）和 **MicroPython 编程**；板载姿态传感器（IMU）、电池检测与电量指示灯，支持语音识别模块（CI-33T）实现语音控制，以及 WiFi 图传与网页遥控。
 
+## 硬件开源
+
+电路原理图、PCB、BOM 全部开源在**立创开源硬件平台**，可直接下单打板：
+
+[🔗 bPuppy 硬件工程 —— 原理图 / PCB / BOM](https://oshwhub.com/northerntree/project_fddruuyj)
+
 ## KittenBlock 扩展地址速查
 
 KittenBlock 用户需要复制这一行，粘到 KittenBlock 的「URL 导入」里：
@@ -42,4 +48,11 @@ https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
 | [pwm_ext_on.py](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/mpy_modules/pwm_ext_on.py) | 开机启用扩展舵机 |
 | [camera_on.py](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/mpy_modules/camera_on.py) | 开机自动开网页图传 |
 | [batt.py](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/mpy_modules/batt.py) | 电池标定工具 |
+
+## 物料清单与组装教程
+
+| 资源 | 说明 |
+|---|---|
+| [⬇ bPuppy物料采购清单.xlsx](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/bPuppy%E7%89%A9%E6%96%99%E9%87%87%E8%B4%AD%E6%B8%85%E5%8D%95.xlsx) | 整机物料。按「基础功能(必选)」+ 语音 / 自稳与导航 / 摄像头 / AI 视觉等「选配」分类，含数量、单价、购买备注和淘宝链接 |
+| [🔧 组装视频教程](https://www.bilibili.com/video/BV12SH76EEWp/) | B 站视频 —— 动手装配全过程 |
 
