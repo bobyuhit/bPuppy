@@ -127,16 +127,41 @@ static void slv0_bg(void) {
 }
 
 static esp_err_t ak8963_init(void) {
-    uint8_t who;
-    slv0_read(AK8963_WHO_AM_I, 1, &who);
-    mp_printf(&mp_plat_print, "[imu] AK8963 WHOAMI:0x%02X\n", who);
-    if (who != 0x48) return ESP_FAIL;
-    slv0_write(AK8963_CNTL2, 0x01); vTaskDelay(pdMS_TO_TICKS(10));
-    slv0_write(AK8963_CNTL1, 0x16); vTaskDelay(pdMS_TO_TICKS(10));
-    slv0_bg();  // ← 关键: SLV0 后台读 8 字节
-    g_mag_ready = true;
-    mp_printf(&mp_plat_print, "[imu] AK8963 ready\n");
-    return ESP_OK;
+    // ★ "设置 → 验证真的出数 → 不合格整轮重来" (最多 3 轮)。
+    //   实测 (2026-10-08): AK8963 的初始化有**间歇性的时序失败**, 两种形态都抓到过:
+    //     ① WHO_AM_I 读回 0x00 → mag=NO, 磁力计恒 0 (read_all 的分支进不去);
+    //     ② WHO_AM_I=0x48 通过, 但 CNTL1 写没生效 (AK 根本不出数) → SLV0 搬回的
+    //        全是 0 字节 → read_raw 的 mag 恒 (0,0,0), 而日志一切"看起来正常"。
+    //   两种都出现在**重启后的首次 init**, 原地重来一轮就能恢复。所以这里不去
+    //   赌具体的延时参数, 直接把"数据区能读出非零"当验收标准, 不合格重试 ——
+    //   这种间歇故障就被固件自己盖掉了, 用户不会再遇到"磁力计静默失灵"。
+    for (int retry = 0; retry < 3; retry++) {
+        uint8_t who = 0;
+        slv0_read(AK8963_WHO_AM_I, 1, &who);
+        mp_printf(&mp_plat_print, "[imu] AK8963 WHOAMI:0x%02X\n", who);
+        if (who == 0x48) {
+            slv0_write(AK8963_CNTL2, 0x01); vTaskDelay(pdMS_TO_TICKS(10));
+            slv0_write(AK8963_CNTL1, 0x16); vTaskDelay(pdMS_TO_TICKS(10));
+            slv0_bg();  // ← 关键: SLV0 后台读 8 字节
+            // ★ 验收: 等一个数据周期后读 EXT_SENS_DATA 的数据区 (字节 1~6),
+            //   有任何非零位才算"真的出数"。全 0 = 情形 ②, 整轮重来。
+            vTaskDelay(pdMS_TO_TICKS(60));
+            uint8_t mbuf[8];
+            if (r(g_mpu_addr, MPU_EXT_SENS_DATA, mbuf, 8) == ESP_OK) {
+                uint8_t orv = 0;
+                for (int k = 1; k <= 6; k++) orv |= mbuf[k];
+                if (orv) {
+                    g_mag_ready = true;
+                    mp_printf(&mp_plat_print, "[imu] AK8963 ready\n");
+                    return ESP_OK;
+                }
+            }
+        }
+        mp_printf(&mp_plat_print, "[imu] AK8963 retry %d/3\n", retry + 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    mp_printf(&mp_plat_print, "[imu] AK8963 FAIL: 3 retries, mag disabled\n");
+    return ESP_FAIL;
 }
 
 bool imu_is_ready(void) { return g_imu_ready; }
