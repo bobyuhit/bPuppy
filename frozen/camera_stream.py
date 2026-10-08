@@ -185,6 +185,17 @@ a.btn:active{opacity:.75;transform:scale(.95)}
 </div>
 
 <script>
+// 「图传 开」: 先问板子能不能开 (没摄像头的板子回 ERR), 失败弹告示, 成功才刷新
+function streamOn(a){
+  fetch(a.href).then(function(r){ return r.text() }).then(function(t){
+    if(t.indexOf('ERR') === 0){
+      alert('没检测到摄像头 (或初始化失败), 图传不可用。热点与遥控不受影响。');
+    } else {
+      location.reload();
+    }
+  });
+  return false;
+}
 document.querySelectorAll('.menu').forEach(function(m){
   m.querySelector('.menu-btn').addEventListener('click', function(e){
     e.stopPropagation();
@@ -242,7 +253,7 @@ def _html_page():
     else:
         video = '<div id="dogph">' + _DOG_SVG + '</div>'
         btn = ('<a href="/cmd?stream=on" '
-               'onclick="fetch(this.href);setTimeout(function(){location.reload()},200);return false;" '
+               'onclick="return streamOn(this)" '
                'class="sb">图传 开</a>')
 
     # 服务端注入当前实际 speed 到滑块 (页面加载即显示真实值, 不依赖 JS fetch)
@@ -260,10 +271,17 @@ def _html_page():
 
 
 def _open_stream():
-    """开启图传: 初始化摄像头"""
+    """开启图传: 初始化摄像头。返回是否成功 —— **失败不抛异常**。
+
+    ⚠ 摄像头没接 / 初始化失败时返回 False 而不是抛异常: 相机是选配, 没有它的
+    板子也要能照常开热点和网页遥控。开机脚本 /camera_on.py 调的是
+    start(stream=True) —— 这里一旦抛出, start() 里后面"开热点"那几行会被整体
+    跳过, 连网页都打不开 (那是这个函数以前的行为)。失败改为静默降级, 只在
+    网页上点「图传 开」时给一句提示。
+    """
     global _stream_on
     if _stream_on:
-        return
+        return True
     # 先置位再碰相机: 正在退出的流线程会看 _stream_on 决定要不要释放相机
     # (见 _send_stream 的 finally)。置位晚一步就会撞上"它 deinit 完 → 这里
     # is_ready() 却已经通过"的顺序, 结果是 _stream_on=True 但相机没了。
@@ -271,10 +289,12 @@ def _open_stream():
     try:
         if not bpuppy_camera.is_ready():
             bpuppy_camera.init_adv(bpuppy_camera.SVGA, 10, 2, 20000000, bpuppy_camera.JPEG)
-    except BaseException:
+    except BaseException as e:
         _stream_on = False      # init 失败 → 别假装开着
-        raise
+        print("camera_stream: 摄像头不可用 (%s)" % e)
+        return False
     print("camera_stream: stream ON")
+    return True
 
 
 def _release_camera():
@@ -348,9 +368,9 @@ def _parse_cmd(path):
         # === 图传开关 (运行时) ===
         if "stream" in params:
             if params["stream"] == "on":
-                _open_stream()
-            else:
-                _close_stream()
+                # 开失败 (没摄像头) 给网页一个明确回话, 让它弹告示
+                return "OK:stream" if _open_stream() else "ERR:camera"
+            _close_stream()
             return "OK:stream"
 
         # === 挥手 ===
@@ -636,7 +656,8 @@ def start(ssid=None, password="12345678", stream=False, captive=True):
         print("camera_stream: AP ssid=%s" % ssid)
 
     if stream:
-        _open_stream()          # 启动时可选开启图传
+        # 失败 (没有摄像头) 不拦路 —— 热点照开; 之后点「图传 开」会弹告示
+        _open_stream()
 
     _ap = network.WLAN(network.AP_IF)
     _ap.active(True)
