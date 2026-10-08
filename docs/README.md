@@ -9,15 +9,16 @@ bPuppy 是一款使用普通 MG90S 舵机的八自由度四足机器狗开源教
 - 支持 **WiFi 实时图传与网页遥控**
 - 板载语音识别模块（CI-33T）实现离线语音交互（可选）
 - 板载姿态传感器（IMU / 地磁）（可选）
-- 板载电池检测与电量指示灯
+- 具备扩展 **UART / IIC 接口**，扩展 **PWM 接口 x3**
 
-本项目代码全部由 DeepSeek 生成。
+本项目代码全部由 DeepSeek 生成，此简介由本人类撰写（DeepSeek 写的实在是太沙雕了）。
 
-## 硬件开源
+## 相关链接
 
-电路原理图、PCB、BOM 全部开源在**立创开源硬件平台**，可直接下单打板：
-
-[🔗 bPuppy 硬件工程 —— 原理图 / PCB / BOM](https://oshwhub.com/northerntree/project_fddruuyj)
+- **代码开源**（持续升级中，含物料采购清单）—— https://github.com/bobyuhit/bPuppy
+- **电路开源**（原理图 / PCB / BOM 在立创开源硬件平台，可直接下单打板）—— https://oshwhub.com/northerntree/project_fddruuyj
+- **3D 打印结构开源** —— https://makerworld.com/zh/models/3409921-bpuppy-8-dof-servo-quadruped-robot-dog
+- **相关视频**（持续更新中）—— https://space.bilibili.com/404024959/lists/9244762?type=season
 
 ## KittenBlock 扩展地址速查
 
@@ -63,5 +64,5 @@ https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
 | 资源 | 说明 |
 |---|---|
 | [⬇ bPuppy物料采购清单.xlsx](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/bPuppy%E7%89%A9%E6%96%99%E9%87%87%E8%B4%AD%E6%B8%85%E5%8D%95.xlsx) | 整机物料。按「基础功能(必选)」+ 语音 / 自稳与导航 / 摄像头 / AI 视觉等「选配」分类，含数量、单价、购买备注和淘宝链接 |
-| [🔧 组装视频教程](https://www.bilibili.com/video/BV12SH76EEWp/) | B 站视频 —— 动手装配全过程 |
+| [🔧 视频教程（组装 / 演示，持续更新）](https://space.bilibili.com/404024959/lists/9244762?type=season) | B 站合集 —— 动手装配全过程 |
 
