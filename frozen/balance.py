@@ -7,7 +7,7 @@ balance.py — 站立自平衡 (绕过 motion task, 直接舵机控制)
     balance.start()
     balance.stop()
 
-默认参数: kp=0.06, ki=0.0, kd=0.43
+默认参数: kp=0.08, ki=0.0, kd=0.10
 """
 
 import bpuppy_imu
@@ -47,7 +47,7 @@ def _clip(v, lim):
     return v
 
 
-def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
+def start(kp=0.08, ki=0.0, kd=0.10, deadband=0.5, max_body=30.0, height=60.0):
     if not bpuppy_imu.is_ready():
         bpuppy_imu.init(0, 14, 21, 0x68)  # V3.0 硬件: SDA=14, SCL=21 (电池检测走 GPIO3=ADC1)
     bpuppy_imu.set_mag_fusion(False)      # 磁力计只修yaw, 不参与 roll/pitch (避免残差拉偏)
@@ -70,8 +70,8 @@ def start(kp=0.06, ki=0.0, kd=0.43, deadband=0.5, max_body=30.0, height=60.0):
     while True:
         r, p, y = bpuppy_imu.read_angles()
 
-        er = ri - r     # 误差 = 初始姿态 − 当前姿态
-        ep = pi - p
+        er = r - ri     # 误差 = 当前姿态 − 初始姿态
+        ep = p - pi
 
         # 补偿增量 = kp×err + ki×∫err + kd×(err−err_prev)
         if abs(er) > deadband:
