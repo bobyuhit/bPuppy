@@ -177,7 +177,7 @@ Used together with the CI-33T voice module: say a command word and the robot dog
 
 - The "sound angle" variable changes with the sound-source direction of valid commands: **0°~180° are valid directions**, and `-1` means "no valid voice command has been received yet".
 
-  ![Sound-angle diagram: 0° is on the robot dog's right, 180° on its left; straight ahead and straight behind are both 90°](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/15.png)
+  ![Sound-angle diagram: 0° is on the robot dog's right, 180° on its left; straight ahead and straight behind are both 90°](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/15.en.png)
 
 
 - ⚠ **Voice events only take effect after "downloading to the board + reset"**; they do not work in online mode.
