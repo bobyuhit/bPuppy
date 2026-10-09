@@ -2,7 +2,7 @@
 
 > 🌐 [中文](新板上电操作指南.md)
 
-*Note: bTool's interface is in Chinese — the screenshots and quoted messages in this guide appear as shown in it.*
+*Note: screenshots use bTool's English interface. Messages printed by the board's own REPL appear in Chinese, as shown where quoted.*
 
 Once the PCB is soldered and the whole robot is assembled, some necessary flashing and calibration work still needs to be done. The exact order is:
 flash firmware → upload files → calibrate
@@ -35,21 +35,21 @@ Prepare one USB-A to Type-C data cable. Use it to connect your computer to the T
 
 **4) Serial port connection**
 Look for and select the serial port number that the control board is currently connected on.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/16.png)
-Click the Connect button. If it succeeds, the icon at the top right of the serial port area changes from a cross to a check mark, and "已连接" appears in the status bar at the bottom of the window.
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/16.en.png)
+Click the Connect button. If it succeeds, the icon at the top right of the serial port area changes from a cross to a check mark, and "Connected" appears in the status bar at the bottom of the window.
 
 ## 1. Flashing the Firmware
 1. In the bTool window, check the top right corner to make sure the serial connection is OK (a check mark); in the page selector on the left side of the window, make sure you are on the download / flashing page (the downward arrow icon).
 2. Click Add Firmware. On the first flash, import all of the files downloaded in the previous step: `micropython_bpuppy.bin`, `bootloader.bin`, `partition-table.bin`. For routine upgrades, select only **`micropython_bpuppy.bin`**.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/17.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/17.en.png)
 3. Click the **Start Flashing** button.
 - ⚠ Except for the first flash after powering on a new circuit board, never check "Erase entire Flash first" for any later flash, because it erases the system's calibration data.
 
 ✅ **Pass**: the flashing log shows the following at the end:
 
 ```
-✓ 烧写完成
-[串口已重新打开]
+✓ Flash complete
+[serial port reopened]
 ```
 
 ---
@@ -71,7 +71,7 @@ Steps:
 2. In the local file area, select the directory where the three .py files you just downloaded are.
 3. Select the files in the left-hand file list and click **`Upload →`**.
 4. Make sure the files have arrived in the device VFS file list on the right.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/18.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/18.en.png)
 5. Unplug the USB data cable from the robot dog.
 
 ---
@@ -99,14 +99,14 @@ First, the conventions for describing servo angles in this system are as follows
 > 3) When describing where a knee points, the hip is assumed to be in the 90° position, straight down.
 
 The figure below shows the state when all joints are set to 90°:
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/19.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/19.en.png)
 
 ### 3.2 Initial Alignment
 1) Make sure the robot dog's power switch is **OFF**. Loosen all four screws on the robot dog that connect the servos to the hips, and take the legs off the hip servos; be careful not to unplug any wires, and make out which leg belongs to which hip servo.
 2) Flip the robot dog's switch to ON to power it up. Note: the robot dog's legs will jerk around briefly the moment it powers on.
 3) Plug in the USB data cable to connect the robot dog to your computer. Open the bTool software, find the robot dog's serial port, and click the plug icon button to connect to the robot dog.
 4) In the page selector on the left side of the bTool window, find the **puppy icon** and click it to enter the robot dog settings page. Click **Servo Joint Calibration**, and on the page that pops up click **Turn All to 90°**. The robot dog's legs will jerk around briefly.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/20.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/20.en.png)
 5) Do not turn the power off. Following the angles in the figure in section 3.1, remove and reinstall all the hip and knee servos.
 - ⚠ The servos are holding their angles at this point, so do not force the servo shafts while installing, or you will damage the servos.
 6) Because the servo shafts have very few spline teeth, no joint can actually reach exactly 90° just by reinstalling. Just get as close to 90° as you can; you will fine-tune it in the next step.
@@ -114,16 +114,16 @@ The figure below shows the state when all joints are set to 90°:
 ### 3.3 Servo Fine-Tuning
 Once everything is installed, it is time to do the three-point calibration of the servos.
 1) Start with the left front hip. You will see that the angle between the hip and the body is not a standard 90°, but slightly crooked.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/21.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/21.en.png)
 2) On bTool's joint calibration page, select **Left front hip** with reference angle **90°**, try adding 5° to the **actual angle**, and click **Set**.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/22.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/22.en.png)
 3) Watch how the left front hip angle changes — does it move **farther from** the vertical line, or **closer to** it? Depending on the result, keep adjusting the **actual angle** and clicking **Set** until the left front hip is, by eye, completely perpendicular to the body and pointing at the ground. Gently wiggle the left front hip; the play should be even front to back.
 4) That completes the 90° calibration of the left front hip.
 5) Next, do the 0° calibration of the left front hip. Select reference angle 0° in bTool, then click **Set**. The left front hip will rotate to point forward. There will still be an angle error.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/23.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/23.en.png)
 6) Repeat the same steps — keep adjusting the **actual angle** and clicking **Set** — until the left front hip is completely parallel to the body and points forward.
 7) Following the conventions in **3.1 Servo Angle Conventions**, continue adjusting the three calibration points of all the joints.
-![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/24.png)
+![Example image](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/24.en.png)
 - ⚠ Everything must be set strictly according to the conventions in **3.1 Servo Angle Conventions**.
 8) After all 8 servos are adjusted, close the **bTool Servo Joint Calibration** page.
 
