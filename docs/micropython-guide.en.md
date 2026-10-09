@@ -14,6 +14,37 @@ Serial / REPL connection parameters (**115200**, CH343, over UART0) are in the "
 
 ---
 
+## Contents
+
+- [0. Quick Reference](#0-quick-reference)
+  - [1. Common Motion Presets](#1-common-motion-presets)
+  - [3. Stand-up Self-Balancing + IMU Readings](#3-stand-up-self-balancing--imu-readings)
+  - [6. Persistent Parameters (NVS Geometry / Center of Mass)](#6-persistent-parameters-nvs-geometry--center-of-mass)
+- [1. Motion](#1-motion)
+  - [1.1 Common Motion Presets](#11-common-motion-presets)
+  - [1.2 Motion Commands — bpuppy_motion](#12-motion-commands--bpuppy_motion)
+    - [1.2.1 Run Modes (automatic switching)](#121-run-modes-automatic-switching)
+    - [1.2.2 Parameter Validation (out-of-range rejected)](#122-parameter-validation-out-of-range-rejected)
+  - [1.3 Stand-up Self-Balancing — balance](#13-stand-up-self-balancing--balance)
+- [2. Communication](#2-communication)
+  - [2.1 Serial Communication — bpuppy_uart](#21-serial-communication--bpuppy_uart)
+  - [2.2 Power-On Scripts](#22-power-on-scripts)
+- [3. Vision](#3-vision)
+  - [3.1 Camera Operation — bpuppy_camera](#31-camera-operation--bpuppy_camera)
+- [4. Settings & Calibration](#4-settings--calibration)
+  - [4.1 Servo Calibration — bpuppy_servo](#41-servo-calibration--bpuppy_servo)
+  - [4.2 Persistent Parameters (★NVS, survive power-off)](#42-persistent-parameters-nvs-survive-power-off)
+- [5. Sensors & Attitude](#5-sensors--attitude)
+  - [5.1 IMU Debugging — bpuppy_imu](#51-imu-debugging--bpuppy_imu)
+  - [5.2 IMU Calibration (gyro + accelerometer)](#52-imu-calibration-gyro--accelerometer)
+  - [5.3 Magnetometer Calibration — calib_mag](#53-magnetometer-calibration--calib_mag)
+  - [5.4 Heading Lock — heading_anchor](#54-heading-lock--heading_anchor)
+  - [5.5 Battery Voltage — bpuppy_adc](#55-battery-voltage--bpuppy_adc)
+  - [5.6 Extension Servos — PWM_EXT](#56-extension-servos--pwm_ext)
+- [6. PC Tools](#6-pc-tools)
+  - [6.1 Serial Photo Capture — capture.py](#61-serial-photo-capture--capturepy)
+- [Appendix · Build / Flash / Serial](#appendix--build--flash--serial)
+
 ## 0. Quick Reference
 
 Every snippet can be **copied and run on its own** (all imports are included). At power-on the dog stands by in the standing pose (POSE mode).
