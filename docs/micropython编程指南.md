@@ -1,5 +1,7 @@
 # bPuppy MicroPython 编程指南
 
+> 🌐 [English](micropython-guide.en.md)
+
 给**写代码的人**：在 REPL 里敲，或写 `.py` 传到板子上跑。**所有 MicroPython 接口都在这份里**。
 
 > - 用积木的 → [kittenblock图形化编程指南.md](kittenblock图形化编程指南.md)

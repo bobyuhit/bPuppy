@@ -1,5 +1,7 @@
 # bPuppy KittenBlock 图形化编程指南
 
+> 🌐 [English](kittenblock-guide.en.md)
+
 本文写给使用 **KittenBlock** 对 bPuppy 机器狗进行图形化编程的用户。
 
 > **网址速查**
