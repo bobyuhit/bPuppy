@@ -31,6 +31,7 @@
         "import bpuppy_imu",
         "import voice",
         "import heading_anchor as anc",
+        "import balance",
         "from time import sleep",
         "bpuppy_imu.init(0, 14, 21, 0x68)",
         "voice.set_main_globals(globals())",
