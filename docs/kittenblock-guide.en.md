@@ -47,25 +47,25 @@ On iPad/iPhone, the Web Bluetooth feature of Safari/Chrome is restricted, so you
 **Import by URL (recommended)**
 
 1. Open the KittenBlock website and click the "**添加扩展**" (Add Extension) button in the bottom-left corner.
-   ![The "添加扩展" (Add Extension) button in the bottom-left corner](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/1.png)
+   ![The "添加扩展" (Add Extension) button in the bottom-left corner](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/1.en.png)
 
 2. On the "添加扩展" (Add Extension) page, first click the "**用户扩展**" (User Extensions) tab at the top, then click "**URL 导入**" (Import by URL).
-   ![用户扩展 (User Extensions) → URL 导入 (Import by URL)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/2.png)
+   ![用户扩展 (User Extensions) → URL 导入 (Import by URL)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/2.en.png)
 
 3. In the window that pops up, paste the URL below and click "**+ 导入扩展**" (+ Import Extension):
    ```
    https://raw.githubusercontent.com/bobyuhit/bPuppy/master/bpuppy-kittenblock.zip
    ```
-   ![Paste the URL and click "+ 导入扩展" (+ Import Extension)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/3.png)
+   ![Paste the URL and click "+ 导入扩展" (+ Import Extension)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/3.en.png)
 
 4. After loading completes, click "**返回**" (Back) in the upper-left corner to return to the main page, then click "**选择硬件**" (Select Hardware) in the upper-left corner.
-   ![After returning to the main page, click "选择硬件" (Select Hardware)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/4.png)
+   ![After returning to the main page, click "选择硬件" (Select Hardware)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/4.en.png)
 
 5. In the hardware list, find "**bPuppy 机器狗**" (bPuppy Robot Dog) and click to select it.
-   ![Select "bPuppy 机器狗" (bPuppy Robot Dog) in the hardware list](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/5.png)
+   ![Select "bPuppy 机器狗" (bPuppy Robot Dog) in the hardware list](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/5.en.png)
 
 6. A "**bPuppy 机器狗**" (bPuppy Robot Dog) category appears at the very bottom of the left category column (at the arrow in the figure below); all of the bPuppy blocks are collected in it.
-   ![The "bPuppy 机器狗" (bPuppy Robot Dog) category at the bottom of the left column](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/6.png)
+   ![The "bPuppy 机器狗" (bPuppy Robot Dog) category at the bottom of the left column](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/6.en.png)
 
 You can now start block programming. The block area on the left contains 7 categories of bPuppy blocks in total:
 
@@ -86,15 +86,15 @@ For detailed usage of each block category, see [Section 4, "Graphical Programmin
 1. Turn on the robot dog's power.
 2. Make sure Bluetooth is turned on on the programming device (computer / iPad / phone, etc.).
 3. Click "**没有连接**" (Not connected) at the top of the KittenBlock page.
-   ![Click "没有连接" (Not connected) at the top](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/7.png)
+   ![Click "没有连接" (Not connected) at the top](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/7.en.png)
 4. In the window that pops up, choose "**蓝牙连接**" (Bluetooth connection) (choose "**数据线连接**" (Cable connection) if you connect with a USB data cable).
-   ![Choose "蓝牙连接" (Bluetooth connection)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/8.png)
+   ![Choose "蓝牙连接" (Bluetooth connection)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/8.en.png)
 5. When the browser's pairing window pops up, select the device **bPuppy_XXXX** (XXXX differs for each unit) and click "**配对**" (Pair).
-   ![Browser pairing window: select the device and click "配对" (Pair)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/9.png)
+   ![Browser pairing window: select the device and click "配对" (Pair)](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/9.en.png)
 6. Back in KittenBlock's connection window, click "**连接**" (Connect) on the right side of the device row.
-   ![Click "连接" (Connect) on the right side of the device row](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/10.png)
+   ![Click "连接" (Connect) on the right side of the device row](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/10.en.png)
 7. Wait until the "**交互模式已打开**" (Interactive mode opened) message appears at the top of the page; the connection is now established.
-   ![The "交互模式已打开" (Interactive mode opened) message](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/11.png)
+   ![The "交互模式已打开" (Interactive mode opened) message](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/11.en.png)
 
 At this point the bPuppy robot dog is connected, and you can start block programming.
 
@@ -120,20 +120,20 @@ This system has a very convenient feature: **online debugging**. While writing a
 
 After the program is finished, you can click "**代码**" (Code) to open the **code window**, then click the "**上传**" (Upload) button on the code box. After a moment, the program designed in KittenBlock has been downloaded into the robot dog. The next time it is powered on, the robot dog runs this program automatically.
 
-![Open the code window and click the "上传" (Upload) button](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/12.png)
+![Open the code window and click the "上传" (Upload) button](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/12.en.png)
 
 There are some functional differences between **online debugging mode** and **download-code mode**:
 
 1. A program that is to be downloaded to the robot dog and run there must start from the "**当绿旗被点击**" (when green flag clicked) event block, and the blocks connect head to tail from top to bottom. For example, this program:
 
-   ![Sample program: green flag → Forward → Wait 2 s → Stop → Wait 1 s → Wave](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/13.png)
+   ![Sample program: green flag → Forward → Wait 2 s → Stop → Wait 1 s → Wave](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/13.en.png)
 
    After this program is downloaded to the robot dog, the robot dog will automatically do the following the next time it is powered on: **go forward for two seconds → stop → wait 1 second → wave**.
    **Online debugging** mode, in contrast, runs without depending on the "当绿旗被点击" (when green flag clicked) block.
 
 2. Voice-event blocks and keyboard blocks have **exactly opposite** requirements for how they run: **voice events** (left in the figure below) only take effect after being **downloaded to the robot dog and reset**, and do not work in online debugging; **keyboard blocks** (right in the figure below) **can only run online** — key presses are detected in the computer's browser, so after downloading to the board, pressing any key has no effect.
 
-   ![Left: voice-event blocks; right: keyboard blocks](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/14.png)
+   ![Left: voice-event blocks; right: keyboard blocks](https://raw.githubusercontent.com/bobyuhit/bPuppy/master/docs/PIC/14.en.png)
 
 ### 4.1 Pose Actions 🟠
 
