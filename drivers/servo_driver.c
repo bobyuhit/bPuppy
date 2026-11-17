@@ -25,6 +25,11 @@ __attribute__((weak)) bool g_servo_initialized = false;
 // 三点校准 [ch][0/1/2] = 0°/90°/180° 点校准值 (命令该角度时舵机实际应转的角度)
 __attribute__((weak)) float g_servo_cal[SERVO_MAX_CHANNELS][3];
 
+// 跌倒保护的硬件锁存: 置位后所有写 PWM 的入口都拒绝, 直到 servo_safety_rearm_at()。
+// 只靠 servo_emergency_stop() 不够 —— 运动任务/Python 下一帧会把舵机重新写活。
+// weak 与 g_servos 一样: 本工程把 drivers 编进多个组件, 弱符号由链接器合并成一份。
+__attribute__((weak)) bool g_servo_safety_latched = false;
+
 /* ---- 定时器 + 速度模式分配 (S3 统一 LS) ---- */
 // ESP32-S3 LEDC: 8 通道, 全部 LOW_SPEED_MODE, 4 个定时器
 // 舵机 1~8 (通道 0~7): LOW_SPEED_MODE + TIMER_0
@@ -114,6 +119,7 @@ static uint32_t angle_to_duty(float angle_deg)
 /* ---- 更新单个舵机 PWM 占空比 ---- */
 static void servo_update_duty(uint8_t channel)
 {
+    if (g_servo_safety_latched) return;
     servo_config_t *s = &g_servos[channel];
     if (!s->initialized) return;
 
@@ -198,6 +204,10 @@ void servo_set_cal(uint8_t channel, float ref_angle_deg)
 // 设置指定校准点参考角 (point: 0/1/2 = 0°/90°/180°)
 void servo_set_cal_point(uint8_t channel, uint8_t point, float ref_angle_deg)
 {
+    if (g_servo_safety_latched) {
+        ESP_LOGW(TAG, "safety latched: refuse calibration write ch%d", channel);
+        return;
+    }
     if (channel >= SERVO_MAX_CHANNELS || point > 2) return;
     cal_init_nvs();
     g_servo_cal[channel][point] = ref_angle_deg;
@@ -236,6 +246,7 @@ static float servo_apply_cal(uint8_t channel, float angle_deg)
 /* ---- 设置舵机角度（立即生效）---- */
 void servo_set_angle(uint8_t channel, float angle_deg)
 {
+    if (g_servo_safety_latched) return;
     if (channel >= SERVO_MAX_CHANNELS || !g_servos[channel].initialized) {
         return;
     }
@@ -293,6 +304,10 @@ void servo_group_add(uint8_t channel, float angle_deg)
 
 void servo_group_commit(void)
 {
+    if (g_servo_safety_latched) {
+        g_group_count = 0;   // 丢弃这一批, 防止 rearm 后把旧角度重放出来
+        return;
+    }
     // 先设置所有 duty
     for (int i = 0; i < g_group_count; i++) {
         uint8_t ch = g_group_channels[i];
@@ -336,6 +351,46 @@ void servo_emergency_stop(void)
         }
     }
     ESP_LOGW(TAG, "All servos stopped (emergency)");
+}
+
+/* ---- 跌倒保护: 锁存关断 / 按指定姿态重新上力 ----
+ *
+ * servo_emergency_stop() 只关当前 PWM; 运动任务下一帧或 Python 用户程序
+ * 仍可能把舵机重新写活。这里额外置锁存, 让 servo_set_angle / group_commit /
+ * servo_update_duty 全部拒绝, 直到显式 rearm。
+ */
+void servo_safety_stop(void)
+{
+    g_servo_safety_latched = true;
+    servo_emergency_stop();
+    ESP_LOGW(TAG, "Safety latch ON (all servo writes blocked)");
+}
+
+bool servo_safety_latched(void)
+{
+    return g_servo_safety_latched;
+}
+
+/* 按调用方给的角度重新初始化 8 路 LEDC 并立即上力。
+ * 调用方保证 angles[0..7] 对应 SERVO_LF_HIP..SERVO_RH_KNEE。
+ * ★ 不能用 ledc_update_duty 从 ledc_stop 恢复 —— 通道已停止, 必须重新
+ *   ledc_channel_config (servo_init 内部做), 再写目标 duty。
+ */
+void servo_safety_rearm_at(const float *angles, int count)
+{
+    if (!angles || count < SERVO_MAX_CHANNELS) {
+        ESP_LOGE(TAG, "Safety rearm: need %d angles, got %d", SERVO_MAX_CHANNELS, count);
+        return;
+    }
+
+    g_servo_safety_latched = false;   // 先解锁, 下面 servo_set_angle 才允许写
+    g_group_count = 0;                // 丢弃锁存前残留的 group 批次
+    for (int i = 0; i < SERVO_MAX_CHANNELS; i++) {
+        if (!g_servos[i].initialized) continue;
+        servo_init((uint8_t)i, g_servos[i].gpio);   // 重新配置 LEDC 通道, duty=0
+        servo_set_angle((uint8_t)i, angles[i]);     // 应用校准并输出目标角度
+    }
+    ESP_LOGW(TAG, "Safety latch OFF, servos rearmed at requested pose");
 }
 
 /* ================================================================

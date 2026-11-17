@@ -139,6 +139,17 @@ import voice
 # 函数定义后会进入这个 dict, voice 后台线程周期性扫描即能注册。
 voice.set_main_globals(globals())
 
+# 跌倒保护 — fall_guard.py 是 VFS 模块 (/fall_guard.py), 不在 frozen。
+# import 时模块自己会 start(); 这里再调一次是幂等的兜底。
+# C 层检测器默认关闭, 此时站姿已就位、语音已就绪, 才武装;
+# 上电/复位时不会释放舵机。触发后 C 层锁存关 PWM;
+# 收到声源角度且机身放平 → 直接回 crouch。
+try:
+    import fall_guard
+    fall_guard.start()
+except Exception as e:
+    print("  [WARN] fall_guard: %s (把 mpy_modules/fall_guard.py 传到板子根目录)" % e)
+
 # ============================================================
 # 开机自动脚本 /camera_on.py  +  用户程序 /main.py
 # ============================================================

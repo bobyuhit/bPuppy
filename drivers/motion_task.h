@@ -194,6 +194,19 @@ motion_mode_t motion_get_mode(void);
 // MicroPython servo 绑定调用: Python 动舵机 → 自动切 POSE
 void motion_python_servo_write(void);
 
+/* ---- 跌倒保护 (C 层 50Hz 检测, Python 只负责声音恢复) ---- */
+// 立即锁存关断: 停运动 + 关 8 路 PWM; 恢复前 set_gait / 写舵机全部拒绝。
+void motion_safety_release(void);
+// 按给定 8 路命令角重新上力 (调用方负责确认机身已放平); 运动保持 POSE。
+void motion_safety_rearm_at(const float *angles, int count);
+bool motion_safety_latched(void);
+// 上电默认关; frozen/main.py 的 fall_guard.start() 打开。
+void motion_safety_set_enabled(bool enabled);
+// poses.stand() 置 true; crouch/sit/play/wave/go_to/set_servo 等置 false。
+void motion_safety_set_pose_active(bool active);
+// 运行时阈值: 倾角 (°) / 角速度 (°/s) / 连续帧数 (50Hz)。
+void motion_safety_config(float angle, float rate, int frames);
+
 #ifdef __cplusplus
 }
 #endif

@@ -245,6 +245,7 @@ FreeRTOS:          ESP-IDF v5.1.2
 | `frozen/camera_serial.py` | 串口拍照回传 — 通过 REPL 触发拍照，base64 回传 PC |
 | `frozen/heading_anchor.py` | **航向锁定 step1** — IMU 航向的 err 源。对外 `on(偏移度)` / `off()` / `read()` / `set(**cfg)`，`anc.cfg` 看参数。**自己 import step2 并把闭环接到后台线程**（用户看不见 `heading_follow`）。KittenBlock 的「航向锁定 偏转 / 解除航向锁定」两个积木靠它 |
 | `frozen/heading_follow.py` | **航向锁定 step2** — 闭环执行体 `err_fn → set_turn`。`run`(阻塞) / `start`(后台线程) / `stop` / `running` / `g_c`。**不 import 任何 err 源**，所以视觉 / 声源都能喂进来。`TURN_SIGN` 在这里（模块常量：REPL 里 `flw.TURN_SIGN = ±1` 可运行时改、不落盘；改文件要重传/重编译） |
+| `mpy_modules/fall_guard.py` | **跌倒保护（VFS 模块，不冻结）** — import 即自动启动；C 层 50Hz 检测（倾角 >60° 或角速度 >400°/s 连续 3 帧）+ 锁存关 PWM；`on/off` 开关自动检测，`release/recover` 手动松开/恢复，语音角度也可恢复；恢复姿势 `poses.CROUCH`。只在运动/站立检测 |
 | `drivers/camera_driver.c` | OV2640 DVP 驱动 + MicroPython 绑定 (`bpuppy_camera`) |
 | `tools/capture.py` | PC 端拍照工具 — 通过串口命令拍照并自动保存/预览 |
 | `gait_sim/gait_sim.py` | PC 端步态仿真 — CSV/PNG/GIF |
@@ -443,10 +444,11 @@ duty 到 0.40, 抬脚压低换更小的上下起伏。**抬脚 5mm ⇒ 摆动腿
 7. `poses.stand()` — POSE_STAND 站姿待命 (Python IK, 固定高度)
 8. `import voltage` — 电池电压检测 + WS2812 指示灯 (import 即启动)
 9. `import voice` — 语音模块 (UART2/9600, import 即启动) + `set_main_globals(globals())`
-10. 开关文件存在 → 执行 (见下)
+10. `import fall_guard; fall_guard.start()` — 启动 C 层跌倒检测 (上电时不释放舵机; 站姿稳定后才武装)
+11. 开关文件存在 → 执行 (见下)
     - `/camera_on.py` — 上电自动开"网页+摄像头" (**后台线程**, 起服务器慢, 不能拖住开机)
     - `/pwm_ext_on.py` — 上电自动启扩展舵机 (**同步**, 必须早于 `/main.py`)
-11. `/main.py` 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
+12. `/main.py` 存在 → 后台线程执行 (KittenBlock 下载的用户程序)
 
 > **开关文件分两类跑**：`/pwm_ext_on.py` 必须**同步**，因为它要在用户程序之前把管脚抢好。
 > `_thread.start_new_thread` 立即返回，后台线程和 `/main.py` 是**并发**的 —— 用户程序若在
@@ -480,6 +482,46 @@ duty 到 0.40, 抬脚压低换更小的上下起伏。**抬脚 5mm ⇒ 摆动腿
 > ⚠ **指令发送不全的修复**（2026-08 实测确认）：KittenBlock 的 JS 库自身按 20 字节硬编码分包 + 设备侧逐字符 echo 通知洪峰饿死 NimBLE mbuf 池，导致长命令第二包被丢。修复为 `ble_stream.c` **echo 批量打包**（攒一行/超时 30ms 发一个通知）。详见 [硬件连接.md 蓝牙节](PCB/硬件连接.md)。
 
 > ⚠ **"指令发送不全"还有第二个独立真因**：网页版在线执行按 20 字符分片、每片等回显，积木 `pycode` 含**内部换行**时会中途 Ctrl-C 中止整条命令（与 echo 洪峰无关）—— 规则与排查判据见 易错点 15。
+
+---
+
+## 跌倒保护 (fall_guard)
+
+**文件位置**：`mpy_modules/fall_guard.py` → 上传到板子根目录 `/fall_guard.py`，**不冻结**。
+`frozen/main.py` 在 `poses.stand()` + `voice` 之后 `import fall_guard`；模块 import 时自动 `start()`。
+VFS 文件不存在时固件只打 warning，不启动保护。
+
+**上电不释放**：C 层检测器默认关闭，`start()`/`on()` 才打开，并在倾角 <15°/角速度 <50°/s
+连续 0.5s 后武装。上电/复位过程不会关舵机。
+
+**检测在 C 层**（`motion_task.cpp` 的 50Hz 循环，不是 Python 线程）：
+- 范围：`MODE_MOTION`（walk/trot/go/stop）或 `poses.stand()` 置的站立标志；
+  crouch/sit/play/wave/自定义舵机编辑不检测。
+- 触发：`max(|roll|,|pitch|) > 60°` **或** `|gyro| > 400°/s`，连续 3 帧（约 60ms）。
+- 动作：`motion_safety_release()` → 锁存 + 停运动 + `servo_emergency_stop()`；锁存期间
+  `set_gait` / `servo_set_angle` / `group_commit` / 标定写入全部拒绝。Python 侧听到锁存后嘤嘤。
+
+**恢复**：只靠声源角度帧（`voice.CMD_SOUND_DIR`），不再有 5 秒自动恢复。
+锁存期间收到角度帧、且机身 `max(|roll|,|pitch|) < 15°`、角速度 <30°/s 连续约 0.3s
+→ `bpuppy_motion.safety_rearm(poses.CROUCH)` 直接重新上力到 crouch（不读“实际舵机角”，
+模拟舵机没有反馈），然后 `poses.crouch()` 同步姿态状态。不会自动站起。
+
+REPL：
+
+```python
+import fall_guard
+fall_guard.on()           # 打开自动检测 (import 时已自动执行)
+fall_guard.off()          # 只关自动检测; 手动/语音恢复仍可用
+fall_guard.release()      # 手动进入保护: 锁存 + 松开舵机
+fall_guard.recover()      # 手动从卧姿恢复 (要求机身放平)
+fall_guard.rearm()        # recover() 别名
+fall_guard.latched()      # 是否锁存
+fall_guard.is_enabled()   # 自动检测是否打开
+fall_guard.set(angle=60, rate=400, frames=3, level_angle=15, level_ms=300)
+```
+
+`release()` / `recover()` 不要求自动检测已打开；`off()` 不注销语音回调，所以手动释放后
+仍可用声源角度恢复。恢复只到 `poses.CROUCH`，不会自动站起。
 
 ---
 
@@ -1180,6 +1222,7 @@ diff /tmp/sdkconfig.before build/sdkconfig  # 应当只有你改的那几行不�
 | 修改 Python 启动逻辑 | `frozen/main.py` |
 | 修改 BLE 协议 | `drivers/ble_driver.c`（GATT 服务）+ `drivers/ble_stream.c`（dupterm 桥接）。原 `frozen/ble_hiwonder.py` 已删除 |
 | 修改语音事件/命令码映射 | `frozen/voice.py`（固件侧，需重编译烧录）+ `kext-bpuppy/kblock.json5`（扩展侧，重打包 zip） |
+| 修改跌倒保护 | C 检测/锁存：`drivers/motion_task.cpp`、`drivers/servo_driver.c`；恢复/声音角度/REPL：**VFS** `mpy_modules/fall_guard.py`（上传 `/fall_guard.py`，不用重编译）；站立范围：`frozen/poses.py`。阈值可 REPL `fall_guard.set(...)` 运行时改 |
 | 修改 KittenBlock 扩展/积木 | `kext-bpuppy/`（重打包 zip + 推送）。⚠ 积木若引用新模块，`kblock.json5` 的 `libs` 和 `extension.json` 的 `afterConnect` **两处都要加 import**，漏一处在线就是 `NameError` |
 | 修改航向锁定闭环（`anc` / 「航向锁定 偏转」积木） | 改 `frozen/heading_{anchor,follow}.py` → 重编译。**源只有这一份**（`mpy_modules/` 下不要放副本：两份会漂，而且 VFS 优先 —— 传上去的那份会盖住固件版）。⚠⚠ 板子根目录若**残留** `/heading_anchor.py`，照样会盖住固件版、表现为"编了烧了没生效" ⇒ 用 `os.remove` 删掉。⭐ `kp` / 死区 / 周期 / 积分限幅用 `anc.set()` **运行时**改（重起闭环线程、目标不变）；`TURN_SIGN` **不在 `anc.cfg` 里** —— 运行时改是 REPL 里 `import heading_follow as flw; flw.TURN_SIGN = ±1`（不落盘），落盘要改文件 |
 | 修改摄像头参数/格式 | `drivers/camera_driver.c` → `init_adv()` 或 MicroPython `bpuppy_camera.init_adv()` |

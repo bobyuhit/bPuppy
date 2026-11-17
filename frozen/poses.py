@@ -75,6 +75,15 @@ def _write(ch, deg):
         bpuppy_servo.set_angle(ch, deg)
 
 
+def _safety_pose(active):
+    """告诉 C 层跌倒保护: 当前是不是"站立" (只在 motion 模式或站立时检测)。
+    crouch/sit/play/wave/自定义舵机编辑都属于静态姿势, 不检测。"""
+    try:
+        bpuppy_motion.safety_pose(active)
+    except Exception:
+        pass
+
+
 # ============================================================
 # 舵机编辑 (姿态)
 # ============================================================
@@ -82,6 +91,7 @@ def _write(ch, deg):
 def set_servo(ch, deg):
     """设置某路舵机的目标角度（不立即执行，等 commit）
     ch 0~7 = 主舵机; 8/9/10 = PWM_EXT1/2/3"""
+    _safety_pose(False)
     ch = int(ch)
     if ch < 0 or ch >= _CH_COUNT:
         raise ValueError("舵机编号 0~%d, 收到 %s" % (_CH_COUNT - 1, ch))
@@ -188,6 +198,7 @@ def commit():
     主舵机 (0~7) 和扩展舵机 (8~10) 在**同一个循环**里一起逼近, 同时到位 ——
     缓动只有一份实现 (_move_to), 两种舵机只是最后写出去的地方不同。
     """
+    _safety_pose(False)
     time.sleep_ms(30)   # 等 C 层自动切 POSE 生效
     _move_to(_pose_buf, _pose_step)
 
@@ -202,6 +213,7 @@ def go_to(targets, step=3.0):
     targets 可给 8 个 (只动主舵机) 或 11 个 (含 PWM_EXT1/2/3), 短的后面补 None。
     不修改 _pose_buf，适合代码直调。
     """
+    _safety_pose(False)
     t = list(targets)
     t += [None] * (_CH_COUNT - len(t))    # 补到 11 路, 缺的当"不动"
     time.sleep_ms(30)
@@ -216,6 +228,7 @@ def oscillate(ch, amp, hz, cycles):
     """单舵机正弦摆动: 在当前位置 ±amp°, 频率 hz, 循环 cycles 次
     ch 0~7 = 主舵机 (写舵机自动切 POSE); 8/9/10 = PWM_EXT1/2/3
     与 _move_to 同理: 摆动逻辑只有这一份, 读写经由 _read/_write 分流"""
+    _safety_pose(False)
     ch = int(ch)
     if ch < 0 or ch >= _CH_COUNT:
         raise ValueError("舵机编号 0~%d, 收到 %s" % (_CH_COUNT - 1, ch))
@@ -246,6 +259,7 @@ def stand():
         targets[hip_ch] = hip
         targets[knee_ch] = knee
     go_to(targets)
+    _safety_pose(True)      # 站姿 → 纳入跌倒保护 (运动模式另由 C 层自动判断)
 
 
 # ============================================================

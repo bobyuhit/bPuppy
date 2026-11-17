@@ -359,6 +359,40 @@ for _n, _want in {1: EXT1, 2: EXT2, 3: EXT3}.items():
   否则固件仍在驱动/读同一个脚。代价是电池电压读数和 WS2812 指示灯会停掉，直到 `bpuppy_adc.init()` 恢复。
   **PWM_EXT2(GPIO47) 是空闲脚，不需要这一步**（样例文件用的就是它）
 
+### 2.4 跌倒保护（fall_guard，VFS 模块）
+
+`fall_guard.py` **不在 frozen**，源文件在 `mpy_modules/fall_guard.py`。使用时把它上传到板子根目录
+`/fall_guard.py`；`frozen/main.py` 会在站好、语音就绪后 `import fall_guard`，模块 import 时自动
+`start()`。如果板子上没有这个文件，固件只打 warning，保护不启动。
+
+**上电不释放舵机**：先站好，C 层检测器稳定约 0.5s 后才武装。
+
+```python
+import fall_guard
+fall_guard.on()           # 打开自动检测（import 时已自动执行）
+fall_guard.off()          # 只关自动检测；手动/语音恢复仍可用
+fall_guard.release()      # 手动进入保护：锁存 + 松开 8 路舵机
+fall_guard.recover()      # 手动从卧姿恢复（要求机身放平）
+fall_guard.rearm()        # recover() 别名
+fall_guard.latched()      # True = 已锁存、舵机失力
+fall_guard.is_enabled()   # 自动检测是否打开
+fall_guard.set(angle=60, rate=400, frames=3,
+               level_angle=15, level_ms=300)
+```
+
+| 项 | 行为 |
+|---|---|
+| 检测范围 | 运动模式（walk/trot/go/stop）或 `poses.stand()` 站姿；crouch/sit/play/wave/自定义舵机编辑不检测 |
+| 自动触发 | `max(|roll|,|pitch|) > 60°` 或 `|gyro| > 400°/s`，连续 3 帧（50Hz，约 60ms） |
+| 释放 | C 层锁存 + 停运动 + 关 8 路 PWM；`set_gait` / 写舵机全部拒绝；嘤嘤 |
+| 手动释放 | `fall_guard.release()`；不要求自动检测已打开 |
+| 恢复 | `fall_guard.recover()`，或锁存期间收到**声源角度帧**且机身放平稳定约 0.3s → 直接按 `poses.CROUCH` 重新上力；不会自动站起 |
+| 关闭 | `fall_guard.off()` 只关自动检测；已锁存时手动/语音恢复仍可用 |
+
+> 检测在 C 的 50Hz `motion_task` 里，不受用户 Python 程序拖慢。
+> 恢复姿势直接是 `crouch`，不读取“实际舵机角度”（模拟舵机没有位置反馈）。
+> 文件含中文注释；上传优先用 USB 串口/ViperIDE，蓝牙上传可能丢非 ASCII 字节。
+
 ## 三、视觉
 
 ### 3.1 摄像头操作 bpuppy_camera

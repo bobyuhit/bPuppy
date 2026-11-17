@@ -366,6 +366,56 @@ STATIC mp_obj_t mp_motion_show_geometry(void) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_show_geometry_obj, mp_motion_show_geometry);
 
+/* ---- 跌倒保护 ---- */
+STATIC mp_obj_t mp_motion_safety_release(void) {
+    motion_safety_release();
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_safety_release_obj, mp_motion_safety_release);
+
+// safety_rearm([8 个命令角]) —— 直接按给的角度重新上力, 不经过 poses 缓动。
+STATIC mp_obj_t mp_motion_safety_rearm(mp_obj_t angles_obj) {
+    size_t n = 0;
+    mp_obj_t *items = NULL;
+    mp_obj_get_array(angles_obj, &n, &items);
+    if (n < 8) {
+        mp_raise_ValueError(MP_ERROR_TEXT("safety_rearm needs 8 angles"));
+    }
+    float angles[8];
+    for (int i = 0; i < 8; i++) {
+        angles[i] = mp_obj_get_float(items[i]);
+    }
+    motion_safety_rearm_at(angles, 8);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_safety_rearm_obj, mp_motion_safety_rearm);
+
+STATIC mp_obj_t mp_motion_safety_latched(void) {
+    return mp_obj_new_bool(motion_safety_latched());
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_motion_safety_latched_obj, mp_motion_safety_latched);
+
+STATIC mp_obj_t mp_motion_safety_enable(mp_obj_t obj) {
+    motion_safety_set_enabled(mp_obj_is_true(obj));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_safety_enable_obj, mp_motion_safety_enable);
+
+STATIC mp_obj_t mp_motion_safety_pose(mp_obj_t obj) {
+    motion_safety_set_pose_active(mp_obj_is_true(obj));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(mp_motion_safety_pose_obj, mp_motion_safety_pose);
+
+STATIC mp_obj_t mp_motion_safety_config(mp_obj_t angle_obj, mp_obj_t rate_obj,
+                                        mp_obj_t frames_obj) {
+    motion_safety_config(mp_obj_get_float(angle_obj),
+                         mp_obj_get_float(rate_obj),
+                         mp_obj_get_int(frames_obj));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_3(mp_motion_safety_config_obj, mp_motion_safety_config);
+
 STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),       MP_ROM_QSTR(MP_QSTR_bpuppy_motion) },
     { MP_ROM_QSTR(MP_QSTR_start),          MP_ROM_PTR(&mp_motion_start_obj) },
@@ -392,6 +442,13 @@ STATIC const mp_rom_map_elem_t bpuppy_motion_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_get_center),    MP_ROM_PTR(&mp_motion_get_center_obj) },
     // 本帧实际生效的 (eff_stride, eff_duty) —— 转弯归一化用, 见上面的长注释
     { MP_ROM_QSTR(MP_QSTR_get_effective), MP_ROM_PTR(&mp_motion_get_effective_obj) },
+    // 跌倒保护
+    { MP_ROM_QSTR(MP_QSTR_safety_release), MP_ROM_PTR(&mp_motion_safety_release_obj) },
+    { MP_ROM_QSTR(MP_QSTR_safety_rearm),   MP_ROM_PTR(&mp_motion_safety_rearm_obj) },
+    { MP_ROM_QSTR(MP_QSTR_safety_latched), MP_ROM_PTR(&mp_motion_safety_latched_obj) },
+    { MP_ROM_QSTR(MP_QSTR_safety_enable),  MP_ROM_PTR(&mp_motion_safety_enable_obj) },
+    { MP_ROM_QSTR(MP_QSTR_safety_pose),    MP_ROM_PTR(&mp_motion_safety_pose_obj) },
+    { MP_ROM_QSTR(MP_QSTR_safety_config),  MP_ROM_PTR(&mp_motion_safety_config_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(bpuppy_motion_globals, bpuppy_motion_globals_table);
 

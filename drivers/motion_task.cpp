@@ -13,6 +13,7 @@
 #include "motion_task.h"
 #include "ik.h"
 #include "servo_driver.h"
+#include "imu_driver.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -254,6 +255,25 @@ static bool is_static_gait(gait_type_t g) {
 
 /* ---- 全局状态 ---- */
 static motion_mode_t g_mode = MODE_IDLE;   // 运行模式状态机
+
+/* ---- 跌倒保护 (C 层 50Hz 检测) ----
+ *
+ * 默认 monitor=false: 上电阶段不检测, 避免 IMU 收敛/开机姿态造成误释放。
+ * frozen/main.py 在 poses.stand() + voice 就绪后调用 fall_guard.start(),
+ * 它再 bpuppy_motion.safety_enable(True) 武装。
+ *
+ * 检测范围 = 运动模式 (MODE_MOTION) 或 poses.stand() 置的 POSE 站立标志。
+ * 触发后 motion_safety_release() 置锁存 + 关 PWM + 停运动; 之后只等
+ * Python 收到声音角度帧并确认身体放平, 调 safety_rearm(CROUCH) 恢复。
+ */
+static bool  g_safety_monitor_enabled = false;
+static bool  g_safety_pose_active = false;   // poses.stand() 置 true, 其它姿态置 false
+static bool  g_safety_armed = false;
+static int   g_safety_arm_count = 0;
+static int   g_safety_fall_count = 0;
+static float g_safety_angle_deg = 60.0f;
+static float g_safety_rate_dps = 400.0f;
+static int   g_safety_frames = 3;
 
 __attribute__((weak)) motion_state_t g_motion = {
     .gait           = GAIT_STOP,
@@ -558,6 +578,63 @@ static void foot_trajectory(float phase_norm, float stride, float height,
     }
 }
 
+/* ---- 跌倒保护检测 (在 motion task 的 50Hz 循环里跑) ----
+ *
+ * 放在 C 层而不是 Python 线程: 即使 KittenBlock 下载的用户程序在
+ * while True 里空转, 这里的检测和关 PWM 也不会被 GIL 拖慢。
+ */
+static void motion_safety_tick(void)
+{
+    if (!g_safety_monitor_enabled || servo_safety_latched() || !imu_is_ready()) {
+        return;
+    }
+
+    imu_angles_t ang = {0};
+    imu_raw_data_t raw = {0};
+    imu_read_angles(&ang);
+    imu_read_raw(&raw);
+
+    float tilt = fmaxf(fabsf(ang.roll), fabsf(ang.pitch));
+    float rate = sqrtf(raw.gyro_x * raw.gyro_x +
+                       raw.gyro_y * raw.gyro_y +
+                       raw.gyro_z * raw.gyro_z) * 57.29578f;
+
+    bool scope = (g_mode == MODE_MOTION) || g_safety_pose_active;
+    if (!scope) {
+        // 坐/蹲/玩/挥手等静态姿势不在保护范围
+        g_safety_armed = false;
+        g_safety_arm_count = 0;
+        g_safety_fall_count = 0;
+        return;
+    }
+
+    if (!g_safety_armed) {
+        // 上电/恢复后先要求约 0.5s 稳定, 避免 IMU 收敛或刚上力时的姿态误触发。
+        // 15° 而不是 10°: 实测蹲姿/地面轻微不平时 roll 可到 10.6°, 太紧会永远不武装。
+        if (tilt < 15.0f && rate < 50.0f) {
+            if (++g_safety_arm_count >= 25) {
+                g_safety_armed = true;
+                g_safety_arm_count = 0;
+                ESP_LOGI(TAG, "Safety armed (tilt=%.1f rate=%.0f)", tilt, rate);
+            }
+        } else {
+            g_safety_arm_count = 0;
+        }
+        return;
+    }
+
+    if (tilt > g_safety_angle_deg || rate > g_safety_rate_dps) {
+        if (++g_safety_fall_count >= g_safety_frames) {
+            g_safety_fall_count = 0;
+            ESP_LOGE(TAG, "FALL detected (tilt=%.1f rate=%.0f), release servos",
+                     tilt, rate);
+            motion_safety_release();
+        }
+    } else {
+        g_safety_fall_count = 0;
+    }
+}
+
 /* ---- 主控制循环 ---- */
 static void motion_task_main(void *pvParam)
 {
@@ -567,6 +644,9 @@ static void motion_task_main(void *pvParam)
     float dt = MOTION_LOOP_MS * 0.001f;
 
     while (1) {
+        // 先做安全检测: 即使运动被禁用 (POSE 站立) 也要能释放跌落的舵机
+        motion_safety_tick();
+
         if (!g_motion.enabled || g_motion.emergency_stop) {
             vTaskDelayUntil(&last_wake, period);
             continue;
@@ -1314,6 +1394,10 @@ void motion_get_effective(float *eff_stride, float *eff_duty)
 
 void motion_set_gait(gait_type_t gait)
 {
+    if (servo_safety_latched()) {
+        ESP_LOGW(TAG, "safety latched: refuse set_gait");
+        return;
+    }
     if (gait < GAIT_COUNT) {
         // 任何步态指令 → 自动进入运动模式 (Python 无需显式切换)
         // ★ "从静止起步" 的判据 = 当前不在运动模式, 或当前步态是静态.
@@ -2057,6 +2141,10 @@ bool motion_is_running(void)
 
 void motion_set_mode(motion_mode_t mode)
 {
+    if (mode == MODE_MOTION && servo_safety_latched()) {
+        ESP_LOGW(TAG, "safety latched: refuse MODE_MOTION");
+        return;
+    }
     g_mode = mode;
     switch (mode) {
     case MODE_MOTION:
@@ -2087,7 +2175,79 @@ motion_mode_t motion_get_mode(void)
 // MicroPython servo 绑定调用: Python 动舵机 → 自动切 POSE
 void motion_python_servo_write(void)
 {
+    if (servo_safety_latched()) return;
     if (g_mode != MODE_POSE) {
         motion_set_mode(MODE_POSE);
     }
+}
+
+/* ================================================================
+ * 跌倒保护 (MicroPython 可调用)
+ * ================================================================ */
+
+void motion_safety_release(void)
+{
+    g_motion.emergency_stop = true;
+    g_motion.enabled = false;
+    g_mode = MODE_POSE;
+    g_safety_armed = false;
+    g_safety_arm_count = 0;
+    g_safety_fall_count = 0;
+    servo_safety_stop();
+    ESP_LOGW(TAG, "Safety release: motion stopped, all servos off");
+}
+
+void motion_safety_rearm_at(const float *angles, int count)
+{
+    if (!angles || count < 8) {
+        ESP_LOGE(TAG, "Safety rearm: need 8 angles, got %d", count);
+        return;
+    }
+    servo_safety_rearm_at(angles, count);
+    g_motion.emergency_stop = true;
+    g_motion.enabled = false;
+    g_mode = MODE_POSE;
+    g_safety_armed = false;
+    g_safety_arm_count = 0;
+    g_safety_fall_count = 0;
+    ESP_LOGI(TAG, "Safety rearm done; motion stays in POSE");
+}
+
+bool motion_safety_latched(void)
+{
+    return servo_safety_latched();
+}
+
+void motion_safety_set_enabled(bool enabled)
+{
+    g_safety_monitor_enabled = enabled;
+    g_safety_armed = false;
+    g_safety_arm_count = 0;
+    g_safety_fall_count = 0;
+    ESP_LOGI(TAG, "Safety monitor %s", enabled ? "ON" : "OFF");
+}
+
+void motion_safety_set_pose_active(bool active)
+{
+    if (g_safety_pose_active == active) return;
+    g_safety_pose_active = active;
+    g_safety_arm_count = 0;
+    g_safety_fall_count = 0;
+    if (!active) g_safety_armed = false;
+    ESP_LOGI(TAG, "Safety pose scope %s", active ? "ON (stand)" : "OFF (static pose)");
+}
+
+void motion_safety_config(float angle, float rate, int frames)
+{
+    if (angle < 5.0f) angle = 5.0f;
+    if (angle > 80.0f) angle = 80.0f;
+    if (rate < 50.0f) rate = 50.0f;
+    if (rate > 1000.0f) rate = 1000.0f;
+    if (frames < 1) frames = 1;
+    if (frames > 50) frames = 50;
+    g_safety_angle_deg = angle;
+    g_safety_rate_dps = rate;
+    g_safety_frames = frames;
+    ESP_LOGI(TAG, "Safety config: angle=%.1f rate=%.0f frames=%d",
+             angle, rate, frames);
 }

@@ -111,6 +111,12 @@ void servo_load_cal(void);
 // 紧急停止所有舵机（关闭 PWM）
 void servo_emergency_stop(void);
 
+// 跌倒保护: 锁存关断 / 查询 / 按指定 8 路命令角重新上力
+// rearm 会重新配置 LEDC 通道, 所以能从 ledc_stop 的停止状态恢复。
+void servo_safety_stop(void);
+bool servo_safety_latched(void);
+void servo_safety_rearm_at(const float *angles, int count);
+
 #ifdef __cplusplus
 }
 #endif
