@@ -1,10 +1,10 @@
 {
 	"folders": [
 		{
-			"path": "."
+			"path": ".."
 		},
 		{
-			"path": "../../../../bTool"
+			"path": "../../../bPuppy_sim"
 		}
 	],
 	"settings": {}
