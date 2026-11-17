@@ -6,7 +6,8 @@ fall_guard.py — 跌倒保护 (VFS 模块，不冻结)
   - 上电: 不释放。frozen/main.py 在 poses.stand() 和 voice 就绪后 import,
     这时才打开 C 层检测; 检测器先要求约 0.5s 稳定才武装。
   - 运动中或站立中 (C 层判断) 倾角 > 60° 或角速度 > 400°/s 连续 3 帧:
-    C 层立即锁存、关 8 路 PWM、停运动。Python 只负责听到后嘤嘤。
+    C 层立即锁存、关 8 路主舵机 + PWM_EXT 扩展舵机、停运动。
+    Python 只负责听到后嘤嘤 (扩展舵机再按实际启用状态兜底释放一次)。
   - 恢复: 保护锁存期间, 收到语音模块的声源角度帧, 且机身放平、稳定
     约 0.3s → 直接按 poses.CROUCH 重新上力 (趴下/蹲伏), 不自动站起。
     不再有“扶正 5 秒自动恢复”。
@@ -15,7 +16,7 @@ REPL:
     import fall_guard
     fall_guard.on()           # 打开自动检测 (import 已自动执行)
     fall_guard.off()          # 关自动检测; 手动/语音恢复仍可用
-    fall_guard.release()      # 手动进入保护: 松开 8 路舵机
+    fall_guard.release()      # 手动进入保护: 松开主舵机 + 扩展舵机
     fall_guard.recover()      # 手动从卧姿恢复 (要求机身放平)
     fall_guard.rearm()        # recover() 别名
     fall_guard.latched()      # 当前是否锁存
@@ -76,6 +77,21 @@ def _stop_balance():
             balance.stop()
     except Exception:
         pass
+
+
+def _stop_ext():
+    """松开 PWM_EXT1/2/3 扩展舵机。C 层 motion_safety_release 已调
+    pwm_ext_stop_all(); 这里再按 Python 侧的实际启用状态兜底一次。"""
+    try:
+        import pwm_ext
+    except Exception:
+        return
+    for n in (1, 2, 3):
+        try:
+            if pwm_ext.is_on(n):
+                pwm_ext.off(n)
+        except Exception:
+            pass
 
 
 def _read_level():
@@ -139,6 +155,7 @@ def _loop():
                     _sound_event = False
                     _level_count = 0
                     _stop_balance()
+                    _stop_ext()
                     _beep("SND_YING")   # 嘤嘤
                     print("[fall_guard] RELEASED: servos off, waiting for sound angle")
             else:
@@ -234,7 +251,7 @@ def off():
 
 
 def release():
-    """手动进入保护: 锁存 + 停运动 + 关 8 路舵机。不要求自动检测已打开。"""
+    """手动进入保护: 锁存 + 停运动 + 关主舵机和 PWM_EXT 扩展舵机。不要求自动检测已打开。"""
     global _latched, _sound_event, _level_count
     if latched():
         print("[fall_guard] already latched")
@@ -242,6 +259,7 @@ def release():
     try:
         bpuppy_motion.safety_release()
         _stop_balance()
+        _stop_ext()
         bpuppy_motion.safety_release()   # balance 最后一帧可能已写舵机
         _latched = True
         _sound_event = False

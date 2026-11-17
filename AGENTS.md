@@ -498,8 +498,11 @@ VFS 文件不存在时固件只打 warning，不启动保护。
 - 范围：`MODE_MOTION`（walk/trot/go/stop）或 `poses.stand()` 置的站立标志；
   crouch/sit/play/wave/自定义舵机编辑不检测。
 - 触发：`max(|roll|,|pitch|) > 60°` **或** `|gyro| > 400°/s`，连续 3 帧（约 60ms）。
-- 动作：`motion_safety_release()` → 锁存 + 停运动 + `servo_emergency_stop()`；锁存期间
-  `set_gait` / `servo_set_angle` / `group_commit` / 标定写入全部拒绝。Python 侧听到锁存后嘤嘤。
+- 动作：`motion_safety_release()` → 锁存 + 停运动 + `servo_emergency_stop()` 关 8 路主舵机
+  + `pwm_ext_stop_all()` 释放所有已启用的 PWM_EXT1/2/3 扩展舵机；锁存期间
+  `set_gait` / `servo_set_angle` / `group_commit` / 标定写入全部拒绝。Python 侧听到锁存后嘤嘤，
+  并再按 `pwm_ext.is_on()` 兜底释放一次扩展舵机。恢复只重上主舵机到 CROUCH；扩展舵机保持释放，
+  需要时再 `pwm_ext.on(n)`。
 
 **恢复**：只靠声源角度帧（`voice.CMD_SOUND_DIR`），不再有 5 秒自动恢复。
 锁存期间收到角度帧、且机身 `max(|roll|,|pitch|) < 15°`、角速度 <30°/s 连续约 0.3s

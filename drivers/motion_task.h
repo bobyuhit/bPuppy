@@ -195,7 +195,7 @@ motion_mode_t motion_get_mode(void);
 void motion_python_servo_write(void);
 
 /* ---- 跌倒保护 (C 层 50Hz 检测, Python 只负责声音恢复) ---- */
-// 立即锁存关断: 停运动 + 关 8 路 PWM; 恢复前 set_gait / 写舵机全部拒绝。
+// 立即锁存关断: 停运动 + 关 8 路主舵机 + PWM_EXT 扩展舵机; 恢复前写舵机全部拒绝。
 void motion_safety_release(void);
 // 按给定 8 路命令角重新上力 (调用方负责确认机身已放平); 运动保持 POSE。
 void motion_safety_rearm_at(const float *angles, int count);

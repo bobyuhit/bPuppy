@@ -371,7 +371,7 @@ for _n, _want in {1: EXT1, 2: EXT2, 3: EXT3}.items():
 import fall_guard
 fall_guard.on()           # 打开自动检测（import 时已自动执行）
 fall_guard.off()          # 只关自动检测；手动/语音恢复仍可用
-fall_guard.release()      # 手动进入保护：锁存 + 松开 8 路舵机
+fall_guard.release()      # 手动进入保护：锁存 + 松开主舵机和扩展舵机
 fall_guard.recover()      # 手动从卧姿恢复（要求机身放平）
 fall_guard.rearm()        # recover() 别名
 fall_guard.latched()      # True = 已锁存、舵机失力
@@ -384,7 +384,7 @@ fall_guard.set(angle=60, rate=400, frames=3,
 |---|---|
 | 检测范围 | 运动模式（walk/trot/go/stop）或 `poses.stand()` 站姿；crouch/sit/play/wave/自定义舵机编辑不检测 |
 | 自动触发 | `max(|roll|,|pitch|) > 60°` 或 `|gyro| > 400°/s`，连续 3 帧（50Hz，约 60ms） |
-| 释放 | C 层锁存 + 停运动 + 关 8 路 PWM；`set_gait` / 写舵机全部拒绝；嘤嘤 |
+| 释放 | C 层锁存 + 停运动 + 关 8 路主舵机 + 已启用的 PWM_EXT1/2/3 扩展舵机；`set_gait` / 写舵机全部拒绝；嘤嘤 |
 | 手动释放 | `fall_guard.release()`；不要求自动检测已打开 |
 | 恢复 | `fall_guard.recover()`，或锁存期间收到**声源角度帧**且机身放平稳定约 0.3s → 直接按 `poses.CROUCH` 重新上力；不会自动站起 |
 | 关闭 | `fall_guard.off()` 只关自动检测；已锁存时手动/语音恢复仍可用 |

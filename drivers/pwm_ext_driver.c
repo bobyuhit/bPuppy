@@ -225,6 +225,19 @@ esp_err_t pwm_ext_deinit(int ch)
     return ESP_OK;
 }
 
+/* 跌倒保护: 停掉所有已启用的扩展舵机 (MCPWM 全部释放)。
+ * 不重新上力 —— 扩展舵机没有通用安全姿态，恢复后由用户按需 pwm_ext.on()。
+ * 从 motion task / Python release 调用, 幂等。 */
+void pwm_ext_stop_all(void)
+{
+    for (int ch = 0; ch < PWM_EXT_CH_MAX; ch++) {
+        if (s_slots[ch].used) {
+            pwm_ext_deinit(ch);
+        }
+    }
+    ESP_LOGW(TAG, "PWM_EXT all channels released (fall safety)");
+}
+
 /* ================================================================
  * MicroPython 导出
  * ================================================================ */

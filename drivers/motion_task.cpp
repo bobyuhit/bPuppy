@@ -22,6 +22,9 @@
 #include <math.h>
 #include <string.h>
 
+// 扩展舵机 (PWM_EXT1/2/3, MCPWM) 的跌倒释放入口
+extern "C" void pwm_ext_stop_all(void);
+
 static const char *TAG = "motion";
 
 /* ---- 任务参数 ---- */
@@ -2194,6 +2197,7 @@ void motion_safety_release(void)
     g_safety_arm_count = 0;
     g_safety_fall_count = 0;
     servo_safety_stop();
+    pwm_ext_stop_all();   // 扩展舵机也松开, 不只是 8 路主舵机
     ESP_LOGW(TAG, "Safety release: motion stopped, all servos off");
 }
 
