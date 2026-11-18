@@ -179,6 +179,8 @@ a.btn:active{opacity:.75;transform:scale(.95)}
     <div class="row">
       <a class="btn action" href="/cmd?gait=play" target="f">玩</a>
       <a class="btn action" href="/cmd?wave=1"    target="f">挥手</a>
+      <a class="btn action" href="/cmd?bark=1"    target="f">叫</a>
+      <a class="btn action" href="/cmd?whine=1"   target="f">嘤嘤</a>
     </div>
   </div>
 
@@ -347,6 +349,15 @@ def _parse_cmd(path):
         if len(kv) == 2:
             params[kv[0]] = kv[1]
     # print("PARAMS:", params)
+
+    # === 叫 / 嘤嘤 (只发声, 不依赖运动模块) ===
+    if "bark" in params or "whine" in params:
+        try:
+            import voice
+            voice.say(*(voice.SND_YING if "whine" in params else voice.SND_WANG))
+            return "OK:sound"
+        except Exception:
+            return "ERR:sound"
 
     try:
         import bpuppy_motion
