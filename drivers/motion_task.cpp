@@ -22,8 +22,9 @@
 #include <math.h>
 #include <string.h>
 
-// 扩展舵机 (PWM_EXT1/2/3, MCPWM) 的跌倒释放入口
+// 扩展舵机 (PWM_EXT1/2/3, MCPWM) 的跌倒释放/恢复入口
 extern "C" void pwm_ext_stop_all(void);
+extern "C" void pwm_ext_rearm_all(void);
 
 static const char *TAG = "motion";
 
@@ -2208,13 +2209,14 @@ void motion_safety_rearm_at(const float *angles, int count)
         return;
     }
     servo_safety_rearm_at(angles, count);
+    pwm_ext_rearm_all();   // 扩展舵机按释放前的最后脉宽恢复
     g_motion.emergency_stop = true;
     g_motion.enabled = false;
     g_mode = MODE_POSE;
     g_safety_armed = false;
     g_safety_arm_count = 0;
     g_safety_fall_count = 0;
-    ESP_LOGI(TAG, "Safety rearm done; motion stays in POSE");
+    ESP_LOGI(TAG, "Safety rearm done (main + extension); motion stays in POSE");
 }
 
 bool motion_safety_latched(void)

@@ -63,6 +63,12 @@ typedef struct {
 
 static pwm_ext_slot_t s_slots[PWM_EXT_CH_MAX];
 
+/* 跌倒释放时保存扩展舵机的最后状态, 供 fall_guard.recover() 重新上力。
+ * valid=false 表示该路没有待恢复的状态。 */
+static bool     s_saved_valid[PWM_EXT_CH_MAX];
+static int      s_saved_gpio[PWM_EXT_CH_MAX];
+static uint32_t s_saved_pulse[PWM_EXT_CH_MAX];
+
 /* pwm_ext_init 的 fail 路径要调它, 而它定义在后面 → 前向声明 */
 esp_err_t pwm_ext_deinit(int ch);
 
@@ -232,10 +238,37 @@ void pwm_ext_stop_all(void)
 {
     for (int ch = 0; ch < PWM_EXT_CH_MAX; ch++) {
         if (s_slots[ch].used) {
+            /* 先记下重新上力所需的最后状态, 再做 deinit */
+            s_saved_valid[ch] = true;
+            s_saved_gpio[ch]  = s_slots[ch].gpio;
+            s_saved_pulse[ch] = s_slots[ch].pulse_us;
             pwm_ext_deinit(ch);
         }
     }
     ESP_LOGW(TAG, "PWM_EXT all channels released (fall safety)");
+}
+
+/* 跌倒恢复: 按释放时保存的 GPIO + 最后脉宽重新上力。
+ * 没有保存状态的通道不动; 恢复后清掉保存项, 避免下次误恢复。
+ * 由 motion_safety_rearm_at() 在机身放平后调用。 */
+void pwm_ext_rearm_all(void)
+{
+    for (int ch = 0; ch < PWM_EXT_CH_MAX; ch++) {
+        if (!s_saved_valid[ch]) continue;
+
+        esp_err_t e = ESP_OK;
+        if (!s_slots[ch].used) {
+            e = pwm_ext_init(ch, s_saved_gpio[ch]);
+        }
+        if (e == ESP_OK) {
+            pwm_ext_set_pulse_us(ch, (int)s_saved_pulse[ch]);
+            ESP_LOGI(TAG, "PWM_EXT ch%d @GPIO%d rearmed at %uus",
+                     ch, s_saved_gpio[ch], (int)s_saved_pulse[ch]);
+        } else {
+            ESP_LOGE(TAG, "PWM_EXT ch%d rearm failed: %d", ch, e);
+        }
+        s_saved_valid[ch] = false;
+    }
 }
 
 /* ================================================================

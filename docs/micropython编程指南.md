@@ -386,7 +386,7 @@ fall_guard.set(angle=60, rate=400, frames=3,
 | 自动触发 | `max(|roll|,|pitch|) > 60°` 或 `|gyro| > 400°/s`，连续 3 帧（50Hz，约 60ms） |
 | 释放 | C 层锁存 + 停运动 + 关 8 路主舵机 + 已启用的 PWM_EXT1/2/3 扩展舵机；`set_gait` / 写舵机全部拒绝；嘤嘤 |
 | 手动释放 | `fall_guard.release()`；不要求自动检测已打开 |
-| 恢复 | `fall_guard.recover()`，或锁存期间收到**声源角度帧**且机身放平稳定约 0.3s → 直接按 `poses.CROUCH` 重新上力；不会自动站起 |
+| 恢复 | `fall_guard.recover()`，或锁存期间收到**声源角度帧**且机身放平稳定约 0.3s → 主舵机按 `poses.CROUCH` 重新上力；已启用的扩展舵机按释放前的最后脉宽自动恢复；不会自动站起 |
 | 关闭 | `fall_guard.off()` 只关自动检测；已锁存时手动/语音恢复仍可用 |
 
 > 检测在 C 的 50Hz `motion_task` 里，不受用户 Python 程序拖慢。

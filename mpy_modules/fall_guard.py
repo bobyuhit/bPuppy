@@ -9,8 +9,8 @@ fall_guard.py — 跌倒保护 (VFS 模块，不冻结)
     C 层立即锁存、关 8 路主舵机 + PWM_EXT 扩展舵机、停运动。
     Python 只负责听到后嘤嘤 (扩展舵机再按实际启用状态兜底释放一次)。
   - 恢复: 保护锁存期间, 收到语音模块的声源角度帧, 且机身放平、稳定
-    约 0.3s → 直接按 poses.CROUCH 重新上力 (趴下/蹲伏), 不自动站起。
-    不再有“扶正 5 秒自动恢复”。
+    约 0.3s → 主舵机按 poses.CROUCH 重新上力，扩展舵机按释放前保存的
+    最后脉宽自动恢复；不自动站起。不再有“扶正 5 秒自动恢复”。
 
 REPL:
     import fall_guard
@@ -53,6 +53,7 @@ _latched      = False
 _sound_event  = False
 _level_count  = 0
 _level_need   = LEVEL_MS // PERIOD_MS
+_ext_saved    = []      # Python 兜底: [(PWM_EXT 编号, 最后角度), ...]
 
 
 def _on_sound():
@@ -81,7 +82,10 @@ def _stop_balance():
 
 def _stop_ext():
     """松开 PWM_EXT1/2/3 扩展舵机。C 层 motion_safety_release 已调
-    pwm_ext_stop_all(); 这里再按 Python 侧的实际启用状态兜底一次。"""
+    pwm_ext_stop_all(); 这里再按 Python 侧的实际启用状态兜底一次，
+    并保存最后角度供 _rearm_ext() 使用 (C 层保存的是脉宽)。"""
+    global _ext_saved
+    _ext_saved = []
     try:
         import pwm_ext
     except Exception:
@@ -89,9 +93,36 @@ def _stop_ext():
     for n in (1, 2, 3):
         try:
             if pwm_ext.is_on(n):
+                try:
+                    ang = pwm_ext.get_angle(n)
+                except Exception:
+                    ang = None
+                _ext_saved.append((n, ang))
                 pwm_ext.off(n)
         except Exception:
             pass
+
+
+def _rearm_ext():
+    """恢复 Python 兜底保存的扩展舵机; C 层已恢复的通道 is_on 为 True，
+    只需要把角度再写回保存值 (通常与 C 保存的脉宽一致)。"""
+    global _ext_saved
+    if not _ext_saved:
+        return
+    try:
+        import pwm_ext
+    except Exception:
+        _ext_saved = []
+        return
+    for n, ang in _ext_saved:
+        try:
+            if not pwm_ext.is_on(n):
+                pwm_ext.on(n)
+            if ang is not None:
+                pwm_ext.set_angle(n, ang)
+        except Exception:
+            pass
+    _ext_saved = []
 
 
 def _read_level():
@@ -120,6 +151,7 @@ def _recover(reason):
     try:
         import poses
         bpuppy_motion.safety_rearm(poses.CROUCH)
+        _rearm_ext()
         _latched = False
         _sound_event = False
         _level_count = 0
